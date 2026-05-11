@@ -1,0 +1,16 @@
+Use the following tech stack to design the system architecture. Explain how the pieces connect, what each one is responsible for, and any tradeoffs or gotchas I should know about.
+
+- Frontend: Next.js
+- Styling / UI: shadcn/ui
+- Backend Runtime: Node.js
+- Compute / Hosting: AWS EC2
+- Database: Supabase
+- Auth: Supabase Auth
+- File / Blob Storage: AWS S3
+- Product Analytics: PostHog
+- Web Analytics: Google Analytics
+- Transactional Email: Resend
+- AI / LLM: OpenAI
+- Search: Postgres FTS
+- CMS / Content: Markdown / MDX
+- CI / CD: GitHub Actions

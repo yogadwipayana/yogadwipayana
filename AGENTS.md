@@ -1,3 +1,22 @@
+## Project Overview
+
+This is a personal portfolio site that doubles as a hub for a small set of personal tools.
+
+Pages:
+
+- `/` — Landing page. Portfolio entry point that introduces the owner and the site at a glance.
+- `/about` — Explains what this website is and who the owner is.
+- `/tools` — Public catalogue of the available tools, currently:
+  - VPS control
+  - AI router
+  - Chat AI
+- `/dashboard` — Authenticated workspace that hosts every tool in one place.
+  - Primary sidebar lists all tools and stays collapsed by default; it expands only on hover.
+  - A sub-sidebar appears next to the primary sidebar and shows controls/navigation specific to the tool currently selected in the primary sidebar.
+  - Sub-sidebar contents change based on which tool is active (e.g. VPS instances list for VPS, model/route list for AI router, conversation list for Chat AI).
+
+Treat the `/tools` page as the marketing/overview surface and `/dashboard` as the actual working surface for the same tools.
+
 ## Next.js Notes
 
 This project may use a newer or different Next.js setup than expected.
@@ -13,6 +32,16 @@ For UI, UX, layout, and styling work
 - Keep the SUpabase-inspired direction unless the user asks otherwise
 - Follow its rules for typography, grayscale palette, spacing, radius, components, and interaction style from src/app/globals.css and use only dark mode
 - use DESIGN.md file as reference before writing any UI.
+
+## Responsive and Mobile-First
+
+Treat mobile-first as the default approach for frontend work.
+
+- Start layout, spacing, and interaction design from small screens first
+- Scale up progressively for tablet and desktop, not the other way around
+- Do not hide important functionality on mobile; adapt it for smaller screens
+- Ensure touch targets, navigation, and text remain usable on mobile devices
+- Verify the result works well on both mobile and desktop before considering it complete
 
 ## File Structure
 

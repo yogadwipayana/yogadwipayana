@@ -12,6 +12,7 @@ For UI, UX, layout, and styling work
 
 - Keep the SUpabase-inspired direction unless the user asks otherwise
 - Follow its rules for typography, grayscale palette, spacing, radius, components, and interaction style from src/app/globals.css and use only dark mode
+- use DESIGN.md file as reference before writing any UI.
 
 ## File Structure
 

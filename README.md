@@ -14,11 +14,11 @@
 
 ## Current Projects
 
-- 🦞 **[OpenClaw](https://openclaw.ai)** - the AI that actually does things
+- 🦞 **[Dwipa](https://dwipa.my.id)** - the AI router
 
 ### Legacy Work
 
-- 🔄 **[CodeLooper](https://github.com/steipete/CodeLooper)** - macOS menubar app for Cursor workflow monitoring and
+- 🔄 **[WBS POS](https://github.com/steipete/wbs)** - points of sales
 
 ## GitHub Activity
 

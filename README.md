@@ -14,11 +14,11 @@
 
 ## Current Projects
 
-- 🦞 **[Dwipa](https://dwipa.my.id)** - the AI router
+- 🛜 **[Dwipa](https://dwipa.my.id)** - the AI router
 
 ### Legacy Work
 
-- 🔄 **[WBS POS](https://github.com/steipete/wbs)** - points of sales
+- ☕ **[WBS POS](https://github.com/steipete/wbs)** - points of sales
 
 ## GitHub Activity
 

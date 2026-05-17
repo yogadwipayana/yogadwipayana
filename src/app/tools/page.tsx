@@ -38,16 +38,17 @@ const TOOLS: Tool[] = [
     index: "01",
     name: "VPS Control",
     tag: "Infrastructure",
-    tagline: "Lightweight console for my machines.",
+    tagline: "A single console for every machine I run.",
     blurb:
-      "Spin up, monitor, and wind down instances from a single console. Status, resources, and quick actions — no ceremony, no dashboards that open three more dashboards.",
+      "Order, monitor, and tear down instances from one place. Live CPU, memory, disk, and bandwidth per box, firewall and SSH keys in the same surface, and reinstall or reset without leaving the page.",
     href: "/vps",
     icon: Server,
     features: [
-      "Live status per instance",
-      "CPU, memory, and uptime at a glance",
-      "One-click start, stop, reboot",
-      "Works from mobile for the 2am page",
+      "Status, CPU, memory, disk, uptime per instance",
+      "Firewall rules and SSH keys per box",
+      "Reinstall OS or full reset in two clicks",
+      "Order new instances and manage payment",
+      "Bring-your-own-key for existing providers",
     ],
     mock: <VpsMock />,
   },
@@ -56,16 +57,17 @@ const TOOLS: Tool[] = [
     index: "02",
     name: "AI Router",
     tag: "Models",
-    tagline: "One key, every model.",
+    tagline: "One key. Every model. Real metrics.",
     blurb:
-      "Route prompts across providers and models behind a single API key. Swap models without re-wiring code, watch latency and error rates, and fail over when a provider gets weird.",
+      "Route prompts across providers behind a single API key. Configure per-route models with fallbacks, watch p50/p95/error rates live, and track credit, requests, and tokens against a model catalog with real pricing.",
     href: "/ai",
     icon: Waypoints,
     features: [
-      "Provider-agnostic /v1/chat/completions surface",
-      "Per-route model selection and fallbacks",
-      "p50 / p95 / error metrics per route",
-      "Streaming and non-streaming",
+      "Per-route model selection with fallback",
+      "p50 / p95 / error rate per route",
+      "API keys with masked values and last-used",
+      "Credit balance, requests, tokens today",
+      "Model catalog with context window and pricing",
     ],
     mock: <RouterMock />,
   },
@@ -76,14 +78,14 @@ const TOOLS: Tool[] = [
     tag: "Assistants",
     tagline: "A quieter place to think with a model.",
     blurb:
-      "A focused conversational workspace with context and history. Multiple threads, pinned prompts, and a keyboard-first UI so it stays out of your way.",
+      "A focused conversational workspace backed by the AI Router. Pick the model per conversation, keep history across sessions, and read code answers rendered the way they should be — no tab switching, no copy-paste theatre.",
     href: "/chat",
     icon: MessageSquare,
     features: [
       "Persistent conversation history",
-      "Context pinning for long sessions",
-      "Model picker powered by AI Router",
-      "Keyboard shortcuts everywhere",
+      "Per-conversation model picker via AI Router",
+      "Markdown and code rendering inline",
+      "Threaded sidebar with snippets and timestamps",
     ],
     mock: <ChatMock />,
   },
@@ -233,7 +235,7 @@ function ToolRow({ tool, reversed }: { tool: Tool; reversed?: boolean }) {
               <ArrowUpRight className="h-4 w-4" aria-hidden />
             </Link>
             <Link
-              href={`/dashboard?tool=${tool.id}`}
+              href={`/dashboard/${tool.id}`}
               className="inline-flex h-11 items-center justify-center gap-1.5 rounded-md border border-white/15 bg-transparent px-5 text-sm font-medium text-white transition-colors hover:border-white/30 hover:bg-white/[0.04]"
             >
               Open in dashboard
@@ -275,13 +277,34 @@ function MockShell({
 
 function VpsMock() {
   const instances = [
-    { name: "edge-sg-1", region: "sg · 2vcpu", cpu: 18, status: "running" },
-    { name: "worker-de-2", region: "de · 4vcpu", cpu: 67, status: "running" },
-    { name: "dev-sandbox", region: "id · 1vcpu", cpu: 4, status: "stopped" },
+    {
+      name: "edge-sg-1",
+      region: "Singapore · SG1",
+      ipv4: "139.162.42.18",
+      cpu: 18,
+      mem: 42,
+      status: "running",
+    },
+    {
+      name: "worker-de-2",
+      region: "Frankfurt · FRA1",
+      ipv4: "139.162.55.102",
+      cpu: 67,
+      mem: 71,
+      status: "running",
+    },
+    {
+      name: "dev-sandbox",
+      region: "Jakarta · ID1",
+      ipv4: "—",
+      cpu: 0,
+      mem: 0,
+      status: "stopped",
+    },
   ];
 
   return (
-    <MockShell title="yoga.dev/vps">
+    <MockShell title="dashboard/vps">
       <div className="p-4">
         <div className="mb-3 flex items-center justify-between">
           <div className="text-[13px] font-medium text-white">Instances</div>
@@ -293,81 +316,127 @@ function VpsMock() {
           {instances.map((i, idx) => (
             <li
               key={i.name}
-              className={`flex items-center justify-between px-3 py-2.5 text-[12px] ${
+              className={`flex flex-col gap-1.5 px-3 py-2.5 text-[12px] ${
                 idx !== instances.length - 1
                   ? "border-b border-white/[0.05]"
                   : ""
               }`}
             >
-              <span className="flex items-center gap-2">
-                <span
-                  className={`h-1.5 w-1.5 rounded-full ${
-                    i.status === "running" ? "bg-[#3ecf8e]" : "bg-white/30"
-                  }`}
-                />
-                <span className="font-mono text-white/80">{i.name}</span>
-                <span className="text-white/40">·</span>
-                <span className="hidden text-white/50 sm:inline">
-                  {i.region}
-                </span>
-              </span>
-              <span className="flex items-center gap-2">
-                <span className="hidden text-white/50 sm:inline">
-                  cpu {i.cpu}%
-                </span>
-                <span className="h-1 w-16 overflow-hidden rounded-full bg-white/[0.06]">
+              <div className="flex items-center justify-between">
+                <span className="flex min-w-0 items-center gap-2">
                   <span
-                    className={`block h-full rounded-full ${
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${
                       i.status === "running" ? "bg-[#3ecf8e]" : "bg-white/30"
                     }`}
-                    style={{ width: `${i.cpu}%` }}
                   />
+                  <span className="truncate font-mono text-white/80">
+                    {i.name}
+                  </span>
+                  <span className="hidden text-white/40 sm:inline">·</span>
+                  <span className="hidden truncate text-white/50 sm:inline">
+                    {i.region}
+                  </span>
                 </span>
-              </span>
+                <span className="ml-2 shrink-0 font-mono text-[10px] text-white/40">
+                  {i.ipv4}
+                </span>
+              </div>
+              <div className="flex items-center gap-3 text-[10px] text-white/40">
+                <span className="flex items-center gap-1.5">
+                  <span>cpu {i.cpu}%</span>
+                  <span className="h-1 w-12 overflow-hidden rounded-full bg-white/[0.06]">
+                    <span
+                      className={`block h-full rounded-full ${
+                        i.status === "running" ? "bg-[#3ecf8e]" : "bg-white/30"
+                      }`}
+                      style={{ width: `${i.cpu}%` }}
+                    />
+                  </span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span>mem {i.mem}%</span>
+                  <span className="h-1 w-12 overflow-hidden rounded-full bg-white/[0.06]">
+                    <span
+                      className={`block h-full rounded-full ${
+                        i.status === "running" ? "bg-[#3ecf8e]" : "bg-white/30"
+                      }`}
+                      style={{ width: `${i.mem}%` }}
+                    />
+                  </span>
+                </span>
+              </div>
             </li>
           ))}
         </ul>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {["Firewall", "SSH keys", "Reinstall", "BYOK"].map((t) => (
+            <span
+              key={t}
+              className="rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] text-white/60"
+            >
+              {t}
+            </span>
+          ))}
+        </div>
       </div>
     </MockShell>
   );
 }
 
 function RouterMock() {
-  const rows = [
-    { path: "/v1/chat/completions", model: "claude-opus-4", ms: "312ms" },
-    { path: "/v1/chat/completions", model: "gpt-5", ms: "214ms" },
-    { path: "/v1/embed", model: "voyage-3", ms: "89ms" },
+  const routes = [
+    {
+      name: "default",
+      model: "claude-opus-4",
+      fallback: "gpt-5",
+      p50: "124ms",
+    },
+    {
+      name: "fast",
+      model: "gpt-4o-mini",
+      fallback: "claude-haiku",
+      p50: "89ms",
+    },
+    {
+      name: "embed",
+      model: "voyage-3",
+      fallback: "—",
+      p50: "32ms",
+    },
   ];
 
   return (
-    <MockShell title="yoga.dev/ai">
+    <MockShell title="dashboard/ai">
       <div className="flex flex-col gap-4 p-4">
         <div className="grid grid-cols-3 gap-2">
-          <RouterMetric label="p50" value="124ms" bar={0.4} />
-          <RouterMetric label="p95" value="612ms" bar={0.75} />
-          <RouterMetric label="errors" value="0.02%" bar={0.12} />
+          <RouterMetric label="credit" value="$1.84" bar={0.18} />
+          <RouterMetric label="requests" value="1,204" bar={0.6} />
+          <RouterMetric label="tokens" value="124.5k" bar={0.45} />
         </div>
         <div className="rounded-md border border-white/[0.06] bg-[#1c1c1c]">
-          <div className="border-b border-white/[0.06] px-3 py-2 text-[11px] uppercase tracking-[0.08em] text-white/40">
-            Recent calls
+          <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2 text-[11px] uppercase tracking-[0.08em] text-white/40">
+            <span>Routes</span>
+            <span className="font-mono text-[10px] normal-case tracking-normal text-white/30">
+              p50
+            </span>
           </div>
           <ul className="divide-y divide-white/[0.04] font-mono text-[11px]">
-            {rows.map((r, i) => (
+            {routes.map((r) => (
               <li
-                key={i}
+                key={r.name}
                 className="flex items-center justify-between px-3 py-1.5"
               >
                 <span className="flex min-w-0 items-center gap-2 text-white/70">
                   <span className="rounded bg-[#3ecf8e]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[#3ecf8e]">
-                    POST
+                    {r.name}
                   </span>
-                  <span className="truncate">{r.path}</span>
-                  <span className="hidden text-white/30 sm:inline">·</span>
-                  <span className="hidden truncate text-white/50 sm:inline">
-                    {r.model}
+                  <span className="truncate text-white/80">{r.model}</span>
+                  <span className="hidden text-white/30 sm:inline">→</span>
+                  <span className="hidden truncate text-white/40 sm:inline">
+                    {r.fallback}
                   </span>
                 </span>
-                <span className="ml-2 shrink-0 text-white/40">{r.ms}</span>
+                <span className="ml-2 shrink-0 text-white/40">{r.p50}</span>
               </li>
             ))}
           </ul>
@@ -404,7 +473,7 @@ function RouterMetric({
 
 function ChatMock() {
   return (
-    <MockShell title="yoga.dev/chat">
+    <MockShell title="dashboard/chat">
       <div className="flex flex-col gap-3 p-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-[12px] text-white/70">

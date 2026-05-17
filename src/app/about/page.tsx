@@ -71,15 +71,14 @@ function Intro() {
           </h1>
 
           <p className="max-w-xl text-[17px] leading-[1.65] text-white/70">
-            A polyagentmorous builder making developer tools out of Bali.
-            Three-plus years of modern web apps behind me. These days, most of
-            my time goes to AI — what it changes about how software gets made,
-            and how fast you can move once you stop fighting it.
+            Deep in vibe-coding mode — building AI-powered developer tools at
+            ludicrous speed out of Bali. After 3+ years shipping modern web,
+            this feels like a breath of fresh air.
           </p>
 
           <p className="max-w-xl text-[15px] leading-[1.65] text-white/50">
-            This site is the portfolio and the hub where I actually run those
-            tools. Less a résumé, more a working surface.
+            This site is both the portfolio and the hub where I actually run
+            those tools. Less a résumé, more a working surface.
           </p>
 
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -114,15 +113,16 @@ function WhoAmI() {
     { k: "name", v: <span className="text-white/90">Yoga Dwipayana</span> },
     { k: "role", v: <span className="text-white/90">Founder · Builder</span> },
     { k: "based", v: <span className="text-white/90">Bali, Indonesia</span> },
-    { k: "company", v: <span className="text-white/90">Dwipa</span> },
+    { k: "company", v: <span className="text-white/90">Dwipa · AI router</span> },
     {
       k: "stack",
-      v: <span className="text-white/90">TypeScript · Next · Supabase</span>,
+      v: <span className="text-white/90">TypeScript · Node · Next</span>,
     },
     {
       k: "mode",
       v: <span className="text-white/90">vibe-coding · polyagent</span>,
     },
+    { k: "agents", v: <span className="text-white/90">3–6 Claude · concurrent</span> },
     { k: "years", v: <span className="text-white/90">3+ shipping</span> },
     {
       k: "status",
@@ -196,22 +196,22 @@ function Now() {
     {
       icon: Hammer,
       kind: "Building",
-      title: "OpenClaw v2",
-      body: "Rebuilding the core agent loop so it feels less like a demo and more like a daily tool.",
+      title: "Dwipa — the AI router",
+      body: "Routing prompts between models so the right one answers the right job. Live at dwipa.my.id.",
       updated: "this week",
     },
     {
-      icon: BookOpen,
-      kind: "Reading",
-      title: "Designing Data-Intensive Applications",
-      body: "Revisiting distributed systems fundamentals before I re-architect the router's queue layer.",
-      updated: "this month",
+      icon: Lightbulb,
+      kind: "Doing",
+      title: "Living in the future",
+      body: "Learning and building tools to make agentic engineering faster for everyone. Full apps in days, not months.",
+      updated: "ongoing",
     },
     {
-      icon: Lightbulb,
+      icon: BookOpen,
       kind: "Thinking",
-      title: "Tools as agents, agents as tools",
-      body: "The line between a tool and an agent is thinner than it looks. Mostly it's about who chooses when to run.",
+      title: "Agents as slot machines",
+      body: "Fast, stochastic, occasionally brilliant. Running 3–6 Claude instances at once changes how you plan work.",
       updated: "ongoing",
     },
   ];
@@ -285,28 +285,21 @@ type Project = {
 function Projects() {
   const current: Project[] = [
     {
-      name: "OpenClaw",
-      blurb: "The AI that actually does things.",
-      href: "https://openclaw.ai",
-      tags: ["Next.js", "TypeScript", "Agents"],
-      year: "2025 →",
-    },
-    {
       name: "Dwipa",
-      blurb: "The studio behind these tools, run out of Bali.",
-      href: "#",
-      tags: ["Studio"],
+      blurb: "The AI router — sends each prompt to the model that fits it best.",
+      href: "https://dwipa.my.id",
+      tags: ["Next.js", "TypeScript", "AI"],
       year: "2024 →",
     },
   ];
 
   const legacy: Project[] = [
     {
-      name: "CodeLooper",
-      blurb: "macOS menubar app for Cursor workflow monitoring.",
-      href: "https://github.com/steipete/CodeLooper",
-      tags: ["Swift", "macOS"],
-      year: "2024",
+      name: "WBS POS",
+      blurb: "Point-of-sale system for a small coffee operation.",
+      href: "https://github.com/steipete/wbs",
+      tags: ["Web", "POS"],
+      year: "Earlier",
     },
   ];
 
@@ -405,11 +398,11 @@ function Principles() {
   const points = [
     {
       headline: "Ship beats perfect.",
-      body: "Shipped work teaches you things drafts never will. Perfect is a moving target — shipped is feedback.",
+      body: "I build tools to solve my own problems first, then share them. Shipped work teaches you things drafts never will.",
     },
     {
       headline: "AI agents are slot machines for programmers.",
-      body: "Fast, stochastic, occasionally brilliant. Set the stakes, pull the lever, and know when to walk.",
+      body: "Fast, stochastic, occasionally brilliant. I run 3–6 Claude instances at once — set the stakes, pull the lever, and know when to walk.",
     },
     {
       headline: "Full apps in days, not months.",
@@ -467,9 +460,9 @@ function Principles() {
 function Stack() {
   const groups: { label: string; items: string[] }[] = [
     { label: "Language", items: ["TypeScript", "JavaScript"] },
-    { label: "Framework", items: ["Next.js", "React", "Node.js"] },
+    { label: "Runtime", items: ["Node.js", "Next.js", "Web"] },
     { label: "AI", items: ["Claude", "Codex", "MCP"] },
-    { label: "Infra", items: ["Supabase", "Vercel", "CLI"] },
+    { label: "Interface", items: ["CLI", "Supabase", "Vercel"] },
   ];
 
   return (

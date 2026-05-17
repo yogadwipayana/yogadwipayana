@@ -38,7 +38,6 @@ export function Navbar() {
             className="inline-block h-2 w-2 rounded-full bg-[#3ecf8e] shadow-[0_0_12px_#3ecf8e]"
           />
           yoga
-          <span className="text-[#3ecf8e]">.</span>
         </Link>
 
         {/* Desktop: centered links */}

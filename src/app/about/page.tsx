@@ -71,14 +71,14 @@ function Intro() {
           </h1>
 
           <p className="max-w-xl text-[17px] leading-[1.65] text-white/70">
-            A polyagentmorous builder shipping developer tools out of Bali.
-            Three-plus years of modern web apps in my rearview. Lately I spend
-            most of my time exploring how AI changes everything about software
-            development — and building at ludicrous speed along the way.
+            A polyagentmorous builder making developer tools out of Bali.
+            Three-plus years of modern web apps behind me. These days, most of
+            my time goes to AI — what it changes about how software gets made,
+            and how fast you can move once you stop fighting it.
           </p>
 
           <p className="max-w-xl text-[15px] leading-[1.65] text-white/50">
-            This site is my portfolio and the hub where I actually run those
+            This site is the portfolio and the hub where I actually run those
             tools. Less a résumé, more a working surface.
           </p>
 
@@ -197,7 +197,7 @@ function Now() {
       icon: Hammer,
       kind: "Building",
       title: "OpenClaw v2",
-      body: "An AI that actually does things — rebuilding the core agent loop to feel less like a demo and more like a daily tool.",
+      body: "Rebuilding the core agent loop so it feels less like a demo and more like a daily tool.",
       updated: "this week",
     },
     {
@@ -293,7 +293,7 @@ function Projects() {
     },
     {
       name: "Dwipa",
-      blurb: "The studio shipping these tools out of Bali.",
+      blurb: "The studio behind these tools, run out of Bali.",
       href: "#",
       tags: ["Studio"],
       year: "2024 →",
@@ -405,7 +405,7 @@ function Principles() {
   const points = [
     {
       headline: "Ship beats perfect.",
-      body: "Shipped tools teach more than drafts. Perfect is a moving target; shipped is feedback.",
+      body: "Shipped work teaches you things drafts never will. Perfect is a moving target — shipped is feedback.",
     },
     {
       headline: "AI agents are slot machines for programmers.",
@@ -413,7 +413,7 @@ function Principles() {
     },
     {
       headline: "Full apps in days, not months.",
-      body: "Small scope, fast loop, running instance by the end of the week. Everything else is theatre.",
+      body: "Small scope, fast loop, a running instance by Friday. Everything else is theatre.",
     },
   ];
 
@@ -544,9 +544,8 @@ function Connect() {
                 Say hi — or just watch me ship.
               </h2>
               <p className="mt-3 max-w-md text-[15px] leading-[1.65] text-white/60">
-                I&rsquo;m easiest to reach through the usual places. If
-                you&rsquo;re building something weird with AI, I&rsquo;d love
-                to see it.
+                Easiest to reach on GitHub or LinkedIn. If you&rsquo;re
+                building something weird with AI, I want to see it.
               </p>
             </div>
 

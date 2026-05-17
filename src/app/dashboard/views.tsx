@@ -1,172 +1,90 @@
 "use client";
 
+import Link from "next/link";
+import { useState } from "react";
 import {
   Activity,
+  ArrowRight,
   ArrowUp,
-  Bot,
-  Cpu,
-  Globe,
-  HardDrive,
-  MemoryStick,
-  Play,
+  ChevronUp,
+  Copy,
+  CreditCard,
+  Key,
   Plus,
   RotateCw,
-  Square,
-  TerminalSquare,
-  User,
+  Sparkles,
 } from "lucide-react";
 
 import type {
   AiRoute,
   ChatConversation,
   ChatMessage,
-  VpsInstance,
-  VpsStatus,
 } from "./data";
-import { AI_RECENT_CALLS } from "./data";
+import { AI_MODELS, AI_RECENT_CALLS } from "./data";
+
+export { VpsView } from "./vps-view";
 
 /* -------------------------------------------------------------------------- */
-/*  VPS                                                                       */
+/*  AI Overview (landing)                                                      */
 /* -------------------------------------------------------------------------- */
 
-export function VpsView({ instance }: { instance: VpsInstance }) {
-  const metrics = [
-    { label: "CPU", value: `${instance.cpu}%`, pct: instance.cpu, icon: Cpu, sub: `${instance.vcpu} vCPU` },
-    { label: "Memory", value: `${instance.memory}%`, pct: instance.memory, icon: MemoryStick, sub: `${instance.memoryGb} GB` },
-    { label: "Disk", value: `${instance.disk}%`, pct: instance.disk, icon: HardDrive, sub: `${instance.diskGb} GB SSD` },
-    { label: "Network", value: "48 Mb/s", pct: 32, icon: Activity, sub: "in/out" },
+export function AiOverview() {
+  const cards = [
+    {
+      href: "/dashboard/ai/usage",
+      icon: Activity,
+      label: "Usage",
+      description: "Monitor token consumption, request counts, and credit balance.",
+    },
+    {
+      href: "/dashboard/ai/keys",
+      icon: Key,
+      label: "Keys",
+      description: "Create and manage API keys for authenticating requests.",
+    },
+    {
+      href: "/dashboard/ai/billing",
+      icon: CreditCard,
+      label: "Billing",
+      description: "Top up your pay-as-you-go credit balance via bank transfer.",
+    },
   ];
 
   return (
-    <div className="flex flex-col gap-6 p-6 sm:p-8">
-      {/* Header */}
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <StatusDot status={instance.status} />
-            <h2 className="font-mono text-[22px] font-medium tracking-[-0.01em] text-white">
-              {instance.name}
-            </h2>
-            <StatusBadge status={instance.status} />
-          </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[13px] text-white/55">
-            <span className="inline-flex items-center gap-1.5">
-              <Globe className="h-3.5 w-3.5" aria-hidden />
-              {instance.region}
-            </span>
-            <span className="text-white/20">·</span>
-            <span className="font-mono">{instance.ipv4}</span>
-            <span className="text-white/20">·</span>
-            <span>uptime {instance.uptime}</span>
-          </div>
-        </div>
+    <div className="flex h-full flex-col items-center justify-center p-6 sm:p-10">
+      <div className="w-full max-w-xl">
+        <h2 className="text-[18px] font-medium text-white">AI Router</h2>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-white/45">
+          OpenAI-compatible API endpoint — access top models with a single key, billed pay as you go.
+        </p>
 
-        <div className="flex flex-wrap gap-2">
-          {instance.status === "running" ? (
-            <Action icon={Square} label="Stop" />
-          ) : (
-            <Action icon={Play} label="Start" primary />
-          )}
-          <Action icon={RotateCw} label="Reboot" />
-          <Action icon={TerminalSquare} label="SSH" />
-        </div>
-      </header>
-
-      {/* Metrics grid */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {metrics.map(({ label, value, pct, icon: Icon, sub }) => (
-          <div
-            key={label}
-            className="rounded-lg border border-white/[0.08] bg-[#171717] p-4"
-          >
-            <div className="flex items-center justify-between text-white/40">
-              <span className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.1em]">
-                <Icon className="h-3 w-3" aria-hidden />
-                {label}
+        <div className="mt-6 grid gap-3">
+          {cards.map((card) => (
+            <Link
+              key={card.href}
+              href={card.href}
+              className="group flex items-center gap-4 rounded-lg border border-white/[0.08] bg-[#171717] p-4 transition-colors hover:border-white/[0.14] hover:bg-white/[0.04]"
+            >
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.04] text-white/50 group-hover:border-[#3ecf8e]/30 group-hover:text-[#3ecf8e] transition-colors">
+                <card.icon className="h-4 w-4" />
               </span>
-              <span className="font-mono text-[10px]">{sub}</span>
-            </div>
-            <div className="mt-2 text-[22px] font-medium tracking-tight text-white">
-              {value}
-            </div>
-            <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-white/[0.06]">
-              <div
-                className="h-full rounded-full bg-[#3ecf8e]"
-                style={{ width: `${Math.max(2, pct)}%` }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[14px] font-medium text-white">{card.label}</p>
+                <p className="mt-0.5 text-[12px] leading-relaxed text-white/40">{card.description}</p>
+              </div>
+              <ArrowRight className="h-4 w-4 shrink-0 text-white/20 group-hover:text-white/50 transition-colors" />
+            </Link>
+          ))}
+        </div>
 
-      {/* SSH + log */}
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_1fr]">
-        <CodeBlock
-          title="SSH"
-          lines={[
-            `$ ssh root@${instance.ipv4}`,
-            "Welcome to Ubuntu 24.04 LTS",
-            "Last login: Tue May 13 09:32:11 +08 2026",
-          ]}
-        />
-        <Panel title="Recent activity">
-          <ul className="divide-y divide-white/[0.04] font-mono text-[12px]">
-            <LogRow ts="09:32:11" text="SSH login from 103.157.xx.xx" />
-            <LogRow ts="09:15:02" text="systemd: bot-runner.service restarted" />
-            <LogRow ts="08:44:57" text="apt: 3 packages upgraded" tone="soft" />
-            <LogRow ts="04:12:00" text="cron: snapshot created" tone="soft" />
-          </ul>
-        </Panel>
+        <div className="mt-5 rounded-md border border-white/[0.05] bg-white/[0.02] p-4 text-[12px] leading-relaxed text-white/35">
+          <span className="font-mono text-white/55">POST</span>{" "}
+          <span className="font-mono">https://api.dwipa.my.id/v1/chat/completions</span>
+          <br />
+          Compatible with any OpenAI SDK — just point to this base URL and use your API key.
+        </div>
       </div>
     </div>
-  );
-}
-
-function StatusDot({ status }: { status: VpsStatus }) {
-  const cls =
-    status === "running"
-      ? "bg-[#3ecf8e] shadow-[0_0_10px_#3ecf8e]"
-      : status === "rebooting"
-        ? "bg-yellow-400"
-        : "bg-white/30";
-  return <span aria-hidden className={`inline-block h-2 w-2 rounded-full ${cls}`} />;
-}
-
-function StatusBadge({ status }: { status: VpsStatus }) {
-  const cls =
-    status === "running"
-      ? "border-[#3ecf8e]/20 bg-[#3ecf8e]/10 text-[#3ecf8e]"
-      : status === "rebooting"
-        ? "border-yellow-500/20 bg-yellow-500/10 text-yellow-300"
-        : "border-white/[0.08] bg-white/[0.04] text-white/50";
-  return (
-    <span
-      className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.1em] ${cls}`}
-    >
-      {status}
-    </span>
-  );
-}
-
-function Action({
-  icon: Icon,
-  label,
-  primary,
-}: {
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
-  label: string;
-  primary?: boolean;
-}) {
-  const base =
-    "inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium transition-colors";
-  const style = primary
-    ? "bg-[#3ecf8e] text-[#171717] hover:bg-[#24b47e]"
-    : "border border-white/[0.1] bg-white/[0.03] text-white/85 hover:border-white/20 hover:bg-white/[0.06]";
-  return (
-    <button type="button" className={`${base} ${style}`}>
-      <Icon className="h-3.5 w-3.5" aria-hidden />
-      {label}
-    </button>
   );
 }
 
@@ -300,114 +218,287 @@ function MetricCard({
   );
 }
 
+function Action({
+  icon: Icon,
+  label,
+  primary,
+}: {
+  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  label: string;
+  primary?: boolean;
+}) {
+  const base =
+    "inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium transition-colors";
+  const style = primary
+    ? "bg-[#3ecf8e] text-[#171717] hover:bg-[#24b47e]"
+    : "border border-white/[0.1] bg-white/[0.03] text-white/85 hover:border-white/20 hover:bg-white/[0.06]";
+  return (
+    <button type="button" className={`${base} ${style}`}>
+      <Icon className="h-3.5 w-3.5" aria-hidden />
+      {label}
+    </button>
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Chat AI                                                                   */
 /* -------------------------------------------------------------------------- */
 
 export function ChatView({ conversation }: { conversation: ChatConversation }) {
+  const [activeModel, setActiveModel] = useState(conversation.model);
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <header className="flex items-center justify-between border-b border-white/[0.06] px-6 py-4 sm:px-8">
-        <div className="min-w-0">
-          <h2 className="truncate text-[17px] font-medium tracking-[-0.01em] text-white">
-            {conversation.title}
-          </h2>
-          <div className="mt-0.5 flex items-center gap-3 text-[12px] text-white/45">
-            <span className="font-mono">{conversation.model}</span>
-            <span className="text-white/20">·</span>
-            <span>{conversation.updatedAt}</span>
+      <header className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-5 py-3 sm:px-6">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2.5">
+            <h2 className="truncate text-[15px] font-medium tracking-[-0.01em] text-white">
+              {conversation.title}
+            </h2>
+            <span className="shrink-0 rounded-full border border-[#3ecf8e]/20 bg-[#3ecf8e]/[0.07] px-2.5 py-0.5 font-mono text-[10px] text-[#3ecf8e]/70">
+              {activeModel}
+            </span>
           </div>
+          <p className="mt-0.5 text-[11px] text-white/30">
+            {conversation.messages.length} messages · {conversation.updatedAt}
+          </p>
         </div>
         <button
           type="button"
-          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-3 text-[12px] text-white/70 hover:border-white/20 hover:bg-white/[0.06] hover:text-white"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[12px] font-medium text-white/60 transition-colors hover:border-[#3ecf8e]/25 hover:bg-[#3ecf8e]/[0.07] hover:text-[#3ecf8e]"
         >
           <Plus className="h-3.5 w-3.5" aria-hidden />
-          New
+          New chat
         </button>
       </header>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-6 py-6 sm:px-8">
-        <ul className="mx-auto flex max-w-3xl flex-col gap-5">
-          {conversation.messages.map((m) => (
-            <ChatBubble key={m.id} message={m} />
+      <div className="flex-1 overflow-y-auto">
+        <div className="mx-auto flex max-w-2xl flex-col px-5 py-6 sm:px-6">
+          {conversation.messages.map((m, i) => (
+            <ChatBubble
+              key={m.id}
+              message={m}
+              prevRole={i > 0 ? conversation.messages[i - 1].role : null}
+            />
           ))}
-        </ul>
+        </div>
       </div>
 
       {/* Input */}
-      <div className="border-t border-white/[0.06] bg-[#171717] px-6 py-4 sm:px-8">
-        <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-lg border border-white/[0.08] bg-[#1c1c1c] p-2 focus-within:border-[#3ecf8e]/40">
-          <textarea
-            rows={1}
-            placeholder="Reply…"
-            className="max-h-40 min-h-[36px] flex-1 resize-none bg-transparent px-2 py-1.5 text-[14px] leading-relaxed text-white placeholder:text-white/30 focus:outline-none"
-          />
-          <button
-            type="button"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[#3ecf8e] text-[#171717] hover:bg-[#24b47e]"
-            aria-label="Send"
-          >
-            <ArrowUp className="h-4 w-4" aria-hidden />
-          </button>
+      <div className="shrink-0 border-t border-white/[0.06] px-5 py-4 sm:px-6">
+        <div className="mx-auto max-w-2xl">
+          <div className="relative rounded-xl border border-white/[0.08] bg-[#171717] transition-colors focus-within:border-white/[0.16]">
+            <textarea
+              rows={1}
+              placeholder="Message Chat AI…"
+              className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-14 text-[14px] leading-relaxed text-white placeholder:text-white/25 focus:outline-none"
+              style={{ minHeight: "56px", maxHeight: "200px" }}
+            />
+            <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-3 pb-3">
+              <ModelSelector model={activeModel} onSelect={setActiveModel} />
+              <button
+                type="button"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#3ecf8e] text-[#171717] transition-colors hover:bg-[#24b47e]"
+                aria-label="Send message"
+              >
+                <ArrowUp className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            </div>
+          </div>
+          <p className="mt-2 text-center text-[11px] text-white/20">
+            <kbd className="rounded border border-white/[0.08] px-1 py-0.5 font-mono text-[10px]">
+              Enter
+            </kbd>{" "}
+            to send ·{" "}
+            <kbd className="rounded border border-white/[0.08] px-1 py-0.5 font-mono text-[10px]">
+              Shift+Enter
+            </kbd>{" "}
+            for new line
+          </p>
         </div>
       </div>
     </div>
   );
 }
 
-function ChatBubble({ message }: { message: ChatMessage }) {
+function ChatBubble({
+  message,
+  prevRole,
+}: {
+  message: ChatMessage;
+  prevRole: "user" | "assistant" | null;
+}) {
   const isUser = message.role === "user";
+  const isFirstInGroup = prevRole !== message.role;
   const body = renderChatContent(message.content);
 
+  if (isUser) {
+    return (
+      <div className={`flex justify-end ${isFirstInGroup ? "mt-5" : "mt-1"}`}>
+        <div className="max-w-[80%] rounded-2xl rounded-br-md border border-[#3ecf8e]/12 bg-[#3ecf8e]/[0.07] px-4 py-3 text-[14px] leading-relaxed text-white/90">
+          {body}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <li className={`flex items-start gap-3 ${isUser ? "flex-row-reverse" : ""}`}>
-      <span
-        className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border ${
-          isUser
-            ? "border-[#3ecf8e]/30 bg-[#3ecf8e]/15 text-[#3ecf8e]"
-            : "border-white/10 bg-white/[0.04] text-white/70"
-        }`}
-      >
-        {isUser ? (
-          <User className="h-3.5 w-3.5" aria-hidden />
-        ) : (
-          <Bot className="h-3.5 w-3.5" aria-hidden />
-        )}
-      </span>
-      <div
-        className={`max-w-[85%] rounded-lg border px-4 py-3 text-[14px] leading-relaxed ${
-          isUser
-            ? "border-[#3ecf8e]/20 bg-[#3ecf8e]/5 text-white"
-            : "border-white/[0.08] bg-[#171717] text-white/85"
-        }`}
-      >
+    <div className={`flex items-start gap-2.5 ${isFirstInGroup ? "mt-5" : "mt-1"}`}>
+      {isFirstInGroup ? (
+        <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.04] text-white/40">
+          <Sparkles className="h-3 w-3" aria-hidden />
+        </span>
+      ) : (
+        <span className="inline-flex h-6 w-6 shrink-0" aria-hidden />
+      )}
+      <div className="min-w-0 flex-1 text-[14px] leading-relaxed text-white/80">
         {body}
       </div>
-    </li>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Model selector dropdown                                                   */
+/* -------------------------------------------------------------------------- */
+
+function ModelSelector({
+  model,
+  onSelect,
+}: {
+  model: string;
+  onSelect: (slug: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const active = AI_MODELS.find((m) => m.slug === model) ?? AI_MODELS[0];
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 rounded-full border border-white/[0.06] bg-[#1c1c1c] px-2.5 py-1 font-mono text-[10px] tracking-tight text-white/40 transition-colors hover:border-white/[0.12] hover:text-white/60"
+      >
+        <Sparkles className="h-2.5 w-2.5 text-[#3ecf8e]/60" aria-hidden />
+        {active.slug}
+        <ChevronUp
+          className={`h-2.5 w-2.5 transition-transform ${open ? "rotate-180" : ""}`}
+          aria-hidden
+        />
+      </button>
+
+      {open && (
+        <>
+          {/* Backdrop */}
+          <button
+            type="button"
+            className="fixed inset-0 z-10"
+            aria-label="Close model picker"
+            onClick={() => setOpen(false)}
+          />
+
+          {/* Dropdown panel — opens upward */}
+          <div className="absolute bottom-full left-0 z-20 mb-2 w-60 overflow-hidden rounded-lg border border-white/[0.08] bg-[#171717] shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+            <div className="border-b border-white/[0.05] px-3 py-2">
+              <span className="text-[10px] uppercase tracking-widest text-white/30">
+                Model
+              </span>
+            </div>
+            <ul className="p-1">
+              {AI_MODELS.map((m) => (
+                <li key={m.slug}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelect(m.slug);
+                      setOpen(false);
+                    }}
+                    className={`flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left transition-colors hover:bg-white/[0.05] ${
+                      model === m.slug ? "text-white" : "text-white/55"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <span className="block truncate text-[12px] font-medium leading-none">
+                        {m.name}
+                      </span>
+                      <span className="mt-0.5 block text-[10px] text-white/30">
+                        {m.provider}
+                      </span>
+                    </div>
+                    {model === m.slug && (
+                      <span
+                        aria-hidden
+                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#3ecf8e]"
+                      />
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
 function renderChatContent(content: string) {
-  // Extremely tiny markdown: fenced code blocks only. Everything else is plain text.
+  // Fenced code blocks first, then inline code.
   const parts = content.split(/(```[\s\S]*?```)/g);
   return parts.map((part, i) => {
     if (part.startsWith("```") && part.endsWith("```")) {
-      const body = part.slice(3, -3).replace(/^[a-zA-Z]+\n/, "");
+      const withoutFences = part.slice(3, -3);
+      const langMatch = withoutFences.match(/^([a-zA-Z]+)\n/);
+      const lang = langMatch?.[1] ?? null;
+      const code = lang ? withoutFences.slice(lang.length + 1) : withoutFences;
       return (
-        <pre
+        <div
           key={i}
-          className="my-2 overflow-x-auto rounded-md border border-white/[0.06] bg-[#0f0f0f] p-3 font-mono text-[12px] text-white/90"
+          className="my-3 overflow-hidden rounded-lg border border-white/[0.07] bg-[#0f0f0f]"
         >
-          <code>{body}</code>
-        </pre>
+          {lang && (
+            <div className="flex items-center justify-between border-b border-white/[0.05] px-3 py-1.5">
+              <span className="font-mono text-[10px] uppercase tracking-widest text-white/30">
+                {lang}
+              </span>
+              <button
+                type="button"
+                className="flex items-center gap-1 text-[10px] text-white/30 transition-colors hover:text-white/60"
+              >
+                <Copy className="h-2.5 w-2.5" aria-hidden />
+                Copy
+              </button>
+            </div>
+          )}
+          <pre className="overflow-x-auto p-3.5 font-mono text-[12.5px] leading-relaxed text-white/85">
+            <code>{code}</code>
+          </pre>
+        </div>
       );
     }
+    // Inline backtick code
+    const inlineParts = part.split(/(`[^`\n]+`)/g);
     return (
-      <span key={i} className="whitespace-pre-wrap">
-        {part}
+      <span key={i}>
+        {inlineParts.map((p, j) => {
+          if (p.startsWith("`") && p.endsWith("`") && p.length > 2) {
+            return (
+              <code
+                key={j}
+                className="mx-0.5 rounded border border-white/[0.08] bg-white/[0.05] px-1.5 py-0.5 font-mono text-[12px] text-[#3ecf8e]/75"
+              >
+                {p.slice(1, -1)}
+              </code>
+            );
+          }
+          return (
+            <span key={j} className="whitespace-pre-wrap">
+              {p}
+            </span>
+          );
+        })}
       </span>
     );
   });

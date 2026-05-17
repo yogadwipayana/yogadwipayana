@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 
 import { Footer } from "@/components/layout/Footer";
 import { Navbar } from "@/components/layout/Navbar";
@@ -88,7 +89,9 @@ function AuthCard() {
 
         <Divider label="or with email" />
 
-        <EmailOtpForm />
+        <Suspense fallback={null}>
+          <EmailOtpForm />
+        </Suspense>
 
         <div className="mt-6 border-t border-white/[0.06] pt-5 text-center text-[13px] text-white/55">
           Don&rsquo;t have an account yet?{" "}

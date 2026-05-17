@@ -417,7 +417,7 @@ function SubSidebar({
 }
 
 const TOOL_CREATE_HREF: Partial<Record<ToolId, string>> = {
-  vps: "/dashboard/vps/order",
+  vps: "/dashboard/vps/byok",
   ai:  "/dashboard/ai/keys",
 };
 

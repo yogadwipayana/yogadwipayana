@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import { CheckCircle2 } from "lucide-react";
 
 import { Footer } from "@/components/layout/Footer";
 import { Navbar } from "@/components/layout/Navbar";
+import { EmailOtpForm } from "../sign-in/email-otp-form";
 
 export const metadata: Metadata = {
   title: "Sign up",
@@ -84,6 +86,16 @@ function AuthCard() {
             <GithubIcon className="h-5 w-5" />
             Continue with GitHub
           </button>
+
+          <div className="my-2 flex items-center gap-3 text-[11px] uppercase tracking-[0.12em] text-white/40">
+            <span className="h-px flex-1 bg-white/[0.08]" />
+            or with email
+            <span className="h-px flex-1 bg-white/[0.08]" />
+          </div>
+
+          <Suspense fallback={null}>
+            <EmailOtpForm mode="sign-up" />
+          </Suspense>
 
           <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-md border border-white/[0.08] bg-[#1c1c1c] p-3 text-[13px] leading-relaxed text-white/70 transition-colors hover:border-white/15 has-[input:checked]:border-[#3ecf8e]/40 has-[input:checked]:bg-[#3ecf8e]/5">
             <input

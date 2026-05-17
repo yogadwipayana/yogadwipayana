@@ -1,15 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { MessageCircle, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import Image from "next/image";
+import { Download, Maximize2, MessageCircle, QrCode, X } from "lucide-react";
 
 /* -------------------------------------------------------------------------- */
-/*  Mock state                                                                 */
+/*  Constants                                                                  */
 /* -------------------------------------------------------------------------- */
 
-const WA_NUMBER    = "6287889640714";
-const ACCOUNT_NO   = "4160604196";
-const ACCOUNT_NAME = "I KADEK YOGA DWIPAYANA";
+const WA_NUMBER     = "6287889640714";
+const MERCHANT_NAME = "I KADEK YOGA DWIPAYANA";
+const QRIS_SRC      = "/qris.jpg";
 
 /* -------------------------------------------------------------------------- */
 /*  Page                                                                       */
@@ -23,6 +24,7 @@ export default function AiBillingPage() {
   const [addFundsAmount, setAddFundsAmount] = useState("");
   const [paymentCreated, setPaymentCreated] = useState<{ ref: string; amount: string } | null>(null);
   const [addFundsError, setAddFundsError] = useState<string | null>(null);
+  const [qrPreviewOpen, setQrPreviewOpen] = useState(false);
 
   function handleCreateAddFunds() {
     const amount = Number(addFundsAmount);
@@ -42,7 +44,21 @@ export default function AiBillingPage() {
   }
 
   const waMessage = (ref: string, amount: string) =>
-    encodeURIComponent(`Halo Dwipa, saya sudah membayar.\nReference: ${ref}\nAmount: ${amount}\nMohon konfirmasi pembayaran ini.`);
+    encodeURIComponent(`Halo Dwipa, saya sudah membayar via QRIS.\nReference: ${ref}\nAmount: ${amount}\nMohon konfirmasi pembayaran ini.`);
+
+  useEffect(() => {
+    if (!qrPreviewOpen) return;
+    const original = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setQrPreviewOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = original;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [qrPreviewOpen]);
 
   return (
     <div className="pb-12 text-white">
@@ -78,7 +94,7 @@ export default function AiBillingPage() {
           <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5 text-[13px]">
             <p className="text-[10px] uppercase tracking-[0.1em] text-white/30 mb-4">How it works</p>
             <ul className="space-y-2.5 text-white/50 leading-relaxed">
-              <li>• Top up your balance in IDR via bank transfer</li>
+              <li>• Top up your balance in IDR via QRIS</li>
               <li>• Requests are charged at standard model rates per 1M tokens</li>
               <li>• No subscription — only pay for what you use</li>
               <li>• Balance never expires</li>
@@ -94,8 +110,8 @@ export default function AiBillingPage() {
           <div className="divide-y divide-white/[0.04]">
             {[
               { label: "Pay as you go",  detail: "Charged per token · standard model rates", badge: "current" },
-              { label: "No minimum",     detail: "Top up any amount in IDR via bank transfer", badge: null },
-              { label: "Manual top-up",  detail: "Transfer confirmed by admin within 1 business day", badge: null },
+              { label: "No minimum",     detail: "Top up any amount in IDR via QRIS", badge: null },
+              { label: "Manual top-up",  detail: "Payment confirmed by admin within 1 business day", badge: null },
             ].map((row) => (
               <div key={row.label} className="flex items-center justify-between gap-4 px-5 py-4">
                 <div className="flex items-center gap-2">
@@ -127,11 +143,48 @@ export default function AiBillingPage() {
                   <p className="mt-2 text-[10px] uppercase tracking-[0.1em] text-white/30">Amount</p>
                   <p className="mt-1 text-[22px] font-medium text-[#3ecf8e]">{paymentCreated.amount}</p>
                 </div>
-                <div className="rounded-md border border-white/[0.06] bg-white/[0.03] p-4 text-[12px] space-y-1 text-white/50">
-                  <p>Bank: <span className="text-white/80">BCA</span></p>
-                  <p>Account: <span className="text-white/80">{ACCOUNT_NO}</span></p>
-                  <p>Name: <span className="text-white/80">{ACCOUNT_NAME}</span></p>
+
+                <div className="rounded-md border border-white/[0.06] bg-white/[0.03] p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <QrCode className="h-3.5 w-3.5 text-[#3ecf8e]" />
+                      <p className="text-[12px] font-medium text-white">Scan to pay</p>
+                    </div>
+                    <span className="text-[10px] uppercase tracking-[0.1em] text-white/30">QRIS</span>
+                  </div>
+                  <div className="rounded-md bg-white p-3">
+                    <Image
+                      src={QRIS_SRC}
+                      alt="QRIS payment code"
+                      width={1080}
+                      height={1344}
+                      className="h-auto w-full"
+                      priority
+                    />
+                  </div>
+                  <p className="mt-3 text-[11px] text-white/40">
+                    Merchant: <span className="text-white/70">{MERCHANT_NAME}</span>
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setQrPreviewOpen(true)}
+                      className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-white/[0.1] bg-white/[0.04] px-3 text-[12px] font-medium text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
+                    >
+                      <Maximize2 className="h-3.5 w-3.5" />
+                      Full
+                    </button>
+                    <a
+                      href={QRIS_SRC}
+                      download="qris-yogadwipayana.jpg"
+                      className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-white/[0.1] bg-white/[0.04] px-3 text-[12px] font-medium text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Save
+                    </a>
+                  </div>
                 </div>
+
                 <a
                   href={`https://wa.me/${WA_NUMBER}?text=${waMessage(paymentCreated.ref, paymentCreated.amount)}`}
                   target="_blank" rel="noopener noreferrer"
@@ -147,7 +200,7 @@ export default function AiBillingPage() {
             ) : (
               <>
                 <p className="text-[13px] text-white/45">
-                  Top up your pay-as-you-go credit balance. Transfer will be verified manually.
+                  Top up your pay-as-you-go credit balance. Payment will be verified manually.
                 </p>
                 <div>
                   <label className="mb-1.5 block text-[10px] uppercase tracking-[0.1em] text-white/35">Amount (IDR)</label>
@@ -172,6 +225,35 @@ export default function AiBillingPage() {
             )}
           </div>
         </Overlay>
+      )}
+
+      {qrPreviewOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="QRIS full preview"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 p-4"
+          onClick={() => setQrPreviewOpen(false)}
+        >
+          <button
+            type="button"
+            onClick={() => setQrPreviewOpen(false)}
+            className="absolute right-4 top-4 inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/15 bg-white/[0.06] text-white/70 transition-colors hover:bg-white/[0.12] hover:text-white"
+            aria-label="Close preview"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <div className="rounded-md bg-white p-3" onClick={(e) => e.stopPropagation()}>
+            <Image
+              src={QRIS_SRC}
+              alt="QRIS payment code full preview"
+              width={1080}
+              height={1344}
+              className="max-h-[calc(100vh-64px)] w-auto max-w-full"
+              priority
+            />
+          </div>
+        </div>
       )}
     </div>
   );
@@ -207,5 +289,3 @@ function ModalHeader({ title, onClose }: { title: string; onClose: () => void })
     </div>
   );
 }
-
-

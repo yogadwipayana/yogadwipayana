@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
-  ChevronDown,
   ExternalLink,
   HelpCircle,
   Home,
@@ -13,6 +12,7 @@ import {
   Settings,
   X,
 } from "lucide-react";
+import type { ToolId } from "./data";
 
 import {
   AI_ROUTES,
@@ -20,9 +20,9 @@ import {
   TOOLS,
   VPS_INSTANCES,
 } from "./data";
-import type { Tool, ToolId } from "./data";
+import type { Tool } from "./data";
 import {
-  AiRouterView,
+  AiOverview,
   ChatView,
   PlaceholderView,
   VpsView,
@@ -32,51 +32,35 @@ import {
 /*  Sub-sidebar sections                                                      */
 /* -------------------------------------------------------------------------- */
 
-type SubItem = { id: string; label: string; external?: boolean };
+type SubItem = { id: string; label: string; external?: boolean; status?: string; href?: string };
 type SubSection = { title: string; items: SubItem[] };
 
 const TOOL_SECTIONS: Record<ToolId, SubSection[]> = {
   vps: [
     {
       title: "Instances",
-      items: VPS_INSTANCES.map((i) => ({ id: i.id, label: i.name })),
-    },
-    {
-      title: "Configuration",
-      items: [
-        { id: "vps:ssh-keys", label: "SSH Keys" },
-        { id: "vps:snapshots", label: "Snapshots" },
-        { id: "vps:firewalls", label: "Firewalls" },
-      ],
+      items: VPS_INSTANCES.map((i) => ({ id: i.id, label: i.name, status: i.status })),
     },
     {
       title: "Platform",
       items: [
-        { id: "vps:billing", label: "Billing" },
-        { id: "vps:activity", label: "Activity Log" },
-        { id: "vps:webhooks", label: "Webhooks", external: true },
+        { id: "vps:byok", label: "BYOK", href: "/dashboard/vps/byok" },
       ],
     },
   ],
   ai: [
     {
-      title: "Routes",
-      items: AI_ROUTES.map((r) => ({ id: r.id, label: r.name })),
-    },
-    {
-      title: "Configuration",
+      title: "Settings",
       items: [
-        { id: "ai:keys", label: "API Keys" },
-        { id: "ai:models", label: "Models" },
-        { id: "ai:fallbacks", label: "Fallbacks" },
+        { id: "ai:usage",   label: "Usage",   href: "/dashboard/ai/usage" },
+        { id: "ai:keys",    label: "Keys",    href: "/dashboard/ai/keys" },
+        { id: "ai:billing", label: "Billing", href: "/dashboard/ai/billing" },
       ],
     },
     {
-      title: "Platform",
+      title: "Reference",
       items: [
-        { id: "ai:usage", label: "Usage" },
-        { id: "ai:billing", label: "Billing" },
-        { id: "ai:webhooks", label: "Webhooks", external: true },
+        { id: "ai:models", label: "Models", href: "/dashboard/ai/models" },
       ],
     },
   ],
@@ -101,18 +85,7 @@ const TOOL_SECTIONS: Record<ToolId, SubSection[]> = {
 };
 
 const PLACEHOLDER_LABELS: Record<string, { title: string; description: string }> = {
-  "vps:ssh-keys": { title: "SSH Keys", description: "Manage the keys that can sign into your instances." },
-  "vps:snapshots": { title: "Snapshots", description: "Point-in-time copies of your instance volumes." },
-  "vps:firewalls": { title: "Firewalls", description: "Per-instance ingress and egress rules." },
-  "vps:billing": { title: "Billing", description: "Hourly usage broken down per instance and region." },
-  "vps:activity": { title: "Activity Log", description: "Provisioning, reboots, and snapshot events." },
-  "vps:webhooks": { title: "Webhooks", description: "Push instance events into your own backend." },
-  "ai:keys": { title: "API Keys", description: "Issue and rotate keys that hit the router." },
-  "ai:models": { title: "Models", description: "Available models per provider and route." },
   "ai:fallbacks": { title: "Fallbacks", description: "Per-route fallback chain when the primary model fails." },
-  "ai:usage": { title: "Usage", description: "Tokens, requests, and spend across the router." },
-  "ai:billing": { title: "Billing", description: "Invoices, credits, and payment method." },
-  "ai:webhooks": { title: "Webhooks", description: "Delivery hooks for completion and error events." },
   "chat:models": { title: "Models", description: "Default and per-conversation model selection." },
   "chat:prompts": { title: "System Prompts", description: "Reusable prompt blocks pinned across conversations." },
   "chat:memory": { title: "Memory", description: "Long-term memory entries the assistant references." },
@@ -123,29 +96,23 @@ const PLACEHOLDER_LABELS: Record<string, { title: string; description: string }>
 /*  Shell                                                                     */
 /* -------------------------------------------------------------------------- */
 
-export function DashboardShell() {
-  const [activeTool, setActiveTool] = useState<ToolId>("vps");
+export function DashboardShell({ toolId, children }: { toolId: ToolId; children?: React.ReactNode }) {
   const [activeItems, setActiveItems] = useState<Record<ToolId, string>>({
     vps: VPS_INSTANCES[0].id,
-    ai: AI_ROUTES[0].id,
+    ai: "ai:usage",
     chat: CHAT_CONVERSATIONS[0].id,
   });
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const tool = useMemo(
-    () => TOOLS.find((t) => t.id === activeTool) ?? TOOLS[0],
-    [activeTool],
+    () => TOOLS.find((t) => t.id === toolId) ?? TOOLS[0],
+    [toolId],
   );
 
-  const sections = TOOL_SECTIONS[activeTool];
+  const sections = TOOL_SECTIONS[toolId];
 
   const setItem = (id: string) =>
-    setActiveItems((prev) => ({ ...prev, [activeTool]: id }));
-
-  const openTool = (id: ToolId) => {
-    setActiveTool(id);
-    setDrawerOpen(false);
-  };
+    setActiveItems((prev) => ({ ...prev, [toolId]: id }));
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#1c1c1c] text-white selection:bg-[#3ecf8e]/30 selection:text-white">
@@ -156,22 +123,19 @@ export function DashboardShell() {
 
       <div className="flex min-h-0 flex-1">
         {/* Primary sidebar (icon rail) — desktop only */}
-        <PrimarySidebar
-          activeTool={activeTool}
-          onChange={openTool}
-        />
+        <PrimarySidebar activeTool={toolId} />
 
         {/* Sub-sidebar — desktop only */}
         <SubSidebar
           tool={tool}
           sections={sections}
-          activeItem={activeItems[activeTool]}
+          activeItem={activeItems[toolId]}
           onSelectItem={setItem}
         />
 
         {/* Main working surface */}
         <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-[#1c1c1c]">
-          {renderMain(activeTool, activeItems[activeTool])}
+          {children ?? renderMain(toolId, activeItems[toolId])}
         </main>
       </div>
 
@@ -180,9 +144,8 @@ export function DashboardShell() {
         <MobileDrawer
           tool={tool}
           sections={sections}
-          activeTool={activeTool}
-          activeItem={activeItems[activeTool]}
-          onChangeTool={openTool}
+          activeTool={toolId}
+          activeItem={activeItems[toolId]}
           onSelectItem={(id) => {
             setItem(id);
             setDrawerOpen(false);
@@ -218,8 +181,7 @@ function renderMain(activeTool: ToolId, activeItemId: string): React.ReactNode {
     return <VpsView instance={instance} />;
   }
   if (activeTool === "ai") {
-    const route = AI_ROUTES.find((r) => r.id === activeItemId) ?? AI_ROUTES[0];
-    return <AiRouterView route={route} />;
+    return <AiOverview />;
   }
   const conversation =
     CHAT_CONVERSATIONS.find((c) => c.id === activeItemId) ??
@@ -258,37 +220,15 @@ function TopBar({
             aria-hidden
             className="inline-block h-2 w-2 rounded-full bg-[#3ecf8e] shadow-[0_0_8px_#3ecf8e]"
           />
-          yoga<span className="text-[#3ecf8e]">.</span>
+          yoga
         </Link>
 
         <Crumb />
 
-        <button
-          type="button"
-          className="hidden h-8 items-center gap-1.5 rounded-md px-2 text-[13px] text-white/75 transition-colors hover:bg-white/5 hover:text-white sm:inline-flex"
-        >
-          portfolio
-          <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-white/50">
-            free
-          </span>
-          <ChevronDown className="h-3 w-3 text-white/40" aria-hidden />
-        </button>
-
-        <span className="hidden sm:inline">
-          <Crumb />
-        </span>
-
-        <button
-          type="button"
-          className="inline-flex h-8 min-w-0 items-center gap-1.5 rounded-md px-2 text-[13px] text-white/85 transition-colors hover:bg-white/5"
-        >
-          <tool.icon className="h-3.5 w-3.5 text-white/60" aria-hidden />
+        <span className="inline-flex h-8 min-w-0 items-center gap-1.5 rounded-md px-2 text-[13px] text-white/70">
+          <tool.icon className="h-3.5 w-3.5 text-white/45" aria-hidden />
           <span className="truncate">{tool.name}</span>
-          <span className="rounded-full border border-[#3ecf8e]/20 bg-[#3ecf8e]/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.12em] text-[#3ecf8e]">
-            dev
-          </span>
-          <ChevronDown className="h-3 w-3 text-white/40" aria-hidden />
-        </button>
+        </span>
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
@@ -343,13 +283,7 @@ function Crumb() {
 /*  Primary sidebar (icon rail, no expand)                                    */
 /* -------------------------------------------------------------------------- */
 
-function PrimarySidebar({
-  activeTool,
-  onChange,
-}: {
-  activeTool: ToolId;
-  onChange: (id: ToolId) => void;
-}) {
+function PrimarySidebar({ activeTool }: { activeTool: ToolId }) {
   return (
     <div className="relative hidden w-12 shrink-0 sm:block">
       <aside className="group absolute inset-y-0 left-0 z-20 flex w-12 flex-col overflow-hidden border-r border-white/[0.08] bg-[#0f0f0f] py-2 transition-[width] duration-200 ease-out hover:w-[220px] hover:shadow-[8px_0_24px_rgba(0,0,0,0.35)]">
@@ -371,7 +305,7 @@ function PrimarySidebar({
               icon={<t.icon className="h-4 w-4" aria-hidden />}
               label={t.name}
               active={t.id === activeTool}
-              onClick={() => onChange(t.id)}
+              href={`/dashboard/${t.id}`}
             />
           ))}
         </nav>
@@ -482,20 +416,40 @@ function SubSidebar({
   );
 }
 
+const TOOL_CREATE_HREF: Partial<Record<ToolId, string>> = {
+  vps: "/dashboard/vps/order",
+  ai:  "/dashboard/ai/keys",
+};
+
 function SubSidebarHeader({ tool }: { tool: Tool }) {
+  const createHref = TOOL_CREATE_HREF[tool.id];
+  const btnCls =
+    "inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.03] text-white/70 transition-colors hover:border-[#3ecf8e]/40 hover:bg-[#3ecf8e]/10 hover:text-[#3ecf8e]";
+
   return (
     <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
       <h2 className="text-[15px] font-medium tracking-[-0.01em] text-white">
         {tool.name}
       </h2>
-      <button
-        type="button"
-        aria-label={tool.createLabel}
-        title={tool.createLabel}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.03] text-white/70 transition-colors hover:border-[#3ecf8e]/40 hover:bg-[#3ecf8e]/10 hover:text-[#3ecf8e]"
-      >
-        <Plus className="h-3.5 w-3.5" aria-hidden />
-      </button>
+      {createHref ? (
+        <Link
+          href={createHref}
+          aria-label={tool.createLabel}
+          title={tool.createLabel}
+          className={btnCls}
+        >
+          <Plus className="h-3.5 w-3.5" aria-hidden />
+        </Link>
+      ) : (
+        <button
+          type="button"
+          aria-label={tool.createLabel}
+          title={tool.createLabel}
+          className={btnCls}
+        >
+          <Plus className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      )}
     </header>
   );
 }
@@ -545,20 +499,49 @@ function SubItemButton({
   active: boolean;
   onClick: () => void;
 }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors ${
-        active
-          ? "bg-white/[0.06] text-white"
-          : "text-white/65 hover:bg-white/[0.04] hover:text-white"
-      }`}
-    >
-      <span className="truncate">{item.label}</span>
+  const statusCls =
+    item.status === "running"
+      ? "bg-[#3ecf8e] shadow-[0_0_5px_#3ecf8e]"
+      : item.status === "rebooting"
+        ? "bg-amber-400"
+        : item.status === "stopped"
+          ? "bg-white/25"
+          : null;
+
+  const cls = `flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors ${
+    active
+      ? "bg-white/[0.06] text-white"
+      : "text-white/65 hover:bg-white/[0.04] hover:text-white"
+  }`;
+
+  const inner = (
+    <>
+      <span className="flex min-w-0 items-center gap-2">
+        {statusCls && (
+          <span
+            aria-hidden
+            className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${statusCls}`}
+          />
+        )}
+        <span className="truncate">{item.label}</span>
+      </span>
       {item.external ? (
         <ExternalLink className="h-3 w-3 shrink-0 text-white/35" aria-hidden />
       ) : null}
+    </>
+  );
+
+  if (item.href) {
+    return (
+      <Link href={item.href} onClick={onClick} className={cls}>
+        {inner}
+      </Link>
+    );
+  }
+
+  return (
+    <button type="button" onClick={onClick} className={cls}>
+      {inner}
     </button>
   );
 }
@@ -572,7 +555,6 @@ function MobileDrawer({
   sections,
   activeTool,
   activeItem,
-  onChangeTool,
   onSelectItem,
   onClose,
 }: {
@@ -580,7 +562,6 @@ function MobileDrawer({
   sections: SubSection[];
   activeTool: ToolId;
   activeItem: string;
-  onChangeTool: (id: ToolId) => void;
   onSelectItem: (id: string) => void;
   onClose: () => void;
 }) {
@@ -614,7 +595,8 @@ function MobileDrawer({
                 icon={<t.icon className="h-4 w-4" aria-hidden />}
                 label={t.name}
                 active={t.id === activeTool}
-                onClick={() => onChangeTool(t.id)}
+                href={`/dashboard/${t.id}`}
+                onClick={onClose}
               />
             ))}
           </nav>
@@ -640,7 +622,7 @@ function MobileDrawer({
                 aria-hidden
                 className="inline-block h-2 w-2 rounded-full bg-[#3ecf8e] shadow-[0_0_8px_#3ecf8e]"
               />
-              yoga<span className="text-[#3ecf8e]">.</span>
+              yoga
             </Link>
             <button
               type="button"

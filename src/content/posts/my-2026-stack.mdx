@@ -1,0 +1,36 @@
+---
+title: "My 2026 stack"
+description: "The 8-layer stack I'm using to build, ship, and keep this site running."
+date: "2026-02-04"
+tags: ["architecture", "stack"]
+---
+
+# My 2026 stack
+
+A working tour of every layer powering this site and the tools inside it.
+
+## The layers
+
+1. **Entry** — the user's browser.
+2. **Compute / Hosting** — AWS EC2 running the Next.js server behind a reverse
+   proxy. One instance to start, scale horizontally behind an ALB.
+3. **Frontend** — Next.js (App Router) + React Server Components.
+4. **Styling / UI** — shadcn/ui on top of Tailwind. Each component is owned in
+   the repo, not imported from a black box.
+5. **Backend runtime** — Node.js. Route Handlers under `src/app/api/*`.
+6. **Identity & Storage** — Supabase Auth (email OTP, OAuth) for sessions,
+   AWS S3 for blobs (uploaded via presigned URLs so bytes never hit the
+   server).
+7. **External services** — Resend for transactional email, OpenAI for AI,
+   Postgres FTS for search, MDX for content (these very posts).
+8. **Persistence** — Supabase (Postgres) as the system of record.
+
+## Gotchas
+
+- **Supabase SSR cookies.** Don't put any code between `createServerClient`
+  and `getUser` in middleware, or the refreshed session cookie won't be
+  attached to the response.
+- **EC2 outbound traffic.** S3 and OpenAI calls bill on data egress. Keep an
+  eye on it once usage grows.
+- **PostHog reverse proxy.** If you self-host or hit the SaaS, set a reverse
+  proxy at `/ingest` to dodge ad blockers and CORS.

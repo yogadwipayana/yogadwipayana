@@ -1,18 +1,69 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Mail } from "lucide-react";
+
+import { createClient } from "@/utils/supabase/client";
 
 type Step = "request" | "verify";
 
-export function EmailOtpForm() {
+export function EmailOtpForm({ mode = "sign-in" }: { mode?: "sign-in" | "sign-up" }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const supabase = createClient();
+
   const [step, setStep] = useState<Step>("request");
   const [email, setEmail] = useState("");
   const [token, setToken] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  const requestCode = () => {
+    setError(null);
+    startTransition(async () => {
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          shouldCreateUser: mode === "sign-up",
+          emailRedirectTo: `${window.location.origin}/dashboard`,
+        },
+      });
+      if (error) {
+        setError(error.message);
+        return;
+      }
+      setStep("verify");
+    });
+  };
+
+  const verifyCode = () => {
+    setError(null);
+    startTransition(async () => {
+      const { error } = await supabase.auth.verifyOtp({
+        email,
+        token,
+        type: "email",
+      });
+      if (error) {
+        setError(error.message);
+        return;
+      }
+      const next = searchParams.get("next") ?? "/dashboard";
+      router.replace(next);
+      router.refresh();
+    });
+  };
 
   if (step === "request") {
     return (
-      <div className="flex flex-col gap-3">
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (email) requestCode();
+        }}
+      >
         <div className="flex flex-col gap-1.5">
           <label
             htmlFor="email"
@@ -39,20 +90,31 @@ export function EmailOtpForm() {
           </div>
         </div>
 
+        {error ? (
+          <p className="text-[12px] text-red-400" role="alert">
+            {error}
+          </p>
+        ) : null}
+
         <button
-          type="button"
-          disabled={!email}
-          onClick={() => setStep("verify")}
+          type="submit"
+          disabled={!email || isPending}
           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[#3ecf8e] px-5 text-sm font-medium text-[#171717] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Send sign-in code
+          {isPending ? "Sending…" : "Send sign-in code"}
         </button>
-      </div>
+      </form>
     );
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <form
+      className="flex flex-col gap-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (token.length === 6) verifyCode();
+      }}
+    >
       <p className="text-[13px] leading-relaxed text-white/60">
         We sent a 6-digit code to{" "}
         <span className="text-white/90">{email}</span>. Paste it below.
@@ -83,24 +145,31 @@ export function EmailOtpForm() {
         />
       </div>
 
+      {error ? (
+        <p className="text-[12px] text-red-400" role="alert">
+          {error}
+        </p>
+      ) : null}
+
       <button
-        type="button"
-        disabled={token.length !== 6}
+        type="submit"
+        disabled={token.length !== 6 || isPending}
         className="mt-1 inline-flex h-11 w-full items-center justify-center rounded-md bg-[#3ecf8e] px-5 text-sm font-medium text-[#171717] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:opacity-60"
       >
-        Verify &amp; continue
+        {isPending ? "Verifying…" : "Verify & continue"}
       </button>
 
       <button
         type="button"
         onClick={() => {
           setToken("");
+          setError(null);
           setStep("request");
         }}
         className="inline-flex h-10 w-full items-center justify-center rounded-md border border-white/[0.08] bg-transparent px-5 text-[13px] font-medium text-white/75 transition-colors hover:border-white/20 hover:bg-white/[0.04] hover:text-white"
       >
         Use a different email
       </button>
-    </div>
+    </form>
   );
 }

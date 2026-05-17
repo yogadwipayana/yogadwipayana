@@ -40,14 +40,13 @@ const TOOLS: Tool[] = [
     tag: "Infrastructure",
     tagline: "A single console for every machine I run.",
     blurb:
-      "Order, monitor, and tear down instances from one place. Live CPU, memory, disk, and bandwidth per box, firewall and SSH keys in the same surface, and reinstall or reset without leaving the page.",
+      "Monitor and tear down instances from one place. Live CPU, memory, disk, and bandwidth per box, firewall and SSH keys in the same surface, and reinstall or reset without leaving the page.",
     href: "/vps",
     icon: Server,
     features: [
       "Status, CPU, memory, disk, uptime per instance",
       "Firewall rules and SSH keys per box",
       "Reinstall OS or full reset in two clicks",
-      "Order new instances and manage payment",
       "Bring-your-own-key for existing providers",
     ],
     mock: <VpsMock />,

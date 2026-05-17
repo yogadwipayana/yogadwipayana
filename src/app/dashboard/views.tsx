@@ -46,7 +46,7 @@ export function AiOverview() {
       href: "/dashboard/ai/billing",
       icon: CreditCard,
       label: "Billing",
-      description: "Top up your pay-as-you-go credit balance via bank transfer.",
+      description: "Top up your pay-as-you-go credit balance via QRIS.",
     },
   ];
 

@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import { Footer } from "@/components/layout/Footer";
 import { Navbar } from "@/components/layout/Navbar";
 
-import { EmailOtpForm } from "./email-otp-form";
+import { EmailPasswordSignInForm } from "./sign-in-form";
 
 export const metadata: Metadata = {
   title: "Sign in",
@@ -45,7 +45,6 @@ function BackgroundGlow() {
 function AuthCard() {
   return (
     <section className="relative z-10 w-full max-w-[440px]">
-      {/* Brand pin */}
       <div className="mb-6 flex justify-center">
         <Link
           href="/"
@@ -65,32 +64,40 @@ function AuthCard() {
             Welcome back
           </h1>
           <p className="mt-2 text-[14px] leading-relaxed text-white/55">
-            Pick up where you left off.
+            Sign in to your account to continue.
           </p>
         </div>
 
         <div className="flex flex-col gap-3">
           <button
             type="button"
-            className="inline-flex h-12 w-full items-center justify-center gap-2.5 rounded-md border border-white/15 bg-white/[0.03] px-4 text-[14px] font-medium text-white transition-colors hover:border-white/25 hover:bg-white/[0.06]"
+            disabled
+            aria-disabled="true"
+            title="Coming soon"
+            className="inline-flex h-12 w-full cursor-not-allowed items-center justify-center gap-2.5 rounded-md border border-white/15 bg-white/[0.03] px-4 text-[14px] font-medium text-white opacity-70 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
           >
             <GoogleIcon className="h-5 w-5" />
             Continue with Google
+            <ComingSoonBadge />
           </button>
 
           <button
             type="button"
-            className="inline-flex h-12 w-full items-center justify-center gap-2.5 rounded-md border border-white/15 bg-white/[0.03] px-4 text-[14px] font-medium text-white transition-colors hover:border-white/25 hover:bg-white/[0.06]"
+            disabled
+            aria-disabled="true"
+            title="Coming soon"
+            className="inline-flex h-12 w-full cursor-not-allowed items-center justify-center gap-2.5 rounded-md border border-white/15 bg-white/[0.03] px-4 text-[14px] font-medium text-white opacity-70 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
           >
             <GithubIcon className="h-5 w-5" />
             Continue with GitHub
+            <ComingSoonBadge />
           </button>
         </div>
 
         <Divider label="or with email" />
 
         <Suspense fallback={null}>
-          <EmailOtpForm />
+          <EmailPasswordSignInForm />
         </Suspense>
 
         <div className="mt-6 border-t border-white/[0.06] pt-5 text-center text-[13px] text-white/55">
@@ -103,10 +110,6 @@ function AuthCard() {
           </Link>
         </div>
       </div>
-
-      <p className="mt-6 text-center text-[11px] text-white/40">
-        No passwords stored on this site. Email sign-in uses a one-time code.
-      </p>
     </section>
   );
 }
@@ -118,6 +121,14 @@ function Divider({ label }: { label: string }) {
       {label}
       <span className="h-px flex-1 bg-white/[0.08]" />
     </div>
+  );
+}
+
+function ComingSoonBadge() {
+  return (
+    <span className="ml-1 rounded-full border border-white/[0.1] bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-white/55">
+      Coming soon
+    </span>
   );
 }
 

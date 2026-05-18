@@ -30,7 +30,7 @@ export default async function VpsPage({
       "id, external_instance_id, name, region, zone, status, provider_status, ip_public, ip_private, cpu, memory_gb, system_disk_gb, bandwidth_mbps, os_name, expires_at, source, last_synced_at, created_at, updated_at",
     )
     .eq("status", "active")
-    .or("expires_at.is.null,expires_at.gt.now()")
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
     .order("created_at", { ascending: false });
 
   const instances = (error ? [] : (rows ?? [])) as unknown as ApiVpsInstance[];

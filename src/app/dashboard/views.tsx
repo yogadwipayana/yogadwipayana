@@ -938,8 +938,8 @@ function AssistantMarkdown({ content }: { content: string }) {
 }
 
 function CodeBubble({ lang, code }: { lang: string | null; code: string }) {
+  const isSingleLine = !code.includes("\n") && code.trim().length <= 80;
   const [copied, setCopied] = useState(false);
-  const html = highlightCode(code, lang);
 
   const onCopy = async () => {
     try {
@@ -949,8 +949,18 @@ function CodeBubble({ lang, code }: { lang: string | null; code: string }) {
     } catch {}
   };
 
+  if (isSingleLine) {
+    return (
+      <code className="mx-0.5 rounded border border-white/[0.08] bg-white/[0.05] px-1.5 py-0.5 font-mono text-[12px] text-[#3ecf8e]/75">
+        {code.trim()}
+      </code>
+    );
+  }
+
+  const html = highlightCode(code, lang);
+
   return (
-    <div className="my-3 overflow-hidden rounded-lg border border-white/[0.07] bg-[#0f0f0f]">
+    <div className="my-2 overflow-hidden rounded-lg border border-white/[0.07] bg-[#0f0f0f]">
       <div className="flex items-center justify-between border-b border-white/[0.05] px-3 py-1.5">
         <span className="font-mono text-[10px] uppercase tracking-widest text-white/30">
           {lang ?? "code"}
@@ -973,7 +983,7 @@ function CodeBubble({ lang, code }: { lang: string | null; code: string }) {
           )}
         </button>
       </div>
-      <pre className="overflow-x-auto p-3.5 font-mono text-[12.5px] leading-relaxed text-white/85">
+      <pre className="overflow-x-auto p-3 font-mono text-[12.5px] leading-relaxed text-white/85">
         <code
           className={`hljs${lang ? ` language-${lang}` : ""}`}
           dangerouslySetInnerHTML={{ __html: html }}

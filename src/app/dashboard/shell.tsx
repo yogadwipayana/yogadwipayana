@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ExternalLink,
   HelpCircle,
@@ -9,24 +9,23 @@ import {
   Menu,
   Plus,
   Search,
+  Server,
   Settings,
   X,
 } from "lucide-react";
-import type { ToolId } from "./data";
+import type { ChatConversationSummary, ToolId } from "./data";
 
-import {
-  AI_ROUTES,
-  CHAT_CONVERSATIONS,
-  TOOLS,
-  VPS_INSTANCES,
-} from "./data";
+import { TOOLS } from "./data";
 import type { Tool } from "./data";
 import {
   AiOverview,
+  ChatEmptyState,
   ChatView,
   PlaceholderView,
   VpsView,
 } from "./views";
+import type { VpsInstance as ApiVpsInstance } from "@/lib/client/vps-api";
+import { normalizeStatus, toUiInstance } from "@/lib/client/vps-mappers";
 
 /* -------------------------------------------------------------------------- */
 /*  Sub-sidebar sections                                                      */
@@ -35,39 +34,47 @@ import {
 type SubItem = { id: string; label: string; external?: boolean; status?: string; href?: string };
 type SubSection = { title: string; items: SubItem[] };
 
-const TOOL_SECTIONS: Record<ToolId, SubSection[]> = {
-  vps: [
-    {
-      title: "Instances",
-      items: VPS_INSTANCES.map((i) => ({ id: i.id, label: i.name, status: i.status })),
-    },
-    {
-      title: "Platform",
-      items: [
-        { id: "vps:byok", label: "BYOK", href: "/dashboard/vps/byok" },
-      ],
-    },
-  ],
-  ai: [
-    {
-      title: "Settings",
-      items: [
-        { id: "ai:usage",   label: "Usage",   href: "/dashboard/ai/usage" },
-        { id: "ai:keys",    label: "Keys",    href: "/dashboard/ai/keys" },
-        { id: "ai:billing", label: "Billing", href: "/dashboard/ai/billing" },
-      ],
-    },
-    {
-      title: "Reference",
-      items: [
-        { id: "ai:models", label: "Models", href: "/dashboard/ai/models" },
-      ],
-    },
-  ],
-  chat: [
+function buildSections(
+  toolId: ToolId,
+  chatConversations: ChatConversationSummary[],
+  vpsInstances: ApiVpsInstance[],
+): SubSection[] {
+  if (toolId === "vps") {
+    return [
+      {
+        title: "Instances",
+        items: vpsInstances.map((i) => ({
+          id: i.id,
+          label: i.name,
+          status: normalizeStatus(i.provider_status ?? i.status),
+        })),
+      },
+      {
+        title: "Platform",
+        items: [{ id: "vps:byok", label: "BYOK", href: "/dashboard/vps/byok" }],
+      },
+    ];
+  }
+  if (toolId === "ai") {
+    return [
+      {
+        title: "Settings",
+        items: [
+          { id: "ai:usage",   label: "Usage",   href: "/dashboard/ai/usage" },
+          { id: "ai:keys",    label: "Keys",    href: "/dashboard/ai/keys" },
+          { id: "ai:billing", label: "Billing", href: "/dashboard/ai/billing" },
+        ],
+      },
+      {
+        title: "Reference",
+        items: [{ id: "ai:models", label: "Models", href: "/dashboard/ai/models" }],
+      },
+    ];
+  }
+  return [
     {
       title: "Conversations",
-      items: CHAT_CONVERSATIONS.map((c) => ({ id: c.id, label: c.title })),
+      items: chatConversations.map((c) => ({ id: c.id, label: c.title })),
     },
     {
       title: "Configuration",
@@ -81,8 +88,8 @@ const TOOL_SECTIONS: Record<ToolId, SubSection[]> = {
       title: "Platform",
       items: [{ id: "chat:usage", label: "Usage" }],
     },
-  ],
-};
+  ];
+}
 
 const PLACEHOLDER_LABELS: Record<string, { title: string; description: string }> = {
   "ai:fallbacks": { title: "Fallbacks", description: "Per-route fallback chain when the primary model fails." },
@@ -96,12 +103,38 @@ const PLACEHOLDER_LABELS: Record<string, { title: string; description: string }>
 /*  Shell                                                                     */
 /* -------------------------------------------------------------------------- */
 
-export function DashboardShell({ toolId, children }: { toolId: ToolId; children?: React.ReactNode }) {
-  const [activeItems, setActiveItems] = useState<Record<ToolId, string>>({
-    vps: VPS_INSTANCES[0].id,
+export function DashboardShell({
+  toolId,
+  children,
+  chatConversations: initialChatConversations,
+  defaultChatModel,
+  instances,
+  initialActiveId,
+}: {
+  toolId: ToolId;
+  children?: React.ReactNode;
+  chatConversations?: ChatConversationSummary[];
+  defaultChatModel?: string;
+  /** Real instance rows for the VPS tool. Ignored for other tools. */
+  instances?: ApiVpsInstance[];
+  /** Pre-selected sub-sidebar item id (e.g. from `?instance=<id>`). */
+  initialActiveId?: string;
+}) {
+  const [chatConversations, setChatConversations] = useState<
+    ChatConversationSummary[]
+  >(initialChatConversations ?? []);
+  const [creatingConversation, setCreatingConversation] = useState(false);
+
+  const vpsInstances = instances ?? [];
+
+  const [activeItems, setActiveItems] = useState<Record<ToolId, string>>(() => ({
+    vps:
+      toolId === "vps"
+        ? initialActiveId ?? vpsInstances[0]?.id ?? ""
+        : vpsInstances[0]?.id ?? "",
     ai: "ai:usage",
-    chat: CHAT_CONVERSATIONS[0].id,
-  });
+    chat: chatConversations[0]?.id ?? "",
+  }));
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const tool = useMemo(
@@ -109,10 +142,46 @@ export function DashboardShell({ toolId, children }: { toolId: ToolId; children?
     [toolId],
   );
 
-  const sections = TOOL_SECTIONS[toolId];
+  const sections = useMemo(
+    () => buildSections(toolId, chatConversations, vpsInstances),
+    [toolId, chatConversations, vpsInstances],
+  );
 
-  const setItem = (id: string) =>
+  const setItem = useCallback((id: string) => {
     setActiveItems((prev) => ({ ...prev, [toolId]: id }));
+  }, [toolId]);
+
+  const handleCreateConversation = useCallback(async () => {
+    if (creatingConversation) return;
+    setCreatingConversation(true);
+    try {
+      const res = await fetch("/api/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) {
+        return;
+      }
+      const data = (await res.json()) as { conversation: ChatConversationSummary };
+      setChatConversations((prev) => [data.conversation, ...prev]);
+      setActiveItems((prev) => ({ ...prev, chat: data.conversation.id }));
+    } finally {
+      setCreatingConversation(false);
+    }
+  }, [creatingConversation]);
+
+  const handleConversationUpdated = useCallback(
+    (updated: ChatConversationSummary) => {
+      setChatConversations((prev) => {
+        const next = prev.filter((c) => c.id !== updated.id);
+        return [updated, ...next];
+      });
+    },
+    [],
+  );
+
+  const onCreate = toolId === "chat" ? handleCreateConversation : undefined;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#1c1c1c] text-white selection:bg-[#3ecf8e]/30 selection:text-white">
@@ -131,11 +200,22 @@ export function DashboardShell({ toolId, children }: { toolId: ToolId; children?
           sections={sections}
           activeItem={activeItems[toolId]}
           onSelectItem={setItem}
+          onCreate={onCreate}
         />
 
         {/* Main working surface */}
         <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-[#1c1c1c]">
-          {children ?? renderMain(toolId, activeItems[toolId])}
+          {children ??
+            renderMain({
+              activeTool: toolId,
+              activeItemId: activeItems[toolId],
+              chatConversations,
+              defaultChatModel,
+              onCreateConversation: handleCreateConversation,
+              creatingConversation,
+              onConversationUpdated: handleConversationUpdated,
+              vpsInstances,
+            })}
         </main>
       </div>
 
@@ -151,6 +231,7 @@ export function DashboardShell({ toolId, children }: { toolId: ToolId; children?
             setDrawerOpen(false);
           }}
           onClose={() => setDrawerOpen(false)}
+          onCreate={onCreate}
         />
       ) : null}
     </div>
@@ -161,9 +242,27 @@ export function DashboardShell({ toolId, children }: { toolId: ToolId; children?
 /*  Main content router                                                       */
 /* -------------------------------------------------------------------------- */
 
-function renderMain(activeTool: ToolId, activeItemId: string): React.ReactNode {
+function renderMain({
+  activeTool,
+  activeItemId,
+  chatConversations,
+  defaultChatModel,
+  onCreateConversation,
+  creatingConversation,
+  onConversationUpdated,
+  vpsInstances,
+}: {
+  activeTool: ToolId;
+  activeItemId: string;
+  chatConversations: ChatConversationSummary[];
+  defaultChatModel?: string;
+  onCreateConversation: () => void;
+  creatingConversation: boolean;
+  onConversationUpdated: (c: ChatConversationSummary) => void;
+  vpsInstances: ApiVpsInstance[];
+}): React.ReactNode {
   // Configuration / Platform pages use prefixed IDs (e.g. "vps:ssh-keys")
-  if (activeItemId.includes(":")) {
+  if (activeItemId && activeItemId.includes(":")) {
     const meta = PLACEHOLDER_LABELS[activeItemId];
     return (
       <PlaceholderView
@@ -176,17 +275,56 @@ function renderMain(activeTool: ToolId, activeItemId: string): React.ReactNode {
   }
 
   if (activeTool === "vps") {
-    const instance =
-      VPS_INSTANCES.find((i) => i.id === activeItemId) ?? VPS_INSTANCES[0];
-    return <VpsView instance={instance} />;
+    if (vpsInstances.length === 0) return <VpsEmptyState />;
+    const apiInstance =
+      vpsInstances.find((i) => i.id === activeItemId) ?? vpsInstances[0];
+    return <VpsView instance={toUiInstance(apiInstance)} />;
   }
   if (activeTool === "ai") {
     return <AiOverview />;
   }
+
   const conversation =
-    CHAT_CONVERSATIONS.find((c) => c.id === activeItemId) ??
-    CHAT_CONVERSATIONS[0];
-  return <ChatView conversation={conversation} />;
+    chatConversations.find((c) => c.id === activeItemId) ??
+    chatConversations[0];
+  if (!conversation) {
+    return (
+      <ChatEmptyState
+        onCreate={onCreateConversation}
+        creating={creatingConversation}
+      />
+    );
+  }
+  return (
+    <ChatView
+      conversation={conversation}
+      defaultModel={defaultChatModel}
+      onConversationUpdated={onConversationUpdated}
+    />
+  );
+}
+
+function VpsEmptyState() {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/[0.04]">
+        <Server className="h-5 w-5 text-white/35" aria-hidden />
+      </div>
+      <div>
+        <p className="text-[15px] font-medium text-white">No instances yet</p>
+        <p className="mt-1 text-[13px] text-white/40">
+          Connect your Tencent Cloud account to import your existing VPS instances.
+        </p>
+      </div>
+      <Link
+        href="/dashboard/vps/byok"
+        className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[#3ecf8e] px-4 text-[13px] font-medium text-[#171717] transition-colors hover:bg-[#24b47e]"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Connect via BYOK
+      </Link>
+    </div>
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -398,15 +536,17 @@ function SubSidebar({
   sections,
   activeItem,
   onSelectItem,
+  onCreate,
 }: {
   tool: Tool;
   sections: SubSection[];
   activeItem: string;
   onSelectItem: (id: string) => void;
+  onCreate?: () => void;
 }) {
   return (
     <aside className="hidden w-[200px] shrink-0 flex-col border-r border-white/[0.08] bg-[#171717] sm:flex md:w-[220px]">
-      <SubSidebarHeader tool={tool} />
+      <SubSidebarHeader tool={tool} onCreate={onCreate} />
       <SubSidebarBody
         sections={sections}
         activeItem={activeItem}
@@ -421,10 +561,16 @@ const TOOL_CREATE_HREF: Partial<Record<ToolId, string>> = {
   ai:  "/dashboard/ai/keys",
 };
 
-function SubSidebarHeader({ tool }: { tool: Tool }) {
+function SubSidebarHeader({
+  tool,
+  onCreate,
+}: {
+  tool: Tool;
+  onCreate?: () => void;
+}) {
   const createHref = TOOL_CREATE_HREF[tool.id];
   const btnCls =
-    "inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.03] text-white/70 transition-colors hover:border-[#3ecf8e]/40 hover:bg-[#3ecf8e]/10 hover:text-[#3ecf8e]";
+    "inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.03] text-white/70 transition-colors hover:border-[#3ecf8e]/40 hover:bg-[#3ecf8e]/10 hover:text-[#3ecf8e] disabled:opacity-50 disabled:hover:border-white/[0.08] disabled:hover:bg-white/[0.03] disabled:hover:text-white/70";
 
   return (
     <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
@@ -443,6 +589,7 @@ function SubSidebarHeader({ tool }: { tool: Tool }) {
       ) : (
         <button
           type="button"
+          onClick={onCreate}
           aria-label={tool.createLabel}
           title={tool.createLabel}
           className={btnCls}
@@ -473,17 +620,23 @@ function SubSidebarBody({
           <h3 className="mb-1 px-2.5 text-[10px] font-medium uppercase tracking-[0.12em] text-white/35">
             {section.title}
           </h3>
-          <ul className="flex flex-col gap-px">
-            {section.items.map((item) => (
-              <li key={item.id}>
-                <SubItemButton
-                  item={item}
-                  active={item.id === activeItem}
-                  onClick={() => onSelectItem(item.id)}
-                />
-              </li>
-            ))}
-          </ul>
+          {section.items.length === 0 ? (
+            <p className="px-2.5 py-1 text-[12px] text-white/30">
+              No items yet.
+            </p>
+          ) : (
+            <ul className="flex flex-col gap-px">
+              {section.items.map((item) => (
+                <li key={item.id}>
+                  <SubItemButton
+                    item={item}
+                    active={item.id === activeItem}
+                    onClick={() => onSelectItem(item.id)}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       ))}
     </nav>
@@ -557,6 +710,7 @@ function MobileDrawer({
   activeItem,
   onSelectItem,
   onClose,
+  onCreate,
 }: {
   tool: Tool;
   sections: SubSection[];
@@ -564,6 +718,7 @@ function MobileDrawer({
   activeItem: string;
   onSelectItem: (id: string) => void;
   onClose: () => void;
+  onCreate?: () => void;
 }) {
   return (
     <div className="fixed inset-0 z-40 flex sm:hidden">
@@ -633,7 +788,7 @@ function MobileDrawer({
               <X className="h-4 w-4" aria-hidden />
             </button>
           </div>
-          <SubSidebarHeader tool={tool} />
+          <SubSidebarHeader tool={tool} onCreate={onCreate} />
           <SubSidebarBody
             sections={sections}
             activeItem={activeItem}

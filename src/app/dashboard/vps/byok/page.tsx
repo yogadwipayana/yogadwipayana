@@ -1,33 +1,47 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, ChevronRight, Eye, EyeOff, Globe, Plus, Server } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Globe,
+  Plus,
+  Server,
+} from "lucide-react";
+
+import { vpsApi } from "@/lib/client/vps-api";
+
+const REGIONS = [
+  { value: "ap-jakarta", label: "ap-jakarta", city: "Jakarta" },
+  { value: "ap-singapore", label: "ap-singapore", city: "Singapore" },
+] as const;
 
 /* -------------------------------------------------------------------------- */
-/*  Types                                                                      */
+/*  Discovered Lighthouse instance shape (matches NormalizedInstance from the  */
+/*  /api/vps/byok/connect response)                                            */
 /* -------------------------------------------------------------------------- */
 
-type InstanceOption = {
-  id: string;
+type DiscoveredInstance = {
+  externalInstanceId: string;
   name: string;
   status: string;
   region: string;
-  ip: string | null;
-  cpu: number;
-  memoryGb: number;
-  diskGb: number;
+  ipPublic: string | null;
+  cpu: number | null;
+  memoryGb: number | null;
+  systemDiskGb: number | null;
 };
 
-/* -------------------------------------------------------------------------- */
-/*  Mock data for "connected" state demo                                       */
-/* -------------------------------------------------------------------------- */
-
-const MOCK_INSTANCES: InstanceOption[] = [
-  { id: "ins-abc123", name: "lighthouse-prod-sg",  status: "RUNNING", region: "ap-singapore", ip: "119.28.44.10",  cpu: 2, memoryGb: 4,  diskGb: 80  },
-  { id: "ins-def456", name: "lighthouse-dev-hk",   status: "STOPPED", region: "ap-hongkong",  ip: null,           cpu: 2, memoryGb: 2,  diskGb: 40  },
-  { id: "ins-ghi789", name: "lighthouse-worker-gz", status: "RUNNING", region: "ap-guangzhou", ip: "101.33.18.220", cpu: 4, memoryGb: 8,  diskGb: 160 },
-];
+type ConnectResponse = {
+  connected?: boolean;
+  count?: number;
+  instances?: DiscoveredInstance[];
+};
 
 /* -------------------------------------------------------------------------- */
 /*  Page                                                                       */
@@ -41,7 +55,7 @@ export default function ByokPage() {
 
   const [loading, setLoading]     = useState(false);
   const [connected, setConnected] = useState(false);
-  const [instances, setInstances] = useState<InstanceOption[]>([]);
+  const [instances, setInstances] = useState<DiscoveredInstance[]>([]);
   const [message, setMessage]     = useState<string | null>(null);
 
   const [importing, setImporting] = useState<string | null>(null);
@@ -51,23 +65,47 @@ export default function ByokPage() {
     e.preventDefault();
     if (!secretId.trim() || !secretKey.trim()) {
       setMessage("Secret ID and Secret Key are required.");
+      setConnected(false);
       return;
     }
     setLoading(true);
     setMessage(null);
-    /* Simulate API call — show mock data */
-    await new Promise((r) => setTimeout(r, 900));
-    setInstances(MOCK_INSTANCES);
-    setConnected(true);
-    setMessage("Connected. Select an instance to import.");
-    setLoading(false);
+    try {
+      const data = (await vpsApi.byokConnect({ secretId, secretKey, region })) as ConnectResponse;
+      const list = data.instances ?? [];
+      setInstances(list);
+      setConnected(true);
+      setMessage(
+        list.length === 0
+          ? `No Lighthouse instances found in ${region}. Try a different region.`
+          : `Connected. ${list.length} instance${list.length === 1 ? "" : "s"} found.`,
+      );
+    } catch (err) {
+      setConnected(false);
+      setInstances([]);
+      setMessage(err instanceof Error ? err.message : "Failed to connect to Tencent Cloud.");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  async function handleImport(instanceId: string) {
-    setImporting(instanceId);
-    await new Promise((r) => setTimeout(r, 700));
-    setImported((prev) => [...prev, instanceId]);
-    setImporting(null);
+  async function handleImport(externalInstanceId: string) {
+    setImporting(externalInstanceId);
+    setMessage(null);
+    try {
+      await vpsApi.byokImport({
+        externalInstanceId,
+        secretId,
+        secretKey,
+        region,
+      });
+      setImported((prev) => [...prev, externalInstanceId]);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Failed to import instance.");
+      setConnected(true);
+    } finally {
+      setImporting(null);
+    }
   }
 
   const statusDot = (s: string) =>
@@ -95,7 +133,7 @@ export default function ByokPage() {
       <main className="mx-auto max-w-5xl space-y-5 px-6 py-8">
         {/* Info banner */}
         <div className="rounded-md border border-white/[0.06] bg-white/[0.03] p-4 text-[12px] leading-relaxed text-white/45">
-          Connect your existing Tencent Cloud (Lighthouse) account to import and manage your VPS instances directly from this dashboard. Your credentials are used only for the initial import and are not stored.
+          Connect your existing Tencent Cloud (Lighthouse) account to import and manage your VPS instances directly from this dashboard. Credentials are encrypted at rest and used to drive provider actions on your behalf.
         </div>
 
         {/* Credentials form */}
@@ -140,19 +178,7 @@ export default function ByokPage() {
 
           <div className="max-w-xs">
             <label className="mb-1.5 block text-[10px] uppercase tracking-[0.1em] text-white/35">Region</label>
-            <div className="flex items-center gap-2 rounded-md border border-white/[0.08] bg-[#1c1c1c] px-3 py-2 focus-within:border-[#3ecf8e]/40">
-              <Globe className="h-3.5 w-3.5 shrink-0 text-white/35" />
-              <select
-                value={region}
-                onChange={(e) => setRegion(e.target.value)}
-                className="w-full bg-transparent text-[13px] text-white focus:outline-none"
-              >
-                <option value="ap-jakarta">ap-jakarta (Jakarta)</option>
-                <option value="ap-singapore">ap-singapore (Singapore)</option>
-                <option value="ap-hongkong">ap-hongkong (Hong Kong)</option>
-                <option value="ap-guangzhou">ap-guangzhou (Guangzhou)</option>
-              </select>
-            </div>
+            <RegionSelect value={region} onChange={setRegion} />
           </div>
 
           {message && (
@@ -181,26 +207,32 @@ export default function ByokPage() {
             </div>
             <div className="divide-y divide-white/[0.04]">
               {instances.map((inst) => {
-                const done = imported.includes(inst.id);
-                const busy = importing === inst.id;
+                const done = imported.includes(inst.externalInstanceId);
+                const busy = importing === inst.externalInstanceId;
                 return (
-                  <div key={inst.id} className="flex items-center justify-between gap-4 px-6 py-4">
+                  <div key={inst.externalInstanceId} className="flex items-center justify-between gap-4 px-6 py-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${statusDot(inst.status)}`} />
                         <span className="font-medium text-[14px] text-white">{inst.name}</span>
-                        <span className="font-mono text-[11px] text-white/30">{inst.id}</span>
+                        <span className="font-mono text-[11px] text-white/30">{inst.externalInstanceId}</span>
                       </div>
                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-white/40">
                         <span>{inst.region}</span>
-                        {inst.ip && (
+                        {inst.ipPublic && (
                           <>
                             <span className="text-white/15">·</span>
-                            <span className="font-mono">{inst.ip}</span>
+                            <span className="font-mono">{inst.ipPublic}</span>
                           </>
                         )}
-                        <span className="text-white/15">·</span>
-                        <span>{inst.cpu} vCPU · {inst.memoryGb} GB · {inst.diskGb} GB</span>
+                        {(inst.cpu != null || inst.memoryGb != null || inst.systemDiskGb != null) && (
+                          <>
+                            <span className="text-white/15">·</span>
+                            <span>
+                              {inst.cpu ?? "?"} vCPU · {inst.memoryGb ?? "?"} GB · {inst.systemDiskGb ?? "?"} GB
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div className="shrink-0">
@@ -212,7 +244,7 @@ export default function ByokPage() {
                       ) : (
                         <button
                           type="button"
-                          onClick={() => handleImport(inst.id)}
+                          onClick={() => handleImport(inst.externalInstanceId)}
                           disabled={busy}
                           className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[#3ecf8e] px-3 text-[12px] font-medium text-[#171717] transition-colors hover:bg-[#24b47e] disabled:opacity-60"
                         >
@@ -249,6 +281,99 @@ export default function ByokPage() {
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Custom region dropdown                                                    */
+/* -------------------------------------------------------------------------- */
+
+function RegionSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = REGIONS.find((r) => r.value === value) ?? REGIONS[0];
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (!ref.current) return;
+      if (!ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`flex w-full items-center gap-2 rounded-md border bg-[#1c1c1c] px-3 py-2 text-left transition-colors ${
+          open
+            ? "border-[#3ecf8e]/40"
+            : "border-white/[0.08] hover:border-white/[0.14]"
+        }`}
+      >
+        <Globe className="h-3.5 w-3.5 shrink-0 text-white/35" />
+        <span className="flex-1 text-[13px] text-white">
+          <span className="font-mono">{current.label}</span>
+          <span className="ml-2 text-white/40">{current.city}</span>
+        </span>
+        <ChevronDown
+          className={`h-3.5 w-3.5 shrink-0 text-white/40 transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      {open && (
+        <ul
+          role="listbox"
+          className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-md border border-white/[0.08] bg-[#171717] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.4)]"
+        >
+          {REGIONS.map((r) => {
+            const active = r.value === value;
+            return (
+              <li key={r.value} role="option" aria-selected={active}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onChange(r.value);
+                    setOpen(false);
+                  }}
+                  className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] transition-colors ${
+                    active
+                      ? "bg-white/[0.04] text-white"
+                      : "text-white/70 hover:bg-white/[0.04] hover:text-white"
+                  }`}
+                >
+                  <span className="flex-1">
+                    <span className="font-mono">{r.label}</span>
+                    <span className="ml-2 text-white/40">{r.city}</span>
+                  </span>
+                  {active && <Check className="h-3.5 w-3.5 text-[#3ecf8e]" />}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

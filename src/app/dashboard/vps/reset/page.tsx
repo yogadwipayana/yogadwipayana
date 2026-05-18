@@ -13,7 +13,8 @@ import {
   Key,
   Lock,
 } from "lucide-react";
-import type { Metadata } from "next";
+
+import { vpsApi } from "@/lib/client/vps-api";
 
 /* -------------------------------------------------------------------------- */
 /*  Password validation                                                        */
@@ -127,10 +128,17 @@ function ResetContent() {
     e.preventDefault();
     if (!pwVal.allPassed) { setShowRules(true); return; }
     if (newPw !== confirmPw) { setPwMatchError(true); return; }
+    if (!instanceId) { setPwError("Missing instance id."); return; }
     setPwLoading(true);
-    await new Promise((r) => setTimeout(r, 900));
-    setPwSuccess(true);
-    setPwLoading(false);
+    setPwError(null);
+    try {
+      await vpsApi.resetPassword(instanceId, { username: "ubuntu", password: newPw });
+      setPwSuccess(true);
+    } catch (err) {
+      setPwError(err instanceof Error ? err.message : "Failed to reset password");
+    } finally {
+      setPwLoading(false);
+    }
   }
 
   async function handleSshSubmit(e: React.FormEvent) {
@@ -139,10 +147,26 @@ function ResetContent() {
       setSshError("Key name and public key are required.");
       return;
     }
+    if (!instanceId) {
+      setSshError("Missing instance id.");
+      return;
+    }
     setSshLoading(true);
-    await new Promise((r) => setTimeout(r, 900));
-    setSshSuccess(true);
-    setSshLoading(false);
+    setSshError(null);
+    try {
+      const imported = (await vpsApi.importSshKey(keyName.trim(), publicKey.trim())) as {
+        KeyId?: string;
+        keyId?: string;
+      };
+      const keyId = imported.KeyId ?? imported.keyId;
+      if (!keyId) throw new Error("Imported key did not return an ID");
+      await vpsApi.bindSshKey(instanceId, keyId);
+      setSshSuccess(true);
+    } catch (err) {
+      setSshError(err instanceof Error ? err.message : "Failed to bind SSH key");
+    } finally {
+      setSshLoading(false);
+    }
   }
 
   return (

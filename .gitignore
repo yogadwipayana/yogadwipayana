@@ -21,6 +21,8 @@
 # production
 /build
 /ai
+/.kilo
+/.vscode
 
 # misc
 .DS_Store

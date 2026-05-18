@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Suspense } from "react";
-import { CheckCircle2 } from "lucide-react";
 
 import { Footer } from "@/components/layout/Footer";
 import { Navbar } from "@/components/layout/Navbar";
-import { EmailOtpForm } from "../sign-in/email-otp-form";
+
+import { EmailPasswordSignUpForm } from "./sign-up-form";
 
 export const metadata: Metadata = {
   title: "Sign up",
@@ -46,7 +45,6 @@ function BackgroundGlow() {
 function AuthCard() {
   return (
     <section className="relative z-10 w-full max-w-[440px]">
-      {/* Brand pin */}
       <div className="mb-6 flex justify-center">
         <Link
           href="/"
@@ -66,62 +64,43 @@ function AuthCard() {
             Create your account
           </h1>
           <p className="mt-2 text-[14px] leading-relaxed text-white/55">
-            One click in, straight to the dashboard.
+            Email and password — confirm your inbox to finish.
           </p>
         </div>
 
         <div className="flex flex-col gap-3">
           <button
             type="button"
-            className="inline-flex h-12 w-full items-center justify-center gap-2.5 rounded-md border border-white/15 bg-white/[0.03] px-4 text-[14px] font-medium text-white transition-colors hover:border-white/25 hover:bg-white/[0.06]"
+            disabled
+            aria-disabled="true"
+            title="Coming soon"
+            className="inline-flex h-12 w-full cursor-not-allowed items-center justify-center gap-2.5 rounded-md border border-white/15 bg-white/[0.03] px-4 text-[14px] font-medium text-white opacity-70 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
           >
             <GoogleIcon className="h-5 w-5" />
             Continue with Google
+            <ComingSoonBadge />
           </button>
 
           <button
             type="button"
-            className="inline-flex h-12 w-full items-center justify-center gap-2.5 rounded-md border border-white/15 bg-white/[0.03] px-4 text-[14px] font-medium text-white transition-colors hover:border-white/25 hover:bg-white/[0.06]"
+            disabled
+            aria-disabled="true"
+            title="Coming soon"
+            className="inline-flex h-12 w-full cursor-not-allowed items-center justify-center gap-2.5 rounded-md border border-white/15 bg-white/[0.03] px-4 text-[14px] font-medium text-white opacity-70 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
           >
             <GithubIcon className="h-5 w-5" />
             Continue with GitHub
+            <ComingSoonBadge />
           </button>
-
-          <div className="my-2 flex items-center gap-3 text-[11px] uppercase tracking-[0.12em] text-white/40">
-            <span className="h-px flex-1 bg-white/[0.08]" />
-            or with email
-            <span className="h-px flex-1 bg-white/[0.08]" />
-          </div>
-
-          <Suspense fallback={null}>
-            <EmailOtpForm mode="sign-up" />
-          </Suspense>
-
-          <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-md border border-white/[0.08] bg-[#1c1c1c] p-3 text-[13px] leading-relaxed text-white/70 transition-colors hover:border-white/15 has-[input:checked]:border-[#3ecf8e]/40 has-[input:checked]:bg-[#3ecf8e]/5">
-            <input
-              type="checkbox"
-              name="agree"
-              className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer appearance-none rounded border border-white/20 bg-transparent accent-[#3ecf8e] checked:border-[#3ecf8e] checked:bg-[#3ecf8e] focus:ring-2 focus:ring-[#3ecf8e]/30 focus:outline-none"
-            />
-            <span>
-              I agree to the{" "}
-              <Link
-                href="/terms"
-                className="text-white underline-offset-4 hover:text-[#3ecf8e] hover:underline"
-              >
-                Terms &amp; conditions
-              </Link>{" "}
-              and{" "}
-              <Link
-                href="/privacy"
-                className="text-white underline-offset-4 hover:text-[#3ecf8e] hover:underline"
-              >
-                Privacy policy
-              </Link>
-              .
-            </span>
-          </label>
         </div>
+
+        <div className="my-5 flex items-center gap-3 text-[11px] uppercase tracking-[0.12em] text-white/40">
+          <span className="h-px flex-1 bg-white/[0.08]" />
+          or with email
+          <span className="h-px flex-1 bg-white/[0.08]" />
+        </div>
+
+        <EmailPasswordSignUpForm />
 
         <div className="mt-6 border-t border-white/[0.06] pt-5 text-center text-[13px] text-white/55">
           Already have an account?{" "}
@@ -133,22 +112,15 @@ function AuthCard() {
           </Link>
         </div>
       </div>
-
-      <ul className="mt-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[11px] text-white/40">
-        <TrustChip>No password to remember</TrustChip>
-        <TrustChip>No tracking</TrustChip>
-        <TrustChip>Free while in alpha</TrustChip>
-      </ul>
     </section>
   );
 }
 
-function TrustChip({ children }: { children: React.ReactNode }) {
+function ComingSoonBadge() {
   return (
-    <li className="inline-flex items-center gap-1.5">
-      <CheckCircle2 className="h-3 w-3 text-[#3ecf8e]/80" aria-hidden />
-      {children}
-    </li>
+    <span className="ml-1 rounded-full border border-white/[0.1] bg-white/[0.04] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-white/55">
+      Coming soon
+    </span>
   );
 }
 

@@ -22,7 +22,7 @@ export default async function ChatPage() {
     redirect("/sign-in");
   }
 
-  const conversations = await listConversations(supabase);
+  const conversations = await listConversations(supabase, user.id);
 
   return (
     <DashboardShell

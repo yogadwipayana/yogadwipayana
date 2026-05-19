@@ -58,10 +58,8 @@ export function VpsView({ instance: initialInstance }: { instance: VpsInstance }
   const [tab, setTab] = useState<VpsTab>("overview");
   const [instance, setInstance] = useState<VpsInstance>(initialInstance);
 
-  // When the parent shell switches selected instance, reset local state.
-  useEffect(() => {
-    setInstance(initialInstance);
-  }, [initialInstance]);
+  // The parent shell remounts this view via `key={instance.id}` whenever the
+  // selected instance changes, so we don't need an effect to sync local state.
 
   return (
     <div className="flex h-full flex-col">
@@ -104,6 +102,18 @@ function VpsHeader({
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Mirror the latest props into refs so the long-lived poll interval reads
+  // current values instead of the closure values from when polling started.
+  // Using effects (not direct assignment in render) satisfies react-hooks/refs.
+  const instanceRef = useRef(instance);
+  const onInstanceUpdateRef = useRef(onInstanceUpdate);
+  useEffect(() => {
+    instanceRef.current = instance;
+  }, [instance]);
+  useEffect(() => {
+    onInstanceUpdateRef.current = onInstanceUpdate;
+  }, [onInstanceUpdate]);
+
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
@@ -119,12 +129,13 @@ function VpsHeader({
       const startedAt = Date.now();
       const TIMEOUT_MS = 120_000;
       pollRef.current = setInterval(async () => {
+        const current = instanceRef.current;
         try {
           const data = await vpsApi.listInstances();
-          const fresh = data.instances.find((i) => i.id === instance.id);
+          const fresh = data.instances.find((i) => i.id === current.id);
           if (fresh) {
             const ps = (fresh.provider_status ?? fresh.status ?? "").toUpperCase();
-            onInstanceUpdate(applyApiPatch(instance, fresh));
+            onInstanceUpdateRef.current(applyApiPatch(current, fresh));
             if (ps === target) {
               stopPolling();
               setPendingAction(null);
@@ -140,7 +151,7 @@ function VpsHeader({
         }
       }, 2000);
     },
-    [instance, onInstanceUpdate, stopPolling],
+    [stopPolling],
   );
 
   async function runAction(action: LifecycleAction) {
@@ -503,6 +514,29 @@ function FirewallTab({ instance }: { instance: VpsInstance }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<FwForm>(DEFAULT_FW_FORM);
 
+  // Initial load — owns its own cancellation flag. Subsequent reloads after
+  // mutations call `reload()` directly without going through an effect.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = (await vpsApi.listFirewall(instance.id)) as {
+          rules?: TencentFirewallRule[];
+        };
+        if (cancelled) return;
+        setRules((data.rules ?? []).map((r, i) => fromTencent(r, i)));
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Failed to load firewall rules");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [instance.id]);
+
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -510,18 +544,13 @@ function FirewallTab({ instance }: { instance: VpsInstance }) {
       const data = (await vpsApi.listFirewall(instance.id)) as {
         rules?: TencentFirewallRule[];
       };
-      const list = (data.rules ?? []).map((r, i) => fromTencent(r, i));
-      setRules(list);
+      setRules((data.rules ?? []).map((r, i) => fromTencent(r, i)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load firewall rules");
     } finally {
       setLoading(false);
     }
   }, [instance.id]);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
 
   function openAdd() {
     setForm(DEFAULT_FW_FORM);
@@ -785,6 +814,27 @@ function SshTab({ instance }: { instance: VpsInstance }) {
   const [importing, setImporting] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
+  // Initial load — owns its own cancellation flag. Mutations call `reload()`
+  // directly afterward; that path doesn't go through an effect.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = (await vpsApi.listSshKeys()) as { keys?: TencentKeyPair[] };
+        if (cancelled) return;
+        setKeys(data.keys ?? []);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Failed to load SSH keys");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -797,10 +847,6 @@ function SshTab({ instance }: { instance: VpsInstance }) {
       setLoading(false);
     }
   }, []);
-
-  useEffect(() => {
-    void reload();
-  }, [reload]);
 
   const boundCount = keys.filter((k) =>
     k.AssociatedInstanceIds?.includes(instance.externalInstanceId),
@@ -1108,6 +1154,25 @@ function IpDisplay({ ip }: { ip: string }) {
   );
 }
 
+type BtnVariant = "default" | "primary" | "danger";
+
+const BTN_BASE =
+  "inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40";
+
+const BTN_VARIANT: Record<BtnVariant, string> = {
+  primary: "bg-[#3ecf8e] text-[#171717] hover:bg-[#24b47e]",
+  danger:
+    "border border-red-500/20 bg-red-500/[0.05] text-red-400 hover:bg-red-500/10",
+  default:
+    "border border-white/[0.08] bg-white/[0.02] text-white/60 hover:border-white/[0.14] hover:bg-white/[0.05] hover:text-white/80",
+};
+
+function pickBtnVariant(primary?: boolean, danger?: boolean): BtnVariant {
+  if (primary) return "primary";
+  if (danger) return "danger";
+  return "default";
+}
+
 function Btn({
   icon: Icon,
   label,
@@ -1123,15 +1188,14 @@ function Btn({
   disabled?: boolean;
   onClick?: () => void;
 }) {
-  const base =
-    "inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40";
-  const style = primary
-    ? "bg-[#3ecf8e] text-[#171717] hover:bg-[#24b47e]"
-    : danger
-      ? "border border-red-500/20 bg-red-500/[0.05] text-red-400 hover:bg-red-500/10"
-      : "border border-white/[0.08] bg-white/[0.02] text-white/60 hover:border-white/[0.14] hover:bg-white/[0.05] hover:text-white/80";
+  const variant = BTN_VARIANT[pickBtnVariant(primary, danger)];
   return (
-    <button type="button" onClick={onClick} disabled={disabled} className={`${base} ${style}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`${BTN_BASE} ${variant}`}
+    >
       <Icon className="h-3.5 w-3.5" />
       {label}
     </button>
@@ -1170,14 +1234,9 @@ function BtnLink({
   label: string;
   danger?: boolean;
 }) {
-  const style = danger
-    ? "border border-red-500/20 bg-red-500/[0.05] text-red-400 hover:bg-red-500/10"
-    : "border border-white/[0.08] bg-white/[0.02] text-white/60 hover:border-white/[0.14] hover:bg-white/[0.05] hover:text-white/80";
+  const variant = BTN_VARIANT[pickBtnVariant(false, danger)];
   return (
-    <Link
-      href={href}
-      className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[12px] font-medium transition-colors ${style}`}
-    >
+    <Link href={href} className={`${BTN_BASE} ${variant}`}>
       <Icon className="h-3.5 w-3.5" />
       {label}
     </Link>

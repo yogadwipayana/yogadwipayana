@@ -67,21 +67,22 @@ export async function POST(request: Request, { params }: RouteContext) {
 
   let conversation, priorMessages, stream;
   try {
-    conversation = await getConversation(supabase, conversationId);
+    conversation = await getConversation(supabase, conversationId, user.id);
     if (!conversation) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    priorMessages = await getMessages(supabase, conversationId);
+    priorMessages = await getMessages(supabase, conversationId, user.id);
 
     await appendMessage(supabase, {
       conversationId,
+      userId: user.id,
       role: "user",
       content: parsed.data.content,
     });
 
     if (priorMessages.length === 0) {
-      await updateConversation(supabase, conversationId, {
+      await updateConversation(supabase, conversationId, user.id, {
         title: deriveTitle(parsed.data.content),
       });
     }
@@ -123,13 +124,14 @@ export async function POST(request: Request, { params }: RouteContext) {
         if (assistantText.length > 0) {
           await appendMessage(supabase, {
             conversationId,
+            userId: user.id,
             role: "assistant",
             content: assistantText,
           });
         } else {
           // Bump updated_at even if the model returned nothing so the
           // conversation moves to the top of the list.
-          await updateConversation(supabase, conversationId, {});
+          await updateConversation(supabase, conversationId, user.id, {});
         }
 
         controller.enqueue(encoder.encode(`data: [DONE]\n\n`));

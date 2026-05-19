@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -15,29 +15,7 @@ import {
 } from "lucide-react";
 
 import { vpsApi } from "@/lib/client/vps-api";
-
-/* -------------------------------------------------------------------------- */
-/*  Password validation                                                        */
-/* -------------------------------------------------------------------------- */
-
-const SPECIAL_RE = /[`~!@#$%^&*()\-_=+[\]{};:'",.<>?/\\|]/;
-
-function validatePassword(pw: string) {
-  const hasLength = pw.length >= 8 && pw.length <= 30;
-  const noSpaces = !pw.includes(" ");
-  const noLeadingSlash = !pw.startsWith("/");
-  const sets = [/[a-z]/, /[A-Z]/, /[0-9]/, SPECIAL_RE].filter((r) => r.test(pw)).length;
-  const allPassed = hasLength && noSpaces && noLeadingSlash && sets >= 3;
-  return { hasLength, noSpaces, noLeadingSlash, hasThreeSets: sets >= 3, allPassed };
-}
-
-function generatePassword() {
-  const chars =
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+~";
-  const arr = new Uint32Array(16);
-  crypto.getRandomValues(arr);
-  return Array.from(arr, (n) => chars[n % chars.length]).join("");
-}
+import { generateVpsPassword, validateVpsPassword } from "@/lib/client/vps-password";
 
 /* -------------------------------------------------------------------------- */
 /*  Rule indicator                                                             */
@@ -99,7 +77,17 @@ function ResetContent() {
   const [pwLoading, setPwLoading] = useState(false);
   const [pwSuccess, setPwSuccess] = useState(false);
   const hideRulesRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const handleHideRules = useCallback(() => setShowRules(false), []);
+
+  // Cancel the pending password-reveal timeout if the user navigates away
+  // while it's running, so we don't call setState on an unmounted component.
+  useEffect(() => {
+    return () => {
+      if (hideRulesRef.current) {
+        clearTimeout(hideRulesRef.current);
+        hideRulesRef.current = null;
+      }
+    };
+  }, []);
 
   /* ssh state */
   const [keyName, setKeyName] = useState("");
@@ -108,11 +96,11 @@ function ResetContent() {
   const [sshSuccess, setSshSuccess] = useState(false);
   const [sshError, setSshError] = useState<string | null>(null);
 
-  const pwVal = validatePassword(newPw);
+  const pwVal = validateVpsPassword(newPw);
   const started = newPw.length > 0;
 
   function handleGenerate() {
-    const pw = generatePassword();
+    const pw = generateVpsPassword();
     setNewPw(pw);
     setConfirmPw(pw);
     setShowNew(true);

@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { deriveConversationTitle } from "@/lib/chat-title";
+
+export { deriveConversationTitle as deriveTitle };
+
 export type ConversationRow = {
   id: string;
   user_id: string;
@@ -26,10 +30,12 @@ const SUMMARY_COLS = "id,title,model,updated_at";
 
 export async function listConversations(
   supabase: SupabaseClient,
+  userId: string,
 ): Promise<ConversationSummary[]> {
   const { data, error } = await supabase
     .from("conversation")
     .select(SUMMARY_COLS)
+    .eq("user_id", userId)
     .order("updated_at", { ascending: false })
     .returns<ConversationSummary[]>();
   if (error) throw error;
@@ -39,11 +45,13 @@ export async function listConversations(
 export async function getConversation(
   supabase: SupabaseClient,
   id: string,
+  userId: string,
 ): Promise<ConversationRow | null> {
   const { data, error } = await supabase
     .from("conversation")
     .select("*")
     .eq("id", id)
+    .eq("user_id", userId)
     .maybeSingle<ConversationRow>();
   if (error) throw error;
   return data;
@@ -52,7 +60,15 @@ export async function getConversation(
 export async function getMessages(
   supabase: SupabaseClient,
   conversationId: string,
+  userId: string,
 ): Promise<MessageRow[]> {
+  // Confirm the caller owns this conversation before returning messages.
+  // Belt-and-braces against RLS drift; we already filtered the parent select
+  // in `getConversation`, but route handlers sometimes call `getMessages`
+  // directly.
+  const owner = await getConversation(supabase, conversationId, userId);
+  if (!owner) return [];
+
   const { data, error } = await supabase
     .from("message")
     .select("*")
@@ -84,10 +100,15 @@ export async function appendMessage(
   supabase: SupabaseClient,
   args: {
     conversationId: string;
+    userId: string;
     role: MessageRow["role"];
     content: string;
   },
 ): Promise<MessageRow> {
+  const owner = await getConversation(supabase, args.conversationId, args.userId);
+  if (!owner) {
+    throw new Error("Conversation not found");
+  }
   const { data, error } = await supabase
     .from("message")
     .insert({
@@ -104,6 +125,7 @@ export async function appendMessage(
 export async function updateConversation(
   supabase: SupabaseClient,
   id: string,
+  userId: string,
   patch: { title?: string; model?: string },
 ): Promise<ConversationSummary | null> {
   const fields: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -114,6 +136,7 @@ export async function updateConversation(
     .from("conversation")
     .update(fields)
     .eq("id", id)
+    .eq("user_id", userId)
     .select(SUMMARY_COLS)
     .maybeSingle<ConversationSummary>();
   if (error) throw error;
@@ -129,12 +152,4 @@ export async function touchConversation(
     .update({ updated_at: new Date().toISOString() })
     .eq("id", id);
   if (error) throw error;
-}
-
-export function deriveTitle(content: string): string {
-  const cleaned = content.replace(/\s+/g, " ").trim();
-  if (cleaned.length <= 50) return cleaned;
-  const cut = cleaned.slice(0, 50);
-  const lastSpace = cut.lastIndexOf(" ");
-  return (lastSpace > 20 ? cut.slice(0, lastSpace) : cut) + "…";
 }

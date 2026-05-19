@@ -234,12 +234,38 @@ function serializeInstanceForDashboard(instance: InstanceRow) {
   };
 }
 
-export async function refreshUserInstance(userId: string, instanceId: string) {
+/**
+ * Resolve an instance owned by `userId` and return Tencent credentials whose
+ * region is pinned to that instance's region.
+ *
+ * `preferStored` controls credential resolution: when true (the default),
+ * credentials stored on the instance row win — this preserves the previous
+ * behavior of `getInstanceDetail` and `refreshUserInstance`. When false, we
+ * always fall back to the user's BYOK / env credentials, which is what the
+ * action endpoints (start/stop, firewall, ssh-bind, …) historically used.
+ */
+async function resolveInstanceWithCreds(
+  userId: string,
+  instanceId: string,
+  preferStored = false,
+) {
   const instance = await getUserInstanceById(userId, instanceId);
   if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
   const hasStoredCredentials = Boolean(instance.secret_id_enc && instance.secret_key_enc);
-  const creds = hasStoredCredentials ? decodeInstanceCreds(instance) : await getCredentials(userId);
+  const creds =
+    preferStored && hasStoredCredentials
+      ? decodeInstanceCreds(instance)
+      : await getCredentials(userId);
   creds.region = instance.region;
+  return { instance, creds, hasStoredCredentials };
+}
+
+export async function refreshUserInstance(userId: string, instanceId: string) {
+  const { instance, creds, hasStoredCredentials } = await resolveInstanceWithCreds(
+    userId,
+    instanceId,
+    true,
+  );
 
   const providerInstances = await describeInstances(creds, {
     InstanceIds: [instance.external_instance_id],
@@ -311,10 +337,7 @@ export async function performInstanceAction(input: {
   instanceId: string;
   action: "start" | "stop" | "reboot";
 }) {
-  const instance = await getUserInstanceById(input.userId, input.instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(input.userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(input.userId, input.instanceId);
   const actionMap = {
     start: "StartInstances",
     stop: "StopInstances",
@@ -332,10 +355,7 @@ export async function performResetPassword(input: {
   username: string;
   password: string;
 }) {
-  const instance = await getUserInstanceById(input.userId, input.instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(input.userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(input.userId, input.instanceId);
   const requestId = await resetInstancePassword(
     creds,
     instance.external_instance_id,
@@ -352,10 +372,7 @@ export async function performReinstall(input: {
   password?: string;
   keyId?: string;
 }) {
-  const instance = await getUserInstanceById(input.userId, input.instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(input.userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(input.userId, input.instanceId);
   const requestId = await reinstallInstance(
     creds,
     instance.external_instance_id,
@@ -367,10 +384,7 @@ export async function performReinstall(input: {
 }
 
 export async function listFirewallRules(userId: string, instanceId: string) {
-  const instance = await getUserInstanceById(userId, instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(userId, instanceId);
   return describeFirewallRules(creds, instance.external_instance_id);
 }
 
@@ -383,10 +397,7 @@ export async function addFirewallRule(input: {
   action: string;
   description?: string;
 }) {
-  const instance = await getUserInstanceById(input.userId, input.instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(input.userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(input.userId, input.instanceId);
   const requestId = await createFirewallRule(creds, instance.external_instance_id, {
     protocol: input.protocol,
     port: input.port,
@@ -398,10 +409,7 @@ export async function addFirewallRule(input: {
 }
 
 export async function removeFirewallRule(input: { userId: string; instanceId: string; ruleId: string }) {
-  const instance = await getUserInstanceById(input.userId, input.instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(input.userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(input.userId, input.instanceId);
   const requestId = await deleteFirewallRule(creds, instance.external_instance_id, {
     firewallRuleId: input.ruleId,
   });
@@ -417,10 +425,7 @@ export async function removeFirewallRuleByDefinition(input: {
   action: string;
   description?: string;
 }) {
-  const instance = await getUserInstanceById(input.userId, input.instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(input.userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(input.userId, input.instanceId);
   const requestId = await deleteFirewallRule(creds, instance.external_instance_id, {
     rule: {
       protocol: input.protocol,
@@ -478,19 +483,13 @@ export async function createGeneratedSshKey(userId: string, keyName: string) {
 }
 
 export async function bindSshKeyToInstance(userId: string, instanceId: string, keyId: string) {
-  const instance = await getUserInstanceById(userId, instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(userId, instanceId);
   const requestId = await associateKeyPair(creds, instance.external_instance_id, keyId);
   return { requestId: requestId || null };
 }
 
 export async function unbindSshKeyFromInstance(userId: string, instanceId: string, keyId: string) {
-  const instance = await getUserInstanceById(userId, instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(userId, instanceId);
   const requestId = await disassociateKeyPair(creds, instance.external_instance_id, keyId);
   return { requestId: requestId || null };
 }

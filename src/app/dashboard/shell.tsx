@@ -27,6 +27,12 @@ import {
 import type { VpsInstance as ApiVpsInstance } from "@/lib/client/vps-api";
 import { normalizeStatus, toUiInstance } from "@/lib/client/vps-mappers";
 
+/**
+ * Module-level constant so an `instances={undefined}` prop doesn't allocate a
+ * fresh array on every render and invalidate the `useMemo` below.
+ */
+const NO_INSTANCES: readonly ApiVpsInstance[] = [];
+
 /* -------------------------------------------------------------------------- */
 /*  Sub-sidebar sections                                                      */
 /* -------------------------------------------------------------------------- */
@@ -37,7 +43,7 @@ type SubSection = { title: string; items: SubItem[] };
 function buildSections(
   toolId: ToolId,
   chatConversations: ChatConversationSummary[],
-  vpsInstances: ApiVpsInstance[],
+  vpsInstances: readonly ApiVpsInstance[],
 ): SubSection[] {
   if (toolId === "vps") {
     return [
@@ -125,7 +131,7 @@ export function DashboardShell({
   >(initialChatConversations ?? []);
   const [creatingConversation, setCreatingConversation] = useState(false);
 
-  const vpsInstances = instances ?? [];
+  const vpsInstances: readonly ApiVpsInstance[] = instances ?? NO_INSTANCES;
 
   const [activeItems, setActiveItems] = useState<Record<ToolId, string>>(() => ({
     vps:
@@ -259,7 +265,7 @@ function renderMain({
   onCreateConversation: () => void;
   creatingConversation: boolean;
   onConversationUpdated: (c: ChatConversationSummary) => void;
-  vpsInstances: ApiVpsInstance[];
+  vpsInstances: readonly ApiVpsInstance[];
 }): React.ReactNode {
   // Configuration / Platform pages use prefixed IDs (e.g. "vps:ssh-keys")
   if (activeItemId && activeItemId.includes(":")) {
@@ -278,7 +284,9 @@ function renderMain({
     if (vpsInstances.length === 0) return <VpsEmptyState />;
     const apiInstance =
       vpsInstances.find((i) => i.id === activeItemId) ?? vpsInstances[0];
-    return <VpsView instance={toUiInstance(apiInstance)} />;
+    // `key` remounts VpsView when the active instance changes, so the lifecycle
+    // poller and tab state can never read stale data from a previous selection.
+    return <VpsView key={apiInstance.id} instance={toUiInstance(apiInstance)} />;
   }
   if (activeTool === "ai") {
     return <AiOverview />;
@@ -297,6 +305,7 @@ function renderMain({
   }
   return (
     <ChatView
+      key={conversation.id}
       conversation={conversation}
       defaultModel={defaultChatModel}
       onConversationUpdated={onConversationUpdated}

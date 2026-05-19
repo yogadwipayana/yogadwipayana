@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import { vpsApi } from "@/lib/client/vps-api";
+import { validateVpsPassword } from "@/lib/client/vps-password";
 
 type Blueprint = {
   BlueprintId: string;
@@ -78,23 +79,6 @@ const OS_FAMILIES: OsFamily[] = [
       "OpenCloudOS is optimised for cloud-native workloads with stable performance, strong security hardening, and long-term enterprise support.",
   },
 ];
-
-/* -------------------------------------------------------------------------- */
-/*  Password validation                                                        */
-/* -------------------------------------------------------------------------- */
-
-const SPECIAL_RE = /[`~!@#$%^&*()\-_=+[\]{};:'",.<>?/\\|]/;
-
-function validatePassword(pw: string) {
-  const sets = [/[a-z]/, /[A-Z]/, /[0-9]/, SPECIAL_RE].filter((r) => r.test(pw)).length;
-  return {
-    hasLength: pw.length >= 8 && pw.length <= 30,
-    noSpaces: !pw.includes(" "),
-    noLeadingSlash: !pw.startsWith("/"),
-    hasThreeSets: sets >= 3,
-    allPassed: pw.length >= 8 && pw.length <= 30 && !pw.includes(" ") && !pw.startsWith("/") && sets >= 3,
-  };
-}
 
 /* -------------------------------------------------------------------------- */
 /*  Blueprint matcher                                                          */
@@ -232,7 +216,7 @@ function ReinstallContent() {
   }, []);
 
   const currentFamily = OS_FAMILIES.find((f) => f.key === selectedFamily) ?? OS_FAMILIES[0];
-  const pwVal = validatePassword(password);
+  const pwVal = validateVpsPassword(password);
   const matchedBlueprintId = matchBlueprintId(blueprints, selectedVersion);
   const versionAvailability = currentFamily.versions.map((v) => ({
     label: v,

@@ -28,11 +28,11 @@ export async function GET(_request: Request, { params }: RouteContext) {
   }
 
   const { id } = await params;
-  const conversation = await getConversation(supabase, id);
+  const conversation = await getConversation(supabase, id, user.id);
   if (!conversation) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const messages = await getMessages(supabase, id);
+  const messages = await getMessages(supabase, id, user.id);
   return NextResponse.json({ conversation, messages });
 }
 
@@ -62,7 +62,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     );
   }
 
-  const conversation = await updateConversation(supabase, id, parsed.data);
+  const conversation = await updateConversation(supabase, id, user.id, parsed.data);
   if (!conversation) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

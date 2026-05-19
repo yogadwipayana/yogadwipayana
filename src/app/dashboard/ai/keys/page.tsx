@@ -3,20 +3,12 @@
 import { useState } from "react";
 import { Check, Copy, Edit2, Key, Plus, Trash2, X } from "lucide-react";
 
-import type { AiApiKey, AiApiKeyUsageMode } from "../../data";
+import type { AiApiKey } from "../../data";
 import { AI_API_KEYS } from "../../data";
 
 /* -------------------------------------------------------------------------- */
 /*  Helpers                                                                    */
 /* -------------------------------------------------------------------------- */
-
-const USAGE_MODE_OPTIONS: { value: AiApiKeyUsageMode; label: string; description: string }[] = [
-  { value: "payg", label: "Pay as you go", description: "Charges against your pay-as-you-go balance." },
-];
-
-function usageModeLabel(mode: AiApiKeyUsageMode) {
-  return USAGE_MODE_OPTIONS.find((o) => o.value === mode)?.label ?? mode;
-}
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" })
@@ -116,10 +108,6 @@ export default function AiKeysPage() {
     await navigator.clipboard.writeText(keyId).catch(() => {});
     setCopiedId(keyId);
     setTimeout(() => setCopiedId(null), 1500);
-  }
-
-  function handleEdit() {
-    setEditingKey(null);
   }
 
   function handleDelete() {

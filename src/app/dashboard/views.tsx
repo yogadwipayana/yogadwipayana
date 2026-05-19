@@ -27,14 +27,21 @@ import type {
   ChatMessage,
 } from "./data";
 import { AI_MODELS, AI_RECENT_CALLS } from "./data";
+import { deriveConversationTitle } from "@/lib/chat-title";
 
 export { VpsView } from "./vps-view";
 
-const CHAT_MODELS = [
-  { slug: "gpt-5.5",          name: "GPT-5.5",          provider: "OpenAI" },
-  { slug: "claude-opus-4.7",  name: "Claude Opus 4.7",  provider: "Anthropic" },
-  { slug: "claude-sonnet-4.6", name: "Claude Sonnet 4.6", provider: "Anthropic" },
-] as const;
+/**
+ * Models the chat dropdown shows. Sourced from the same catalogue as the
+ * `/dashboard/ai/models` page so the two cannot drift. If the conversation's
+ * stored model isn't in this list, `ModelSelector` shows the raw slug with a
+ * "custom" hint instead of silently snapping to the first option.
+ */
+const CHAT_MODELS = AI_MODELS.map((m) => ({
+  slug: m.slug,
+  name: m.name,
+  provider: m.provider,
+}));
 
 const HIGHLIGHT_CACHE = new Map<string, string>();
 
@@ -307,13 +314,11 @@ export function ChatView({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // Hydrate messages whenever the active conversation changes.
+  // Hydrate messages once per mount. The parent shell remounts this view on
+  // conversation change via `key={conversation.id}`, so we don't need to reset
+  // local state inside the effect.
   useEffect(() => {
     let cancelled = false;
-    setLoaded(false);
-    setError(null);
-    setMessages([]);
-    setModel(conversation.model || defaultModel || "");
 
     (async () => {
       try {
@@ -338,7 +343,7 @@ export function ChatView({
     return () => {
       cancelled = true;
     };
-  }, [conversation.id, conversation.model, defaultModel]);
+  }, [conversation.id]);
 
   // Auto-scroll to bottom when messages change.
   useEffect(() => {
@@ -349,6 +354,8 @@ export function ChatView({
 
   const handleSelectModel = useCallback(
     async (slug: string) => {
+      // Capture state at dispatch time so a later, faster response can't
+      // clobber a slower-but-newer selection.
       const previous = model;
       setModel(slug);
       try {
@@ -358,13 +365,21 @@ export function ChatView({
           body: JSON.stringify({ model: slug }),
         });
         if (!res.ok) {
-          setModel(previous);
+          // Only revert if the user hasn't picked a different model since.
+          setModel((current) => (current === slug ? previous : current));
           return;
         }
         const data = (await res.json()) as { conversation: ChatConversationSummary };
-        onConversationUpdated?.(data.conversation);
+        // Likewise, ignore stale success: another selection may already be in
+        // flight and we don't want to surface this conversation summary in the
+        // sidebar with the wrong model.
+        setModel((current) => {
+          if (current !== slug) return current;
+          onConversationUpdated?.(data.conversation);
+          return current;
+        });
       } catch {
-        setModel(previous);
+        setModel((current) => (current === slug ? previous : current));
       }
     },
     [conversation.id, model, onConversationUpdated],
@@ -462,7 +477,7 @@ export function ChatView({
       onConversationUpdated?.({
         id: conversation.id,
         title: isFirstMessage
-          ? deriveTitleClient(trimmed)
+          ? deriveConversationTitle(trimmed)
           : conversation.title,
         model,
         updated_at: new Date().toISOString(),
@@ -617,14 +632,6 @@ export function ChatView({
   );
 }
 
-function deriveTitleClient(content: string): string {
-  const cleaned = content.replace(/\s+/g, " ").trim();
-  if (cleaned.length <= 50) return cleaned;
-  const cut = cleaned.slice(0, 50);
-  const lastSpace = cut.lastIndexOf(" ");
-  return (lastSpace > 20 ? cut.slice(0, lastSpace) : cut) + "…";
-}
-
 function formatRelative(iso: string): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "";
@@ -732,7 +739,11 @@ function ModelSelector({
   onSelect: (slug: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const active = CHAT_MODELS.find((m) => m.slug === model) ?? CHAT_MODELS[0];
+  const known = CHAT_MODELS.find((m) => m.slug === model);
+  // When the conversation's model isn't in the catalogue (e.g. it was created
+  // when the env-default pointed at a different slug), don't snap to the first
+  // option — show the raw slug so the UI mirrors the database.
+  const buttonLabel = known?.slug ?? model ?? "default";
 
   return (
     <div className="relative">
@@ -746,7 +757,7 @@ function ModelSelector({
         }`}
       >
         <Sparkles className="h-3 w-3 text-[#3ecf8e]/70" aria-hidden />
-        <span className="max-w-[140px] truncate">{active.slug}</span>
+        <span className="max-w-[140px] truncate">{buttonLabel}</span>
         <ChevronUp
           className={`h-3 w-3 text-white/30 transition-transform group-hover:text-white/55 ${
             open ? "rotate-180" : ""
@@ -773,6 +784,21 @@ function ModelSelector({
               </span>
               <span className="text-[10px] text-white/25">{CHAT_MODELS.length}</span>
             </div>
+            {!known && model ? (
+              <div className="border-b border-white/[0.06] px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.1em] text-amber-300">
+                    custom
+                  </span>
+                  <span className="truncate font-mono text-[11px] text-white/55">
+                    {model}
+                  </span>
+                </div>
+                <p className="mt-1 text-[10px] leading-relaxed text-white/30">
+                  Stored model isn&apos;t in the catalogue. Pick one below to switch.
+                </p>
+              </div>
+            ) : null}
             <ul className="p-1.5">
               {CHAT_MODELS.map((m) => {
                 const selected = model === m.slug;
@@ -840,8 +866,13 @@ function AssistantMarkdown({ content }: { content: string }) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          code({ inline, className, children, ...props }: React.HTMLAttributes<HTMLElement> & { inline?: boolean }) {
-            if (inline) {
+          // react-markdown v9 dropped the `inline` prop. Fenced code blocks
+          // always carry a `language-*` class (set by the parser) and live
+          // inside a `<pre>`; inline code has no class. We use the class as
+          // the discriminator and override `pre` below to unwrap the wrapper.
+          code({ className, children, ...props }) {
+            const match = /language-(\w+)/.exec(className || "");
+            if (!match) {
               return (
                 <code
                   className="mx-0.5 rounded border border-white/[0.08] bg-white/[0.05] px-1.5 py-0.5 font-mono text-[12px] text-[#3ecf8e]/75"
@@ -851,8 +882,7 @@ function AssistantMarkdown({ content }: { content: string }) {
                 </code>
               );
             }
-            const match = /language-(\w+)/.exec(className || "");
-            const lang = match?.[1] ?? null;
+            const lang = match[1] ?? null;
             const code = String(children).replace(/\n$/, "");
             return <CodeBubble lang={lang} code={code} />;
           },
@@ -1034,25 +1064,6 @@ function CodeBlock({ title, lines }: { title: string; lines: string[] }) {
         <code>{lines.join("\n")}</code>
       </pre>
     </section>
-  );
-}
-
-function LogRow({
-  ts,
-  text,
-  tone,
-}: {
-  ts: string;
-  text: string;
-  tone?: "soft";
-}) {
-  return (
-    <li className="flex items-center gap-3 px-4 py-2">
-      <span className="w-16 shrink-0 text-white/40">{ts}</span>
-      <span className={tone === "soft" ? "text-white/50" : "text-white/80"}>
-        {text}
-      </span>
-    </li>
   );
 }
 

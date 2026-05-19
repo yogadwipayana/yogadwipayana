@@ -5,6 +5,7 @@ import { Check, Copy, Edit2, Key, Plus, Trash2, X } from "lucide-react";
 
 import type { AiApiKey } from "../../data";
 import { AI_API_KEYS } from "../../data";
+import { copyToClipboard } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
 /*  Helpers                                                                    */
@@ -99,13 +100,13 @@ export default function AiKeysPage() {
   }
 
   async function copySecret(text: string) {
-    await navigator.clipboard.writeText(text).catch(() => {});
+    await copyToClipboard(text);
     setCopiedCreated(true);
     setTimeout(() => setCopiedCreated(false), 1500);
   }
 
   async function copyMasked(keyId: string) {
-    await navigator.clipboard.writeText(keyId).catch(() => {});
+    await copyToClipboard(keyId);
     setCopiedId(keyId);
     setTimeout(() => setCopiedId(null), 1500);
   }

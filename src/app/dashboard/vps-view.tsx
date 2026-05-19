@@ -27,6 +27,7 @@ import {
 import type { FirewallRule, VpsInstance, VpsStatus } from "./data";
 import { vpsApi, type VpsInstance as ApiVpsInstance } from "@/lib/client/vps-api";
 import { normalizeStatus } from "@/lib/client/vps-mappers";
+import { copyToClipboard } from "@/lib/utils";
 
 /* -------------------------------------------------------------------------- */
 /*  Types                                                                      */
@@ -933,7 +934,7 @@ function SshTab({ instance }: { instance: VpsInstance }) {
   }
 
   async function copyText(text: string, id: string) {
-    await navigator.clipboard.writeText(text).catch(() => {});
+    await copyToClipboard(text);
     setCopied(id);
     setTimeout(() => setCopied(null), 1500);
   }
@@ -1167,7 +1168,7 @@ function IpDisplay({ ip }: { ip: string }) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
-    await navigator.clipboard.writeText(ip).catch(() => {});
+    await copyToClipboard(ip);
     setCopied(true);
     setTimeout(() => setCopied(false), 1200);
   }

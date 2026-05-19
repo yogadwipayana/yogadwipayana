@@ -253,20 +253,10 @@ function serializeInstanceForDashboard(instance: InstanceRow) {
   };
 }
 
-/**
- * Resolve an instance owned by `userId` and return Tencent credentials whose
- * region is pinned to that instance's region.
- *
- * `preferStored` controls credential resolution: when true (the default),
- * credentials stored on the instance row win — this preserves the previous
- * behavior of `getInstanceDetail` and `refreshUserInstance`. When false, we
- * always fall back to the user's BYOK / env credentials, which is what the
- * action endpoints (start/stop, firewall, ssh-bind, …) historically used.
- */
 async function resolveInstanceWithCreds(
   userId: string,
   instanceId: string,
-  preferStored = false,
+  preferStored = true,
 ) {
   const instance = await getUserInstanceById(userId, instanceId);
   if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");

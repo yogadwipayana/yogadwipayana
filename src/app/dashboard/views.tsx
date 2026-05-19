@@ -37,6 +37,7 @@ import type {
 } from "./data";
 import { AI_MODELS, AI_RECENT_CALLS } from "./data";
 import { deriveConversationTitle } from "@/lib/chat-title";
+import { copyToClipboard } from "@/lib/utils";
 
 export { VpsView } from "./vps-view";
 
@@ -998,11 +999,10 @@ function ChatBubble({
   }, [editing]);
 
   const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(message.content);
+    if (await copyToClipboard(message.content)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch {}
+    }
   }, [message.content]);
 
   const commitEdit = useCallback(() => {
@@ -1494,11 +1494,10 @@ function CodeBubble({ lang, code }: { lang: string | null; code: string }) {
   const [copied, setCopied] = useState(false);
 
   const onCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(code);
+    if (await copyToClipboard(code)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch {}
+    }
   };
 
   if (isSingleLine) {

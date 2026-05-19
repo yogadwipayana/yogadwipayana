@@ -5,7 +5,17 @@ export function normalizeStatus(providerStatus: string | null | undefined): VpsS
   const s = String(providerStatus ?? "").toUpperCase();
   if (s === "RUNNING") return "running";
   if (s === "STOPPED" || s === "SHUTDOWN") return "stopped";
-  return "rebooting";
+  if (
+    s === "STARTING" ||
+    s === "STOPPING" ||
+    s === "REBOOTING" ||
+    s === "PENDING" ||
+    s === "RESETTING" ||
+    s === "OPERATING"
+  ) {
+    return "rebooting";
+  }
+  return "stopped";
 }
 
 function formatExpiry(iso: string | null): string | undefined {

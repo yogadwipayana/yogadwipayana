@@ -153,3 +153,93 @@ export async function touchConversation(
     .eq("id", id);
   if (error) throw error;
 }
+
+export async function deleteConversation(
+  supabase: SupabaseClient,
+  id: string,
+  userId: string,
+): Promise<boolean> {
+  // Returning the row tells us whether RLS + ownership matched. If nothing
+  // came back the caller doesn't own the row (or it doesn't exist).
+  const { data, error } = await supabase
+    .from("conversation")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select("id")
+    .maybeSingle<{ id: string }>();
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function deleteLastAssistantMessage(
+  supabase: SupabaseClient,
+  conversationId: string,
+  userId: string,
+): Promise<boolean> {
+  const owner = await getConversation(supabase, conversationId, userId);
+  if (!owner) return false;
+
+  const { data: latest, error: selectErr } = await supabase
+    .from("message")
+    .select("id,role")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<{ id: string; role: MessageRow["role"] }>();
+  if (selectErr) throw selectErr;
+  if (!latest || latest.role !== "assistant") return false;
+
+  const { error: deleteErr } = await supabase
+    .from("message")
+    .delete()
+    .eq("id", latest.id);
+  if (deleteErr) throw deleteErr;
+  return true;
+}
+
+/**
+ * Edits an existing user message in place and deletes every message that came
+ * after it (the conversation tail), so the model can regenerate from this
+ * point. Returns the updated message (or `null` if not found / not owned).
+ */
+export async function editUserMessageAndTruncate(
+  supabase: SupabaseClient,
+  args: {
+    conversationId: string;
+    userId: string;
+    messageId: string;
+    content: string;
+  },
+): Promise<MessageRow | null> {
+  const owner = await getConversation(supabase, args.conversationId, args.userId);
+  if (!owner) return null;
+
+  const { data: target, error: targetErr } = await supabase
+    .from("message")
+    .select("*")
+    .eq("id", args.messageId)
+    .eq("conversation_id", args.conversationId)
+    .maybeSingle<MessageRow>();
+  if (targetErr) throw targetErr;
+  if (!target || target.role !== "user") return null;
+
+  // Drop everything strictly after this message (assistant reply + any later
+  // turns). Tied timestamps would be unusual but exclude the target itself by
+  // id just in case.
+  const { error: deleteErr } = await supabase
+    .from("message")
+    .delete()
+    .eq("conversation_id", args.conversationId)
+    .gt("created_at", target.created_at);
+  if (deleteErr) throw deleteErr;
+
+  const { data: updated, error: updateErr } = await supabase
+    .from("message")
+    .update({ content: args.content })
+    .eq("id", target.id)
+    .select("*")
+    .single<MessageRow>();
+  if (updateErr) throw updateErr;
+  return updated;
+}

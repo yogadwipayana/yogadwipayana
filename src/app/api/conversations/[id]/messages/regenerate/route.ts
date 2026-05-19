@@ -1,12 +1,11 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { z } from "zod";
 
 import { openai } from "@/lib/openai";
 import { CHAT_SYSTEM_PROMPT } from "@/lib/server/chat-prompt";
 import {
   appendMessage,
-  deriveTitle,
+  deleteLastAssistantMessage,
   getConversation,
   getMessages,
   updateConversation,
@@ -15,13 +14,16 @@ import { createClient } from "@/utils/supabase/server";
 
 export const runtime = "nodejs";
 
-const Body = z.object({
-  content: z.string().min(1).max(20_000),
-});
-
 type RouteContext = { params: Promise<{ id: string }> };
 
-export async function POST(request: Request, { params }: RouteContext) {
+/**
+ * POST /api/conversations/:id/messages/regenerate
+ *
+ * Drops the most recent assistant message (if any) and re-streams a new
+ * completion using the conversation's existing user-side history. Useful for
+ * "try that again" after a bad answer or a stream error.
+ */
+export async function POST(_request: Request, { params }: RouteContext) {
   const supabase = createClient(await cookies());
   const {
     data: { user },
@@ -31,41 +33,30 @@ export async function POST(request: Request, { params }: RouteContext) {
   }
 
   const { id: conversationId } = await params;
-  const json = await request.json().catch(() => null);
-  const parsed = Body.safeParse(json);
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Invalid payload", issues: parsed.error.flatten() },
-      { status: 400 },
-    );
-  }
 
-  let conversation, priorMessages, savedUserMessage, stream;
+  let conversation, history, stream;
   try {
     conversation = await getConversation(supabase, conversationId, user.id);
     if (!conversation) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    priorMessages = await getMessages(supabase, conversationId, user.id);
+    // Drop trailing assistant turn (if present) so the model regenerates from
+    // the prior user message. If the last message is a user message, just
+    // re-run the completion against the existing history.
+    await deleteLastAssistantMessage(supabase, conversationId, user.id);
 
-    savedUserMessage = await appendMessage(supabase, {
-      conversationId,
-      userId: user.id,
-      role: "user",
-      content: parsed.data.content,
-    });
-
-    if (priorMessages.length === 0) {
-      await updateConversation(supabase, conversationId, user.id, {
-        title: deriveTitle(parsed.data.content),
-      });
+    history = await getMessages(supabase, conversationId, user.id);
+    if (history.length === 0) {
+      return NextResponse.json(
+        { error: "Nothing to regenerate" },
+        { status: 400 },
+      );
     }
 
     const messagesForModel = [
       { role: "system" as const, content: CHAT_SYSTEM_PROMPT },
-      ...priorMessages.map((m) => ({ role: m.role, content: m.content })),
-      { role: "user" as const, content: parsed.data.content },
+      ...history.map((m) => ({ role: m.role, content: m.content })),
     ];
 
     stream = await openai().chat.completions.create({
@@ -75,7 +66,10 @@ export async function POST(request: Request, { params }: RouteContext) {
       messages: messagesForModel,
     });
   } catch (err) {
-    console.error("[/api/conversations/[id]/messages] setup failed:", err);
+    console.error(
+      "[/api/conversations/[id]/messages/regenerate] setup failed:",
+      err,
+    );
     const message = err instanceof Error ? err.message : "Internal error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
@@ -86,15 +80,6 @@ export async function POST(request: Request, { params }: RouteContext) {
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        // Emit the persisted user message id first so the client can reconcile
-        // its local placeholder with the DB row (needed for edit/delete on
-        // freshly-sent messages).
-        controller.enqueue(
-          encoder.encode(
-            `data: ${JSON.stringify({ saved: { role: "user", id: savedUserMessage.id } })}\n\n`,
-          ),
-        );
-
         for await (const chunk of stream) {
           const delta = chunk.choices[0]?.delta?.content;
           if (delta) {
@@ -118,8 +103,6 @@ export async function POST(request: Request, { params }: RouteContext) {
             ),
           );
         } else {
-          // Bump updated_at even if the model returned nothing so the
-          // conversation moves to the top of the list.
           await updateConversation(supabase, conversationId, user.id, {});
         }
 

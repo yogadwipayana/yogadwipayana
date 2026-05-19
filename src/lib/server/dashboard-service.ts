@@ -200,6 +200,25 @@ export async function getUserInstanceById(userId: string, id: string) {
   return (data as InstanceRow | null) ?? null;
 }
 
+export async function removeUserInstance(userId: string, id: string) {
+  const instance = await getUserInstanceById(userId, id);
+  if (!instance) {
+    throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
+  }
+  const client = await sb();
+  const { error } = await client
+    .from("instance")
+    .update({
+      status: "inactive",
+      secret_id_enc: null,
+      secret_key_enc: null,
+    })
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  return { removed: true, id };
+}
+
 export async function syncAllInstances(userId: string) {
   const sourceInstance = await getCredentialSourceInstance(userId);
   if (!sourceInstance) return [];

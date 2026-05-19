@@ -9,7 +9,6 @@ import {
   Check,
   Eye,
   EyeOff,
-  ExternalLink,
   Key,
   Lock,
 } from "lucide-react";
@@ -66,6 +65,7 @@ function ResetContent() {
   const [tab, setTab] = useState<Tab>("password");
 
   /* password state */
+  const [username, setUsername] = useState("ubuntu");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [showNew, setShowNew] = useState(false);
@@ -116,11 +116,12 @@ function ResetContent() {
     e.preventDefault();
     if (!pwVal.allPassed) { setShowRules(true); return; }
     if (newPw !== confirmPw) { setPwMatchError(true); return; }
+    if (!username.trim()) { setPwError("Username is required."); return; }
     if (!instanceId) { setPwError("Missing instance id."); return; }
     setPwLoading(true);
     setPwError(null);
     try {
-      await vpsApi.resetPassword(instanceId, { username: "ubuntu", password: newPw });
+      await vpsApi.resetPassword(instanceId, { username: username.trim(), password: newPw });
       setPwSuccess(true);
     } catch (err) {
       setPwError(err instanceof Error ? err.message : "Failed to reset password");
@@ -210,12 +211,16 @@ function ResetContent() {
                   {/* Username */}
                   <Field label="Username">
                     <input
-                      disabled
-                      value="ubuntu"
-                      className="w-full cursor-not-allowed rounded-md border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-[13px] text-white/40"
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="ubuntu"
+                      className="w-full rounded-md border border-white/[0.08] bg-[#1c1c1c] px-3 py-2 text-[13px] text-white placeholder:text-white/20 focus:border-[#3ecf8e]/40 focus:outline-none"
                     />
                     <p className="mt-1.5 text-[11px] text-white/30">
-                      You are changing the password for the ubuntu user.
+                      Default depends on the OS — Ubuntu: <span className="font-mono">ubuntu</span>, Debian:{" "}
+                      <span className="font-mono">debian</span>, Rocky / CentOS / OpenCloudOS:{" "}
+                      <span className="font-mono">root</span>.
                     </p>
                   </Field>
 
@@ -340,17 +345,9 @@ function ResetContent() {
             ) : (
               <form onSubmit={handleSshSubmit} className="space-y-5">
                 <div className="rounded-lg border border-white/[0.08] bg-[#171717] p-6 space-y-5">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <Key className="h-4 w-4 text-[#3ecf8e]" />
-                      <h2 className="text-[15px] font-medium text-white">Bind SSH Key</h2>
-                    </div>
-                    <a
-                      href="#"
-                      className="flex items-center gap-1 text-[12px] text-[#3ecf8e] hover:text-[#24b47e]"
-                    >
-                      Learn more <ExternalLink className="h-3 w-3" />
-                    </a>
+                  <div className="mb-2 flex items-center gap-2">
+                    <Key className="h-4 w-4 text-[#3ecf8e]" />
+                    <h2 className="text-[15px] font-medium text-white">Bind SSH Key</h2>
                   </div>
 
                   <Field label="Key Name">

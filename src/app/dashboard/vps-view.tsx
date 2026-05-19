@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Activity,
   Check,
@@ -14,6 +15,7 @@ import {
   MemoryStick,
   Play,
   Plus,
+  RefreshCw,
   RotateCw,
   Server,
   Shield,
@@ -99,6 +101,9 @@ function VpsHeader({
   const [pendingAction, setPendingAction] = useState<LifecycleAction | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<LifecycleAction | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const router = useRouter();
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -176,6 +181,22 @@ function VpsHeader({
     setConfirmAction(action);
   }
 
+  async function handleRefresh() {
+    if (refreshing || pendingAction) return;
+    setRefreshing(true);
+    setActionError(null);
+    try {
+      const data = await vpsApi.listInstances(true);
+      const fresh = data.instances.find((i) => i.id === instance.id);
+      if (fresh) onInstanceUpdate(applyApiPatch(instance, fresh));
+      router.refresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Refresh failed");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return (
     <div className="shrink-0 border-b border-white/[0.06] bg-[#171717]">
       <div className="px-6 pt-6 pb-0 sm:px-8">
@@ -212,6 +233,12 @@ function VpsHeader({
 
           {/* Action buttons */}
           <div className="flex flex-wrap gap-2 shrink-0">
+            <Btn
+              icon={RefreshCw}
+              label={refreshing ? "Refreshing…" : "Refresh"}
+              onClick={handleRefresh}
+              disabled={refreshing || pendingAction !== null}
+            />
             {isStopped ? (
               <Btn
                 icon={Play}
@@ -385,7 +412,7 @@ function OverviewTab({
                 instance.providerStatus.toUpperCase() !==
                   instance.status.toUpperCase() && (
                   <span className="font-mono text-[11px] text-white/35">
-                    · {instance.providerStatus}
+                    · {formatProviderStatus(instance.providerStatus)}
                   </span>
                 )}
             </div>
@@ -1118,12 +1145,22 @@ function StatusBadge({ status, providerStatus }: { status: VpsStatus; providerSt
       : status === "rebooting"
         ? "border-amber-500/20 bg-amber-500/10 text-amber-300"
         : "border-white/[0.08] bg-white/[0.04] text-white/40";
-  const label = providerStatus && providerStatus.length > 0 ? providerStatus : status;
+  const raw = providerStatus && providerStatus.length > 0 ? providerStatus : status;
+  const label = formatProviderStatus(raw);
   return (
     <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.1em] ${cls}`}>
       {label}
     </span>
   );
+}
+
+function formatProviderStatus(value: string): string {
+  const cleaned = String(value).replace(/_/g, " ").trim().toLowerCase();
+  if (!cleaned) return "Unknown";
+  return cleaned
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function IpDisplay({ ip }: { ip: string }) {

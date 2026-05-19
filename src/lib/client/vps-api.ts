@@ -78,6 +78,8 @@ export const vpsApi = {
     apiGet<{ instances: VpsInstance[] }>(`/api/vps/instances${refresh ? "?refresh=true" : ""}`),
   getInstanceDetail: (id: string, refresh = false) =>
     apiGet(`/api/vps/instances/${id}/detail${refresh ? "?refresh=true" : ""}`),
+  removeInstance: (id: string) =>
+    apiSend<{ removed: boolean; id: string }>(`/api/vps/instances/${id}`, "DELETE"),
   performAction: (id: string, action: "start" | "stop" | "reboot") =>
     apiSend(`/api/vps/instances/${id}/actions/${action}`, "POST"),
   resetPassword: (id: string, body: { username?: string; password: string }) =>

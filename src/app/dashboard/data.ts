@@ -289,14 +289,9 @@ export type AiModel = {
 };
 
 export const AI_MODELS: AiModel[] = [
-  { slug: "claude-opus-4",       name: "Claude Opus 4",       provider: "Anthropic", providerCode: "AN", contextWindow: "200,000", inputPrice: "$15.00", outputPrice: "$75.00",  modelId: "claude-opus-4-5" },
-  { slug: "claude-sonnet-4",     name: "Claude Sonnet 4",     provider: "Anthropic", providerCode: "AN", contextWindow: "200,000", inputPrice: "$3.00",  outputPrice: "$15.00",  modelId: "claude-sonnet-4-5" },
-  { slug: "gpt-4o",              name: "GPT-4o",              provider: "OpenAI",    providerCode: "OA", contextWindow: "128,000", inputPrice: "$5.00",  outputPrice: "$15.00",  modelId: "gpt-4o-2024-05-13" },
-  { slug: "gpt-4o-mini",        name: "GPT-4o Mini",         provider: "OpenAI",    providerCode: "OA", contextWindow: "128,000", inputPrice: "$0.15",  outputPrice: "$0.60",   modelId: "gpt-4o-mini" },
-  { slug: "gpt-5",               name: "GPT-5",               provider: "OpenAI",    providerCode: "OA", contextWindow: "256,000", inputPrice: "$30.00", outputPrice: "$60.00",  modelId: "gpt-5" },
-  { slug: "llama-3-70b",         name: "Llama 3 70B",         provider: "Meta",      providerCode: "ME", contextWindow: "8,192",   inputPrice: "$0.50",  outputPrice: "$1.50",   modelId: "meta-llama/Meta-Llama-3-70B-Instruct" },
-  { slug: "mistral-large",       name: "Mistral Large",       provider: "Mistral",   providerCode: "MI", contextWindow: "32,768",  inputPrice: "$4.00",  outputPrice: "$12.00",  modelId: "mistral-large-latest" },
-  { slug: "voyage-3",            name: "Voyage 3",            provider: "Voyage",    providerCode: "VO", contextWindow: "32,000",  inputPrice: "$0.06",  outputPrice: "—",       modelId: "voyage-3" },
+  { slug: "gpt-5.5",          name: "GPT-5.5",          provider: "OpenAI",    providerCode: "OA", contextWindow: "256,000", inputPrice: "$30.00", outputPrice: "$60.00", modelId: "gpt-5.5" },
+  { slug: "claude-opus-4.7",  name: "Claude Opus 4.7",  provider: "Anthropic", providerCode: "AN", contextWindow: "200,000", inputPrice: "$15.00", outputPrice: "$75.00", modelId: "claude-opus-4-7" },
+  { slug: "claude-sonnet-4.6", name: "Claude Sonnet 4.6", provider: "Anthropic", providerCode: "AN", contextWindow: "200,000", inputPrice: "$3.00",  outputPrice: "$15.00", modelId: "claude-sonnet-4-6" },
 ];
 
 /* -------------------------------------------------------------------------- */

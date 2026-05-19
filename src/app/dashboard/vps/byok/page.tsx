@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Check,
@@ -12,9 +13,11 @@ import {
   Globe,
   Plus,
   Server,
+  Trash2,
+  X,
 } from "lucide-react";
 
-import { vpsApi } from "@/lib/client/vps-api";
+import { vpsApi, type VpsInstance as ApiVpsInstance } from "@/lib/client/vps-api";
 
 const REGIONS = [
   { value: "ap-jakarta", label: "ap-jakarta", city: "Jakarta" },
@@ -48,6 +51,8 @@ type ConnectResponse = {
 /* -------------------------------------------------------------------------- */
 
 export default function ByokPage() {
+  const router = useRouter();
+
   const [secretId, setSecretId]   = useState("");
   const [secretKey, setSecretKey] = useState("");
   const [region, setRegion]       = useState("ap-jakarta");
@@ -60,6 +65,45 @@ export default function ByokPage() {
 
   const [importing, setImporting] = useState<string | null>(null);
   const [imported, setImported]   = useState<string[]>([]);
+
+  // Managed (already-imported) instances.
+  const [managed, setManaged] = useState<ApiVpsInstance[]>([]);
+  const [managedLoading, setManagedLoading] = useState(true);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<ApiVpsInstance | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await vpsApi.listInstances();
+        if (cancelled) return;
+        setManaged(data.instances ?? []);
+      } catch {
+        // Best-effort: empty list is fine if request fails.
+      } finally {
+        if (!cancelled) setManagedLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleRemove(instance: ApiVpsInstance) {
+    setRemoving(instance.id);
+    setMessage(null);
+    try {
+      await vpsApi.removeInstance(instance.id);
+      setManaged((prev) => prev.filter((i) => i.id !== instance.id));
+      router.refresh();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Failed to remove instance.");
+    } finally {
+      setRemoving(null);
+      setConfirmRemove(null);
+    }
+  }
 
   async function handleConnect(e: React.FormEvent) {
     e.preventDefault();
@@ -80,10 +124,17 @@ export default function ByokPage() {
           ? `No Lighthouse instances found in ${region}. Try a different region.`
           : `Connected. ${list.length} instance${list.length === 1 ? "" : "s"} found.`,
       );
+      try {
+        sessionStorage.removeItem("vps:byok-last-error");
+      } catch {}
     } catch (err) {
       setConnected(false);
       setInstances([]);
-      setMessage(err instanceof Error ? err.message : "Failed to connect to Tencent Cloud.");
+      const msg = err instanceof Error ? err.message : "Failed to connect to Tencent Cloud.";
+      setMessage(msg);
+      try {
+        sessionStorage.setItem("vps:byok-last-error", msg);
+      } catch {}
     } finally {
       setLoading(false);
     }
@@ -135,6 +186,81 @@ export default function ByokPage() {
         <div className="rounded-md border border-white/[0.06] bg-white/[0.03] p-4 text-[12px] leading-relaxed text-white/45">
           Connect your existing Tencent Cloud (Lighthouse) account to import and manage your VPS instances directly from this dashboard. Credentials are encrypted at rest and used to drive provider actions on your behalf.
         </div>
+
+        {/* Managed instances */}
+        {(managedLoading || managed.length > 0) && (
+          <div className="rounded-lg border border-white/[0.08] bg-[#171717]">
+            <div className="flex items-center justify-between border-b border-white/[0.05] px-6 py-3.5">
+              <h2 className="text-[14px] font-medium text-white">
+                Managed Instances
+                {!managedLoading && (
+                  <span className="ml-2 text-[12px] font-normal text-white/40">
+                    {managed.length} active
+                  </span>
+                )}
+              </h2>
+            </div>
+            {managedLoading ? (
+              <div className="px-6 py-6 text-[12px] text-white/40">
+                Loading managed instances…
+              </div>
+            ) : (
+              <div className="divide-y divide-white/[0.04]">
+                {managed.map((inst) => {
+                  const busy = removing === inst.id;
+                  return (
+                    <div
+                      key={inst.id}
+                      className="flex items-center justify-between gap-4 px-6 py-4"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${statusDot(
+                              (inst.provider_status ?? inst.status ?? "").toUpperCase(),
+                            )}`}
+                          />
+                          <span className="font-medium text-[14px] text-white">{inst.name}</span>
+                          <span className="font-mono text-[11px] text-white/30">
+                            {inst.external_instance_id}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-white/40">
+                          <span>{inst.region}</span>
+                          {inst.ip_public && (
+                            <>
+                              <span className="text-white/15">·</span>
+                              <span className="font-mono">{inst.ip_public}</span>
+                            </>
+                          )}
+                          <span className="text-white/15">·</span>
+                          <span className="rounded-full bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em] text-white/35">
+                            {inst.source}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmRemove(inst)}
+                        disabled={busy}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md border border-red-500/20 bg-red-500/[0.05] px-3 text-[12px] font-medium text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {busy ? "Removing…" : "Remove"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {!managedLoading && managed.length > 0 && (
+              <div className="border-t border-white/[0.04] bg-white/[0.02] px-6 py-3 text-[11px] leading-relaxed text-white/40">
+                Removing detaches an instance from this dashboard and clears its stored credentials.
+                The VPS itself stays running on Tencent Cloud.
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Credentials form */}
         <form onSubmit={handleConnect} className="rounded-lg border border-white/[0.08] bg-[#171717] p-6 space-y-5">
@@ -281,6 +407,46 @@ export default function ByokPage() {
           </div>
         )}
       </main>
+
+      {confirmRemove && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-md rounded-xl border border-white/[0.1] bg-[#171717] p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-[15px] font-medium text-white">Remove instance?</h3>
+              <button
+                type="button"
+                onClick={() => setConfirmRemove(null)}
+                className="text-white/35 hover:text-white/60"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <p className="mb-6 text-[13px] leading-relaxed text-white/55">
+              Detach <strong className="text-white">{confirmRemove.name}</strong> from this dashboard?
+              The VPS keeps running on Tencent Cloud and you can re-import it later by reconnecting.
+              Stored Tencent credentials for this instance will be cleared.
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmRemove(null)}
+                className="flex-1 rounded-md border border-white/[0.08] py-2 text-[13px] text-white/55 transition-colors hover:bg-white/[0.04]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRemove(confirmRemove)}
+                disabled={removing === confirmRemove.id}
+                className="flex-1 rounded-md border border-red-500/30 bg-red-500/10 py-2 text-[13px] font-medium text-red-400 transition-colors hover:bg-red-500/15 disabled:opacity-50"
+              >
+                {removing === confirmRemove.id ? "Removing…" : "Remove"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,16 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import {
+  AlertTriangle,
   ExternalLink,
   HelpCircle,
   Home,
+  LogOut,
   Menu,
   Plus,
   Search,
   Server,
   Settings,
+  Trash2,
   X,
 } from "lucide-react";
 import type { ChatConversationSummary, ToolId } from "./data";
@@ -37,13 +48,28 @@ const NO_INSTANCES: readonly ApiVpsInstance[] = [];
 /*  Sub-sidebar sections                                                      */
 /* -------------------------------------------------------------------------- */
 
-type SubItem = { id: string; label: string; external?: boolean; status?: string; href?: string };
-type SubSection = { title: string; items: SubItem[] };
+type SubItem = {
+  id: string;
+  label: string;
+  external?: boolean;
+  status?: string;
+  href?: string;
+  /** When set, an inline trash button appears on hover and calls this. */
+  onDelete?: () => void;
+  deleteLabel?: string;
+};
+type SubSection = {
+  title: string;
+  items: SubItem[];
+  /** When true and items is empty, renders the search-aware "No matches" state. */
+  searchable?: boolean;
+};
 
 function buildSections(
   toolId: ToolId,
   chatConversations: ChatConversationSummary[],
   vpsInstances: readonly ApiVpsInstance[],
+  onDeleteConversation?: (id: string) => void,
 ): SubSection[] {
   if (toolId === "vps") {
     return [
@@ -80,12 +106,19 @@ function buildSections(
   return [
     {
       title: "Conversations",
-      items: chatConversations.map((c) => ({ id: c.id, label: c.title })),
+      searchable: true,
+      items: chatConversations.map((c) => ({
+        id: c.id,
+        label: c.title,
+        onDelete: onDeleteConversation
+          ? () => onDeleteConversation(c.id)
+          : undefined,
+        deleteLabel: "Delete conversation",
+      })),
     },
     {
       title: "Configuration",
       items: [
-        { id: "chat:models", label: "Models" },
         { id: "chat:prompts", label: "System Prompts" },
         { id: "chat:memory", label: "Memory" },
       ],
@@ -99,7 +132,6 @@ function buildSections(
 
 const PLACEHOLDER_LABELS: Record<string, { title: string; description: string }> = {
   "ai:fallbacks": { title: "Fallbacks", description: "Per-route fallback chain when the primary model fails." },
-  "chat:models": { title: "Models", description: "Default and per-conversation model selection." },
   "chat:prompts": { title: "System Prompts", description: "Reusable prompt blocks pinned across conversations." },
   "chat:memory": { title: "Memory", description: "Long-term memory entries the assistant references." },
   "chat:usage": { title: "Usage", description: "Tokens and conversation activity over time." },
@@ -130,6 +162,7 @@ export function DashboardShell({
     ChatConversationSummary[]
   >(initialChatConversations ?? []);
   const [creatingConversation, setCreatingConversation] = useState(false);
+  const [chatSearch, setChatSearch] = useState("");
 
   const vpsInstances: readonly ApiVpsInstance[] = instances ?? NO_INSTANCES;
 
@@ -148,14 +181,64 @@ export function DashboardShell({
     [toolId],
   );
 
-  const sections = useMemo(
-    () => buildSections(toolId, chatConversations, vpsInstances),
-    [toolId, chatConversations, vpsInstances],
-  );
-
   const setItem = useCallback((id: string) => {
     setActiveItems((prev) => ({ ...prev, [toolId]: id }));
   }, [toolId]);
+
+  const handleDeleteConversation = useCallback(
+    async (id: string) => {
+      // Optimistic remove. If the request fails we restore the prior list so
+      // the user doesn't lose the conversation visually.
+      const prevList = chatConversations;
+      const prevActive = activeItems.chat;
+      const remaining = prevList.filter((c) => c.id !== id);
+      setChatConversations(remaining);
+      if (prevActive === id) {
+        setActiveItems((prev) => ({
+          ...prev,
+          chat: remaining[0]?.id ?? "",
+        }));
+      }
+      try {
+        const res = await fetch(`/api/conversations/${id}`, {
+          method: "DELETE",
+        });
+        if (!res.ok && res.status !== 204) {
+          setChatConversations(prevList);
+          setActiveItems((prev) => ({ ...prev, chat: prevActive }));
+        }
+      } catch {
+        setChatConversations(prevList);
+        setActiveItems((prev) => ({ ...prev, chat: prevActive }));
+      }
+    },
+    [activeItems.chat, chatConversations],
+  );
+
+  const filteredChatConversations = useMemo(() => {
+    if (toolId !== "chat") return chatConversations;
+    const q = chatSearch.trim().toLowerCase();
+    if (!q) return chatConversations;
+    return chatConversations.filter((c) =>
+      c.title.toLowerCase().includes(q),
+    );
+  }, [chatConversations, chatSearch, toolId]);
+
+  const sections = useMemo(
+    () =>
+      buildSections(
+        toolId,
+        filteredChatConversations,
+        vpsInstances,
+        toolId === "chat" ? handleDeleteConversation : undefined,
+      ),
+    [
+      toolId,
+      filteredChatConversations,
+      vpsInstances,
+      handleDeleteConversation,
+    ],
+  );
 
   const handleCreateConversation = useCallback(async () => {
     if (creatingConversation) return;
@@ -207,6 +290,11 @@ export function DashboardShell({
           activeItem={activeItems[toolId]}
           onSelectItem={setItem}
           onCreate={onCreate}
+          search={toolId === "chat" ? chatSearch : undefined}
+          onSearchChange={toolId === "chat" ? setChatSearch : undefined}
+          searchPlaceholder={
+            toolId === "chat" ? "Search conversations…" : undefined
+          }
         />
 
         {/* Main working surface */}
@@ -237,7 +325,19 @@ export function DashboardShell({
             setDrawerOpen(false);
           }}
           onClose={() => setDrawerOpen(false)}
-          onCreate={onCreate}
+          onCreate={
+            onCreate
+              ? () => {
+                  onCreate();
+                  setDrawerOpen(false);
+                }
+              : undefined
+          }
+          search={toolId === "chat" ? chatSearch : undefined}
+          onSearchChange={toolId === "chat" ? setChatSearch : undefined}
+          searchPlaceholder={
+            toolId === "chat" ? "Search conversations…" : undefined
+          }
         />
       ) : null}
     </div>
@@ -314,6 +414,24 @@ function renderMain({
 }
 
 function VpsEmptyState() {
+  const [byokError, setByokError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      try {
+        const stored = sessionStorage.getItem("vps:byok-last-error");
+        if (stored) setByokError(stored);
+      } catch {
+        /* sessionStorage unavailable — ignore */
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/[0.04]">
@@ -325,6 +443,15 @@ function VpsEmptyState() {
           Connect your Tencent Cloud account to import your existing VPS instances.
         </p>
       </div>
+      {byokError ? (
+        <div className="flex max-w-md items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-left text-[12px] text-amber-300/85">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+          <span>
+            <span className="font-medium text-amber-200">Last connect failed:</span>{" "}
+            <span className="text-amber-300/70">{byokError}</span>
+          </span>
+        </div>
+      ) : null}
       <Link
         href="/dashboard/vps/byok"
         className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[#3ecf8e] px-4 text-[13px] font-medium text-[#171717] transition-colors hover:bg-[#24b47e]"
@@ -406,15 +533,75 @@ function TopBar({
           <HelpCircle className="h-4 w-4" aria-hidden />
         </button>
 
-        <button
-          type="button"
-          aria-label="Account"
-          className="ml-1 inline-flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-[#3ecf8e] to-[#24b47e] font-mono text-[11px] font-medium text-[#171717] hover:opacity-90"
-        >
-          y
-        </button>
+        <AccountMenu />
       </div>
     </header>
+  );
+}
+
+function AccountMenu() {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [signingOut, startSignOut] = useTransition();
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const handleSignOut = () => {
+    setOpen(false);
+    startSignOut(async () => {
+      await fetch("/auth/sign-out", { method: "POST" });
+      router.refresh();
+      router.push("/");
+    });
+  };
+
+  return (
+    <div ref={containerRef} className="relative ml-1">
+      <button
+        type="button"
+        aria-label="Account"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-[#3ecf8e] to-[#24b47e] font-mono text-[11px] font-medium text-[#171717] hover:opacity-90"
+      >
+        y
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          className="absolute right-0 top-9 z-30 min-w-[160px] overflow-hidden rounded-md border border-white/[0.08] bg-[#171717] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.45)]"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={handleSignOut}
+            disabled={signingOut}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] text-white/80 transition-colors hover:bg-white/[0.05] hover:text-white disabled:opacity-60"
+          >
+            <LogOut className="h-3.5 w-3.5" aria-hidden />
+            {signingOut ? "Signing out…" : "Sign out"}
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -546,20 +733,34 @@ function SubSidebar({
   activeItem,
   onSelectItem,
   onCreate,
+  search,
+  onSearchChange,
+  searchPlaceholder,
 }: {
   tool: Tool;
   sections: SubSection[];
   activeItem: string;
   onSelectItem: (id: string) => void;
   onCreate?: () => void;
+  search?: string;
+  onSearchChange?: (next: string) => void;
+  searchPlaceholder?: string;
 }) {
   return (
     <aside className="hidden w-[200px] shrink-0 flex-col border-r border-white/[0.08] bg-[#171717] sm:flex md:w-[220px]">
       <SubSidebarHeader tool={tool} onCreate={onCreate} />
+      {onSearchChange ? (
+        <SubSidebarSearch
+          value={search ?? ""}
+          onChange={onSearchChange}
+          placeholder={searchPlaceholder ?? "Search…"}
+        />
+      ) : null}
       <SubSidebarBody
         sections={sections}
         activeItem={activeItem}
         onSelectItem={onSelectItem}
+        searching={Boolean(search && search.trim().length > 0)}
       />
     </aside>
   );
@@ -614,10 +815,12 @@ function SubSidebarBody({
   sections,
   activeItem,
   onSelectItem,
+  searching,
 }: {
   sections: SubSection[];
   activeItem: string;
   onSelectItem: (id: string) => void;
+  searching?: boolean;
 }) {
   return (
     <nav
@@ -631,7 +834,7 @@ function SubSidebarBody({
           </h3>
           {section.items.length === 0 ? (
             <p className="px-2.5 py-1 text-[12px] text-white/30">
-              No items yet.
+              {searching && section.searchable ? "No matches." : "No items yet."}
             </p>
           ) : (
             <ul className="flex flex-col gap-px">
@@ -649,6 +852,34 @@ function SubSidebarBody({
         </div>
       ))}
     </nav>
+  );
+}
+
+function SubSidebarSearch({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <div className="border-b border-white/[0.06] px-3 py-2">
+      <div className="relative">
+        <Search
+          className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-white/25"
+          aria-hidden
+        />
+        <input
+          type="search"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-full rounded-md border border-white/[0.06] bg-white/[0.03] pl-7 pr-2 py-1.5 text-[12px] text-white placeholder:text-white/25 outline-none transition-colors focus:border-white/[0.16]"
+        />
+      </div>
+    </div>
   );
 }
 
@@ -670,26 +901,65 @@ function SubItemButton({
           ? "bg-white/25"
           : null;
 
-  const cls = `flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors ${
+  const cls = `group/sub flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors ${
     active
       ? "bg-white/[0.06] text-white"
       : "text-white/65 hover:bg-white/[0.04] hover:text-white"
   }`;
 
+  const content = (
+    <span className="flex min-w-0 items-center gap-2">
+      {statusCls && (
+        <span
+          aria-hidden
+          className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${statusCls}`}
+        />
+      )}
+      <span className="truncate">{item.label}</span>
+    </span>
+  );
+
+  const trailing = item.external ? (
+    <ExternalLink className="h-3 w-3 shrink-0 text-white/35" aria-hidden />
+  ) : null;
+
+  if (item.onDelete) {
+    const onDelete = item.onDelete;
+    const handleDelete = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      onDelete();
+    };
+    return (
+      <div className={cls} onClick={onClick} role="button" tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClick();
+          }
+        }}
+      >
+        {content}
+        <span className="flex shrink-0 items-center gap-1">
+          {trailing}
+          <button
+            type="button"
+            onClick={handleDelete}
+            aria-label={item.deleteLabel ?? "Delete"}
+            title={item.deleteLabel ?? "Delete"}
+            className="inline-flex h-5 w-5 items-center justify-center rounded text-white/25 opacity-0 transition-opacity hover:bg-red-500/15 hover:text-red-300 group-hover/sub:opacity-100 focus:opacity-100 focus:outline-none"
+          >
+            <Trash2 className="h-3 w-3" aria-hidden />
+          </button>
+        </span>
+      </div>
+    );
+  }
+
   const inner = (
     <>
-      <span className="flex min-w-0 items-center gap-2">
-        {statusCls && (
-          <span
-            aria-hidden
-            className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${statusCls}`}
-          />
-        )}
-        <span className="truncate">{item.label}</span>
-      </span>
-      {item.external ? (
-        <ExternalLink className="h-3 w-3 shrink-0 text-white/35" aria-hidden />
-      ) : null}
+      {content}
+      {trailing}
     </>
   );
 
@@ -720,6 +990,9 @@ function MobileDrawer({
   onSelectItem,
   onClose,
   onCreate,
+  search,
+  onSearchChange,
+  searchPlaceholder,
 }: {
   tool: Tool;
   sections: SubSection[];
@@ -728,6 +1001,9 @@ function MobileDrawer({
   onSelectItem: (id: string) => void;
   onClose: () => void;
   onCreate?: () => void;
+  search?: string;
+  onSearchChange?: (next: string) => void;
+  searchPlaceholder?: string;
 }) {
   return (
     <div className="fixed inset-0 z-40 flex sm:hidden">
@@ -798,10 +1074,18 @@ function MobileDrawer({
             </button>
           </div>
           <SubSidebarHeader tool={tool} onCreate={onCreate} />
+          {onSearchChange ? (
+            <SubSidebarSearch
+              value={search ?? ""}
+              onChange={onSearchChange}
+              placeholder={searchPlaceholder ?? "Search…"}
+            />
+          ) : null}
           <SubSidebarBody
             sections={sections}
             activeItem={activeItem}
             onSelectItem={onSelectItem}
+            searching={Boolean(search && search.trim().length > 0)}
           />
         </div>
       </aside>

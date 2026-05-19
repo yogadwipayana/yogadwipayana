@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import {
+  deleteConversation,
   getConversation,
   getMessages,
   updateConversation,
@@ -67,4 +68,21 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   return NextResponse.json({ conversation });
+}
+
+export async function DELETE(_request: Request, { params }: RouteContext) {
+  const supabase = createClient(await cookies());
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await params;
+  const ok = await deleteConversation(supabase, id, user.id);
+  if (!ok) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  return new Response(null, { status: 204 });
 }

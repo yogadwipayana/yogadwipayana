@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Activity,
   ArrowRight,
@@ -13,8 +19,11 @@ import {
   Key,
   Loader2,
   MessageSquare,
+  Pencil,
   Plus,
+  RefreshCw,
   RotateCw,
+  Square,
   Sparkles,
 } from "lucide-react";
 import hljs from "highlight.js/lib/common";
@@ -313,6 +322,11 @@ export function ChatView({
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  // Tracks whether the user is "pinned" to the bottom. We only auto-scroll on
+  // new tokens when this is true, so reading earlier messages mid-stream isn't
+  // disrupted by every delta.
+  const pinnedToBottomRef = useRef(true);
 
   // Hydrate messages once per mount. The parent shell remounts this view on
   // conversation change via `key={conversation.id}`, so we don't need to reset
@@ -345,12 +359,35 @@ export function ChatView({
     };
   }, [conversation.id]);
 
-  // Auto-scroll to bottom when messages change.
+  // Track whether the user is at the bottom of the scroll container so we know
+  // whether to auto-scroll on new content.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    const onScroll = () => {
+      const distanceFromBottom =
+        el.scrollHeight - el.scrollTop - el.clientHeight;
+      pinnedToBottomRef.current = distanceFromBottom < 64;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // Auto-scroll only when the user was already pinned to the bottom.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (pinnedToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [messages]);
+
+  // Cancel any in-flight stream when the view unmounts (conversation switch).
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
 
   const handleSelectModel = useCallback(
     async (slug: string) => {
@@ -385,37 +422,14 @@ export function ChatView({
     [conversation.id, model, onConversationUpdated],
   );
 
-  const handleSend = useCallback(async () => {
-    const trimmed = input.trim();
-    if (!trimmed || isStreaming) return;
-
-    const userMsg: ChatMessage = {
-      id: `local-user-${Date.now()}`,
-      role: "user",
-      content: trimmed,
-    };
-    const assistantMsg: ChatMessage = {
-      id: `local-assistant-${Date.now()}`,
-      role: "assistant",
-      content: "",
-    };
-    const isFirstMessage = messages.length === 0;
-
-    setMessages((prev) => [...prev, userMsg, assistantMsg]);
-    setInput("");
-    setIsStreaming(true);
-    setError(null);
-
-    try {
-      const res = await fetch(
-        `/api/conversations/${conversation.id}/messages`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: trimmed }),
-        },
-      );
-
+  // Shared streaming consumer for both initial sends and regenerate. Mutates
+  // the assistant placeholder message in place.
+  const consumeStream = useCallback(
+    async (
+      res: Response,
+      assistantMsgId: string,
+      opts?: { localUserId?: string },
+    ) => {
       if (!res.ok || !res.body) {
         const text = await res.text().catch(() => "");
         let detail = text;
@@ -442,37 +456,97 @@ export function ChatView({
           sep = buffer.indexOf("\n\n");
 
           const line = rawEvent.replace(/^data:\s*/, "");
-          if (!line) continue;
-          if (line === "[DONE]") continue;
+          if (!line || line === "[DONE]") continue;
 
-          try {
-            const parsed = JSON.parse(line) as {
-              delta?: string;
-              error?: string;
-            };
-            if (parsed.error) {
-              throw new Error(parsed.error);
-            }
-            if (parsed.delta) {
-              setMessages((prev) => {
-                const next = prev.slice();
-                const last = next[next.length - 1];
-                if (last && last.id === assistantMsg.id) {
-                  next[next.length - 1] = {
-                    ...last,
-                    content: last.content + parsed.delta,
-                  };
+          const parsed = JSON.parse(line) as {
+            delta?: string;
+            error?: string;
+            saved?: { role: "user" | "assistant"; id: string };
+          };
+          if (parsed.error) throw new Error(parsed.error);
+          if (parsed.saved) {
+            const saved = parsed.saved;
+            // Reconcile local IDs with persisted DB IDs so user-message edits
+            // and other id-bound actions hit the right row.
+            setMessages((prev) =>
+              prev.map((m) => {
+                if (saved.role === "user" && opts?.localUserId === m.id) {
+                  return { ...m, id: saved.id };
                 }
-                return next;
-              });
+                if (saved.role === "assistant" && m.id === assistantMsgId) {
+                  return { ...m, id: saved.id };
+                }
+                return m;
+              }),
+            );
+            // Keep the placeholder id in sync for subsequent delta events that
+            // still target the original local id.
+            if (saved.role === "assistant") {
+              assistantMsgId = saved.id;
             }
-          } catch (err) {
-            throw err instanceof Error
-              ? err
-              : new Error("Stream parse error");
+            continue;
+          }
+          if (parsed.delta) {
+            setMessages((prev) => {
+              const next = prev.slice();
+              const last = next[next.length - 1];
+              if (last && last.id === assistantMsgId) {
+                next[next.length - 1] = {
+                  ...last,
+                  content: last.content + parsed.delta,
+                };
+              }
+              return next;
+            });
           }
         }
       }
+    },
+    [],
+  );
+
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  const handleSend = useCallback(async () => {
+    const trimmed = input.trim();
+    if (!trimmed || isStreaming) return;
+
+    const userMsg: ChatMessage = {
+      id: `local-user-${Date.now()}`,
+      role: "user",
+      content: trimmed,
+    };
+    const assistantMsg: ChatMessage = {
+      id: `local-assistant-${Date.now()}`,
+      role: "assistant",
+      content: "",
+    };
+    const isFirstMessage = messages.length === 0;
+
+    // New send always pins to bottom — the user is engaged with the latest turn.
+    pinnedToBottomRef.current = true;
+    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+    setInput("");
+    setIsStreaming(true);
+    setError(null);
+
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    try {
+      const res = await fetch(
+        `/api/conversations/${conversation.id}/messages`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: trimmed }),
+          signal: ctrl.signal,
+        },
+      );
+
+      await consumeStream(res, assistantMsg.id, { localUserId: userMsg.id });
 
       onConversationUpdated?.({
         id: conversation.id,
@@ -483,6 +557,12 @@ export function ChatView({
         updated_at: new Date().toISOString(),
       });
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        // User stopped the stream — keep whatever streamed in. Server-side the
+        // partial reply is persisted by the route's stream-error handler when
+        // the connection drops, so there's nothing to clean up here.
+        return;
+      }
       const message =
         err instanceof Error ? err.message : "Something went wrong.";
       setError(message);
@@ -495,9 +575,11 @@ export function ChatView({
         return prev;
       });
     } finally {
+      if (abortRef.current === ctrl) abortRef.current = null;
       setIsStreaming(false);
     }
   }, [
+    consumeStream,
     conversation.id,
     conversation.title,
     input,
@@ -506,6 +588,167 @@ export function ChatView({
     model,
     onConversationUpdated,
   ]);
+
+  const handleRegenerate = useCallback(async () => {
+    if (isStreaming) return;
+    if (messages.length === 0) return;
+
+    // Drop trailing assistant message in the UI (mirroring server behavior)
+    // and replace it with a streaming placeholder.
+    const next = messages.slice();
+    if (next[next.length - 1]?.role === "assistant") next.pop();
+    if (next.length === 0) return;
+
+    const assistantMsg: ChatMessage = {
+      id: `local-assistant-${Date.now()}`,
+      role: "assistant",
+      content: "",
+    };
+
+    pinnedToBottomRef.current = true;
+    setMessages([...next, assistantMsg]);
+    setIsStreaming(true);
+    setError(null);
+
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    try {
+      const res = await fetch(
+        `/api/conversations/${conversation.id}/messages/regenerate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: ctrl.signal,
+        },
+      );
+      await consumeStream(res, assistantMsg.id);
+      onConversationUpdated?.({
+        id: conversation.id,
+        title: conversation.title,
+        model,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      const message =
+        err instanceof Error ? err.message : "Something went wrong.";
+      setError(message);
+      setMessages((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.id === assistantMsg.id && last.content === "") {
+          return prev.slice(0, -1);
+        }
+        return prev;
+      });
+    } finally {
+      if (abortRef.current === ctrl) abortRef.current = null;
+      setIsStreaming(false);
+    }
+  }, [
+    consumeStream,
+    conversation.id,
+    conversation.title,
+    isStreaming,
+    messages,
+    model,
+    onConversationUpdated,
+  ]);
+
+  const handleRename = useCallback(
+    async (nextTitle: string) => {
+      const trimmed = nextTitle.trim();
+      if (!trimmed || trimmed === conversation.title) return;
+      try {
+        const res = await fetch(`/api/conversations/${conversation.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: trimmed }),
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { conversation: ChatConversationSummary };
+        onConversationUpdated?.(data.conversation);
+      } catch {}
+    },
+    [conversation.id, conversation.title, onConversationUpdated],
+  );
+
+  const handleEditUser = useCallback(
+    async (messageId: string, nextContent: string) => {
+      if (isStreaming) return;
+      const trimmed = nextContent.trim();
+      if (!trimmed) return;
+
+      // Locally truncate the conversation at the edited message and append a
+      // fresh assistant placeholder. The server will persist the same shape
+      // when the request resolves.
+      const idx = messages.findIndex((m) => m.id === messageId);
+      if (idx === -1) return;
+
+      const original = messages[idx];
+      if (original.role !== "user") return;
+      if (trimmed === original.content) return;
+
+      const editedUser: ChatMessage = { ...original, content: trimmed };
+      const assistantMsg: ChatMessage = {
+        id: `local-assistant-${Date.now()}`,
+        role: "assistant",
+        content: "",
+      };
+
+      const truncated = messages.slice(0, idx);
+      pinnedToBottomRef.current = true;
+      setMessages([...truncated, editedUser, assistantMsg]);
+      setIsStreaming(true);
+      setError(null);
+
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+
+      try {
+        const res = await fetch(
+          `/api/conversations/${conversation.id}/messages/edit`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ messageId, content: trimmed }),
+            signal: ctrl.signal,
+          },
+        );
+        await consumeStream(res, assistantMsg.id);
+        onConversationUpdated?.({
+          id: conversation.id,
+          title: conversation.title,
+          model,
+          updated_at: new Date().toISOString(),
+        });
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        const message =
+          err instanceof Error ? err.message : "Something went wrong.";
+        setError(message);
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          if (last && last.id === assistantMsg.id && last.content === "") {
+            return prev.slice(0, -1);
+          }
+          return prev;
+        });
+      } finally {
+        if (abortRef.current === ctrl) abortRef.current = null;
+        setIsStreaming(false);
+      }
+    },
+    [
+      consumeStream,
+      conversation.id,
+      conversation.title,
+      isStreaming,
+      messages,
+      model,
+      onConversationUpdated,
+    ],
+  );
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -524,6 +767,13 @@ export function ChatView({
     }
   };
 
+  const lastAssistantId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].role === "assistant") return messages[i].id;
+    }
+    return null;
+  }, [messages]);
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -531,9 +781,10 @@ export function ChatView({
         <div className="mx-auto flex w-full max-w-2xl items-center gap-3 lg:max-w-3xl xl:max-w-4xl">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2.5">
-              <h2 className="truncate text-[15px] font-medium tracking-[-0.01em] text-white">
-                {conversation.title}
-              </h2>
+              <EditableTitle
+                title={conversation.title}
+                onSave={handleRename}
+              />
               {model ? (
                 <span className="shrink-0 rounded-full border border-[#3ecf8e]/20 bg-[#3ecf8e]/[0.07] px-2.5 py-0.5 font-mono text-[10px] text-[#3ecf8e]/70">
                   {model}
@@ -563,22 +814,48 @@ export function ChatView({
             </div>
           ) : null}
 
-          {messages.map((m, i) => (
-            <ChatBubble
-              key={m.id}
-              message={m}
-              prevRole={i > 0 ? messages[i - 1].role : null}
-              streaming={
-                isStreaming &&
-                i === messages.length - 1 &&
-                m.role === "assistant"
-              }
-            />
-          ))}
+          {messages.map((m, i) => {
+            const isLastAssistant =
+              m.role === "assistant" && m.id === lastAssistantId;
+            const isUser = m.role === "user";
+            // Edits are only safe on persisted messages (DB-issued UUIDs);
+            // local placeholders use `local-*` ids and would 404 on the server.
+            const isPersisted = !m.id.startsWith("local-");
+            return (
+              <ChatBubble
+                key={m.id}
+                message={m}
+                prevRole={i > 0 ? messages[i - 1].role : null}
+                streaming={
+                  isStreaming &&
+                  i === messages.length - 1 &&
+                  m.role === "assistant"
+                }
+                onRegenerate={
+                  isLastAssistant && !isStreaming ? handleRegenerate : undefined
+                }
+                onEdit={
+                  isUser && isPersisted && !isStreaming
+                    ? (next) => handleEditUser(m.id, next)
+                    : undefined
+                }
+              />
+            );
+          })}
 
           {error ? (
-            <div className="mt-4 rounded-md border border-red-500/25 bg-red-500/[0.06] px-3 py-2 text-[12px] text-red-200/85">
-              {error}
+            <div className="mt-4 flex items-center justify-between gap-3 rounded-md border border-red-500/25 bg-red-500/[0.06] px-3 py-2 text-[12px] text-red-200/85">
+              <span className="min-w-0 flex-1 truncate">{error}</span>
+              {messages.some((m) => m.role === "user") ? (
+                <button
+                  type="button"
+                  onClick={handleRegenerate}
+                  className="inline-flex shrink-0 items-center gap-1 rounded border border-red-400/30 bg-red-500/[0.08] px-2 py-0.5 text-[11px] font-medium text-red-100 transition-colors hover:border-red-400/50 hover:bg-red-500/[0.14]"
+                >
+                  <RefreshCw className="h-3 w-3" aria-hidden />
+                  Retry
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -601,19 +878,26 @@ export function ChatView({
             />
             <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-3 pb-3">
               <ModelSelector model={model} onSelect={handleSelectModel} />
-              <button
-                type="button"
-                onClick={handleSend}
-                disabled={!input.trim() || isStreaming}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#3ecf8e] text-[#171717] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-white/30"
-                aria-label="Send message"
-              >
-                {isStreaming ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                ) : (
+              {isStreaming ? (
+                <button
+                  type="button"
+                  onClick={handleStop}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.04] text-white/80 transition-colors hover:border-white/[0.2] hover:bg-white/[0.08]"
+                  aria-label="Stop generating"
+                >
+                  <Square className="h-3 w-3 fill-current" aria-hidden />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleSend}
+                  disabled={!input.trim()}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#3ecf8e] text-[#171717] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-white/30"
+                  aria-label="Send message"
+                >
                   <ArrowUp className="h-3.5 w-3.5" aria-hidden />
-                )}
-              </button>
+                </button>
+              )}
             </div>
           </div>
           <p className="mt-2 text-center text-[11px] text-white/20">
@@ -687,26 +971,156 @@ function ChatBubble({
   message,
   prevRole,
   streaming,
+  onRegenerate,
+  onEdit,
 }: {
   message: ChatMessage;
   prevRole: ChatMessage["role"] | null;
   streaming?: boolean;
+  onRegenerate?: () => void;
+  onEdit?: (nextContent: string) => void;
 }) {
   const isUser = message.role === "user";
   const isFirstInGroup = prevRole !== message.role;
+  const [copied, setCopied] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(message.content);
+  const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (!editing) return;
+    const el = editTextareaRef.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
+  }, [editing]);
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  }, [message.content]);
+
+  const commitEdit = useCallback(() => {
+    setEditing(false);
+    const next = draft.trim();
+    if (!next || next === message.content) {
+      setDraft(message.content);
+      return;
+    }
+    onEdit?.(next);
+  }, [draft, message.content, onEdit]);
+
+  const cancelEdit = useCallback(() => {
+    setDraft(message.content);
+    setEditing(false);
+  }, [message.content]);
 
   if (isUser) {
+    if (editing) {
+      return (
+        <div className={`flex justify-end ${isFirstInGroup ? "mt-5" : "mt-1"}`}>
+          <div className="w-full max-w-[80%] rounded-2xl rounded-br-md border border-[#3ecf8e]/25 bg-[#3ecf8e]/[0.06] p-2">
+            <textarea
+              ref={editTextareaRef}
+              value={draft}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                const el = e.currentTarget;
+                el.style.height = "auto";
+                el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  commitEdit();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancelEdit();
+                }
+              }}
+              maxLength={20_000}
+              rows={1}
+              className="block w-full resize-none rounded-lg bg-transparent px-2 py-1.5 text-[14px] leading-relaxed text-white placeholder:text-white/25 outline-none"
+              style={{ maxHeight: "240px" }}
+            />
+            <div className="mt-1 flex items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={cancelEdit}
+                className="inline-flex h-7 items-center rounded-md px-2.5 text-[12px] text-white/55 transition-colors hover:bg-white/[0.05] hover:text-white/80"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={commitEdit}
+                disabled={!draft.trim() || draft.trim() === message.content}
+                className="inline-flex h-7 items-center gap-1 rounded-md bg-[#3ecf8e] px-2.5 text-[12px] font-medium text-[#171717] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-white/30"
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className={`flex justify-end ${isFirstInGroup ? "mt-5" : "mt-1"}`}>
-        <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-[#3ecf8e]/12 bg-[#3ecf8e]/[0.07] px-4 py-3 text-[14px] leading-relaxed text-white/90">
-          {message.content}
+      <div className={`group flex justify-end ${isFirstInGroup ? "mt-5" : "mt-1"}`}>
+        <div className="flex max-w-[80%] flex-col items-end">
+          <div className="whitespace-pre-wrap rounded-2xl rounded-br-md border border-[#3ecf8e]/12 bg-[#3ecf8e]/[0.07] px-4 py-3 text-[14px] leading-relaxed text-white/90">
+            {message.content}
+          </div>
+          <div className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            <button
+              type="button"
+              onClick={handleCopy}
+              aria-label="Copy message"
+              title="Copy message"
+              className="inline-flex items-center gap-1 rounded border border-white/[0.06] bg-white/[0.02] px-1.5 py-0.5 text-[10px] text-white/40 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white/75"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-2.5 w-2.5" aria-hidden />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="h-2.5 w-2.5" aria-hidden />
+                  Copy
+                </>
+              )}
+            </button>
+            {onEdit ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setDraft(message.content);
+                  setEditing(true);
+                }}
+                aria-label="Edit message"
+                title="Edit and resend"
+                className="inline-flex items-center gap-1 rounded border border-white/[0.06] bg-white/[0.02] px-1.5 py-0.5 text-[10px] text-white/40 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white/75"
+              >
+                <Pencil className="h-2.5 w-2.5" aria-hidden />
+                Edit
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
     );
   }
 
+  const showActions = !streaming && message.content.length > 0;
+
   return (
-    <div className={`flex items-start gap-2.5 ${isFirstInGroup ? "mt-5" : "mt-1"}`}>
+    <div className={`group flex items-start gap-2.5 ${isFirstInGroup ? "mt-5" : "mt-1"}`}>
       {isFirstInGroup ? (
         <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.04] text-white/40">
           <Sparkles className="h-3 w-3" aria-hidden />
@@ -722,8 +1136,116 @@ function ChatBubble({
             Thinking…
           </span>
         ) : null}
+        {showActions ? (
+          <div className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+            <button
+              type="button"
+              onClick={handleCopy}
+              aria-label="Copy reply"
+              title="Copy reply"
+              className="inline-flex items-center gap-1 rounded border border-white/[0.06] bg-white/[0.02] px-1.5 py-0.5 text-[10px] text-white/40 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white/75"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-2.5 w-2.5" aria-hidden />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="h-2.5 w-2.5" aria-hidden />
+                  Copy
+                </>
+              )}
+            </button>
+            {onRegenerate ? (
+              <button
+                type="button"
+                onClick={onRegenerate}
+                aria-label="Regenerate reply"
+                title="Regenerate reply"
+                className="inline-flex items-center gap-1 rounded border border-white/[0.06] bg-white/[0.02] px-1.5 py-0.5 text-[10px] text-white/40 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white/75"
+              >
+                <RefreshCw className="h-2.5 w-2.5" aria-hidden />
+                Regenerate
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
+  );
+}
+
+function EditableTitle({
+  title,
+  onSave,
+}: {
+  title: string;
+  onSave: (next: string) => void | Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(title);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  const commit = useCallback(() => {
+    setEditing(false);
+    const next = draft.trim();
+    if (next && next !== title) onSave(next);
+    else setDraft(title);
+  }, [draft, onSave, title]);
+
+  const cancel = useCallback(() => {
+    setDraft(title);
+    setEditing(false);
+  }, [title]);
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            cancel();
+          }
+        }}
+        maxLength={200}
+        className="min-w-0 flex-1 truncate rounded border border-white/[0.12] bg-white/[0.04] px-1.5 py-0.5 text-[15px] font-medium tracking-[-0.01em] text-white outline-none focus:border-[#3ecf8e]/40"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setDraft(title);
+        setEditing(true);
+      }}
+      title="Rename conversation"
+      className="group/title inline-flex min-w-0 items-center gap-1.5 rounded text-left hover:bg-white/[0.03]"
+    >
+      <h2 className="truncate text-[15px] font-medium tracking-[-0.01em] text-white">
+        {title}
+      </h2>
+      <Pencil
+        className="h-3 w-3 shrink-0 text-white/20 opacity-0 transition-opacity group-hover/title:opacity-100"
+        aria-hidden
+      />
+    </button>
   );
 }
 

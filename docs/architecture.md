@@ -42,7 +42,10 @@ dependency on a UI package.
 
 ### 5. Backend runtime — Node.js
 Route Handlers under `src/app/api/*`:
-- `POST /api/chat` — streaming OpenAI completions (SSE)
+- `POST /api/conversations` — create a chat conversation
+- `GET /api/conversations` — list the caller's conversations
+- `GET|PATCH|DELETE /api/conversations/[id]` — fetch, rename/retitle, or delete one
+- `POST /api/conversations/[id]/messages` — append a user message and stream the assistant reply (SSE)
 - `POST /api/ai` — one-shot OpenAI completion
 - `POST /api/upload` — issue an S3 presigned PUT URL
 - `POST /api/email` — Resend contact form

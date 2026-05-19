@@ -222,8 +222,17 @@ function ReinstallContent() {
     label: v,
     available: matchBlueprintId(blueprints, v) !== null,
   }));
+  const credsValid =
+    loginTab === "password"
+      ? pwVal.allPassed && password === confirmPw
+      : sshKey.trim().length > 0;
   const canSubmit =
-    risk1 && risk2 && matchedBlueprintId !== null && !catalogLoading && !catalogError;
+    risk1 &&
+    risk2 &&
+    credsValid &&
+    matchedBlueprintId !== null &&
+    !catalogLoading &&
+    !catalogError;
 
   function selectFamily(key: string) {
     const fam = OS_FAMILIES.find((f) => f.key === key) ?? OS_FAMILIES[0];
@@ -275,9 +284,15 @@ function ReinstallContent() {
   function handleSubmitClick() {
     if (loginTab === "password") {
       if (!pwVal.allPassed) { setShowRules(true); return; }
-      if (password !== confirmPw) return;
+      if (password !== confirmPw) {
+        setSubmitError("Passwords do not match.");
+        return;
+      }
     }
-    if (loginTab === "ssh" && !sshKey.trim()) return;
+    if (loginTab === "ssh" && !sshKey.trim()) {
+      setSubmitError("Public key is required.");
+      return;
+    }
     if (!matchedBlueprintId) {
       setSubmitError("Selected OS image is not available in this region.");
       return;

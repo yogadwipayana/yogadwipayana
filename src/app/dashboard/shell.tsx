@@ -105,7 +105,10 @@ function buildSections(
       },
       {
         title: "Platform",
-        items: [{ id: "vps:byok", label: "BYOK", href: "/dashboard/vps/byok" }],
+        items: [
+          { id: "vps:byok", label: "BYOK", href: "/dashboard/vps/byok" },
+          { id: "vps:ssh", label: "SSH", href: "/dashboard/vps/ssh" },
+        ],
       },
     ];
   }

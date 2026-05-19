@@ -11,6 +11,7 @@ import {
   removeFirewallRuleByDefinition,
   unbindSshKeyFromInstance,
 } from "@/lib/server/dashboard-service";
+import { sshExec } from "@/lib/server/ssh-exec";
 
 /**
  * Server-side tools the chat AI can call. Implementations live in this module
@@ -290,6 +291,37 @@ export const CHAT_TOOLS: ChatTool[] = [
           },
         },
         required: ["id", "key_id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "ssh_run",
+      description:
+        "Run a non-interactive shell command on one of the user's VPS instances over SSH and return stdout, stderr, and exit code. WRITE OPERATION — the command runs on a real server. Confirm with the user in chat before calling unless the command is obviously read-only (e.g. `df -h`, `uptime`, `ls`, `cat /etc/os-release`). Output is truncated at ~16 KB per stream. Default timeout is 15s.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            description: "Internal instance id (the `id` field from `vps_list`).",
+          },
+          command: {
+            type: "string",
+            description:
+              "The shell command to execute non-interactively. Single command line; chain with `&&` if needed.",
+          },
+          timeout_ms: {
+            type: "integer",
+            description:
+              "Optional timeout in milliseconds (default 15000, max 60000).",
+            minimum: 1000,
+            maximum: 60000,
+          },
+        },
+        required: ["id", "command"],
         additionalProperties: false,
       },
     },
@@ -649,6 +681,24 @@ export async function executeTool(
       }
       const result = await unbindSshKeyFromInstance(context.userId, id, keyId);
       return JSON.stringify({ ok: true, id, key_id: keyId, request_id: result.requestId });
+    }
+
+    if (name === "ssh_run") {
+      const id = typeof args.id === "string" ? args.id.trim() : "";
+      const command = typeof args.command === "string" ? args.command : "";
+      if (!id) return JSON.stringify({ error: "Missing id" });
+      if (!command.trim()) return JSON.stringify({ error: "Missing command" });
+      const timeoutMs =
+        typeof args.timeout_ms === "number" && Number.isFinite(args.timeout_ms)
+          ? Math.min(60_000, Math.max(1_000, Math.floor(args.timeout_ms)))
+          : 15_000;
+      const result = await sshExec({
+        userId: context.userId,
+        instanceId: id,
+        command,
+        timeoutMs,
+      });
+      return JSON.stringify(result);
     }
 
     return JSON.stringify({ error: `Unknown tool: ${name}` });

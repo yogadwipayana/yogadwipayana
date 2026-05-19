@@ -65,8 +65,12 @@ yogadwipayana/
 │   ├── api/
 │   │   ├── ai/
 │   │   │   └── route.ts         <- POST /api/ai
-│   │   ├── chat/
-│   │   │   └── route.ts         <- POST /api/chat
+│   │   ├── conversations/
+│   │   │   ├── route.ts         <- GET|POST /api/conversations
+│   │   │   └── [id]/
+│   │   │       ├── route.ts     <- GET|PATCH|DELETE /api/conversations/:id
+│   │   │       └── messages/
+│   │   │           └── route.ts <- POST /api/conversations/:id/messages (SSE)
 │   │   └── vps/
 │   │       └── route.ts         <- POST /api/vps
 │   │

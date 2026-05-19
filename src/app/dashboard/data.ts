@@ -44,121 +44,38 @@ export const TOOLS: readonly Tool[] = [
 ] as const;
 
 /* -------------------------------------------------------------------------- */
-/*  VPS instances                                                             */
+/*  VPS instances — UI shape (camelCase). The canonical wire shape lives in   */
+/*  src/lib/client/vps-api.ts. Use toUiInstance() in vps-mappers.ts to bridge.*/
 /* -------------------------------------------------------------------------- */
 
 export type VpsStatus = "running" | "stopped" | "rebooting";
 
 export type VpsInstance = {
+  /** Internal UUID — used by /api/vps/instances/:id routes */
   id: string;
+  /** Tencent's instance id — used by SSH key bind/unbind matching */
+  externalInstanceId: string;
   name: string;
   region: string;
+  zone?: string;
   ipv4: string;
   status: VpsStatus;
-  cpu: number;
-  memory: number;
-  disk: number;
-  uptime: string;
+  /** Raw provider state, useful for transitional states (STARTING, STOPPING, …) */
+  providerStatus: string;
   vcpu: number;
   memoryGb: number;
   diskGb: number;
-  /* Extended fields */
-  osName?: string;
   bandwidthMbps?: number;
+  osName?: string;
   expiresAt?: string;
-  zone?: string;
-  transferUsedGb?: number;
-  transferTotalGb?: number;
 };
 
-export const VPS_INSTANCES: VpsInstance[] = [
-  {
-    id: "v1",
-    name: "edge-sg-1",
-    region: "Singapore · SG1",
-    ipv4: "139.162.42.18",
-    status: "running",
-    cpu: 18,
-    memory: 42,
-    disk: 28,
-    uptime: "14d 3h",
-    vcpu: 2,
-    memoryGb: 4,
-    diskGb: 80,
-    osName: "Ubuntu 22.04 LTS",
-    bandwidthMbps: 100,
-    expiresAt: "2026-08-01",
-    zone: "SG1-A",
-    transferUsedGb: 142,
-    transferTotalGb: 1000,
-  },
-  {
-    id: "v2",
-    name: "worker-de-2",
-    region: "Frankfurt · FRA1",
-    ipv4: "139.162.55.102",
-    status: "running",
-    cpu: 67,
-    memory: 71,
-    disk: 54,
-    uptime: "3d 11h",
-    vcpu: 4,
-    memoryGb: 8,
-    diskGb: 160,
-    osName: "Ubuntu 22.04 LTS",
-    bandwidthMbps: 200,
-    expiresAt: "2026-09-15",
-    zone: "FRA1-B",
-    transferUsedGb: 634,
-    transferTotalGb: 2000,
-  },
-  {
-    id: "v3",
-    name: "dev-sandbox",
-    region: "Jakarta · ID1",
-    ipv4: "—",
-    status: "stopped",
-    cpu: 0,
-    memory: 0,
-    disk: 12,
-    uptime: "—",
-    vcpu: 1,
-    memoryGb: 2,
-    diskGb: 40,
-    osName: "Debian 12",
-    bandwidthMbps: 50,
-    expiresAt: "2026-07-01",
-    zone: "ID1-A",
-    transferUsedGb: 0,
-    transferTotalGb: 500,
-  },
-  {
-    id: "v4",
-    name: "bot-runner",
-    region: "US West · SJC1",
-    ipv4: "139.162.98.4",
-    status: "running",
-    cpu: 23,
-    memory: 55,
-    disk: 18,
-    uptime: "9d 2h",
-    vcpu: 2,
-    memoryGb: 4,
-    diskGb: 80,
-    osName: "CentOS Stream 9",
-    bandwidthMbps: 100,
-    expiresAt: "2026-10-30",
-    zone: "SJC1-A",
-    transferUsedGb: 89,
-    transferTotalGb: 1000,
-  },
-];
-
 /* -------------------------------------------------------------------------- */
-/*  Firewall rules                                                             */
+/*  Firewall rules                                                            */
 /* -------------------------------------------------------------------------- */
 
 export type FirewallRule = {
+  /** Synthetic local id — Tencent rules don't have stable IDs */
   id: string;
   protocol: "TCP" | "UDP" | "ICMP" | "ALL";
   port: string;
@@ -167,28 +84,8 @@ export type FirewallRule = {
   description: string;
 };
 
-export const VPS_FIREWALL_RULES: Record<string, FirewallRule[]> = {
-  v1: [
-    { id: "fr1", protocol: "TCP",  port: "22",   cidrBlock: "0.0.0.0/0",  action: "ACCEPT", description: "SSH" },
-    { id: "fr2", protocol: "TCP",  port: "80",   cidrBlock: "0.0.0.0/0",  action: "ACCEPT", description: "HTTP" },
-    { id: "fr3", protocol: "TCP",  port: "443",  cidrBlock: "0.0.0.0/0",  action: "ACCEPT", description: "HTTPS" },
-    { id: "fr4", protocol: "ICMP", port: "-1",   cidrBlock: "0.0.0.0/0",  action: "ACCEPT", description: "Ping" },
-  ],
-  v2: [
-    { id: "fr5", protocol: "TCP",  port: "22",   cidrBlock: "10.0.0.0/8", action: "ACCEPT", description: "SSH (internal)" },
-    { id: "fr6", protocol: "TCP",  port: "3000", cidrBlock: "0.0.0.0/0",  action: "ACCEPT", description: "App server" },
-    { id: "fr7", protocol: "TCP",  port: "5432", cidrBlock: "10.0.0.0/8", action: "ACCEPT", description: "PostgreSQL" },
-    { id: "fr8", protocol: "TCP",  port: "6379", cidrBlock: "10.0.0.0/8", action: "ACCEPT", description: "Redis" },
-  ],
-  v3: [],
-  v4: [
-    { id: "fr9",  protocol: "TCP", port: "22",   cidrBlock: "0.0.0.0/0",  action: "ACCEPT", description: "SSH" },
-    { id: "fr10", protocol: "TCP", port: "8080", cidrBlock: "0.0.0.0/0",  action: "ACCEPT", description: "Bot API" },
-  ],
-};
-
 /* -------------------------------------------------------------------------- */
-/*  SSH keys                                                                   */
+/*  SSH keys                                                                  */
 /* -------------------------------------------------------------------------- */
 
 export type SshKey = {
@@ -198,23 +95,6 @@ export type SshKey = {
   createdAt: string;
   boundInstances: string[];
 };
-
-export const VPS_SSH_KEYS: SshKey[] = [
-  {
-    id: "k1",
-    name: "macbook-personal",
-    publicKey: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQC3xK9mP2wLqR7vN4tJ8uFdYeH1oIzXbMcSgWkA+nQpV6jE",
-    createdAt: "2026-01-15",
-    boundInstances: ["v1", "v4"],
-  },
-  {
-    id: "k2",
-    name: "deploy-bot",
-    publicKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKq8mXv2N7wPcR4tYeF6jDhBsLuGkOiWnAmQpXvZyTbE",
-    createdAt: "2026-02-20",
-    boundInstances: ["v2"],
-  },
-];
 
 /* -------------------------------------------------------------------------- */
 /*  AI Router routes                                                          */
@@ -409,14 +289,9 @@ export type AiModel = {
 };
 
 export const AI_MODELS: AiModel[] = [
-  { slug: "claude-opus-4",       name: "Claude Opus 4",       provider: "Anthropic", providerCode: "AN", contextWindow: "200,000", inputPrice: "$15.00", outputPrice: "$75.00",  modelId: "claude-opus-4-5" },
-  { slug: "claude-sonnet-4",     name: "Claude Sonnet 4",     provider: "Anthropic", providerCode: "AN", contextWindow: "200,000", inputPrice: "$3.00",  outputPrice: "$15.00",  modelId: "claude-sonnet-4-5" },
-  { slug: "gpt-4o",              name: "GPT-4o",              provider: "OpenAI",    providerCode: "OA", contextWindow: "128,000", inputPrice: "$5.00",  outputPrice: "$15.00",  modelId: "gpt-4o-2024-05-13" },
-  { slug: "gpt-4o-mini",        name: "GPT-4o Mini",         provider: "OpenAI",    providerCode: "OA", contextWindow: "128,000", inputPrice: "$0.15",  outputPrice: "$0.60",   modelId: "gpt-4o-mini" },
-  { slug: "gpt-5",               name: "GPT-5",               provider: "OpenAI",    providerCode: "OA", contextWindow: "256,000", inputPrice: "$30.00", outputPrice: "$60.00",  modelId: "gpt-5" },
-  { slug: "llama-3-70b",         name: "Llama 3 70B",         provider: "Meta",      providerCode: "ME", contextWindow: "8,192",   inputPrice: "$0.50",  outputPrice: "$1.50",   modelId: "meta-llama/Meta-Llama-3-70B-Instruct" },
-  { slug: "mistral-large",       name: "Mistral Large",       provider: "Mistral",   providerCode: "MI", contextWindow: "32,768",  inputPrice: "$4.00",  outputPrice: "$12.00",  modelId: "mistral-large-latest" },
-  { slug: "voyage-3",            name: "Voyage 3",            provider: "Voyage",    providerCode: "VO", contextWindow: "32,000",  inputPrice: "$0.06",  outputPrice: "—",       modelId: "voyage-3" },
+  { slug: "gpt-5.5",          name: "GPT-5.5",          provider: "OpenAI",    providerCode: "OA", contextWindow: "256,000", inputPrice: "$30.00", outputPrice: "$60.00", modelId: "gpt-5.5" },
+  { slug: "claude-opus-4.7",  name: "Claude Opus 4.7",  provider: "Anthropic", providerCode: "AN", contextWindow: "200,000", inputPrice: "$15.00", outputPrice: "$75.00", modelId: "claude-opus-4-7" },
+  { slug: "claude-sonnet-4.6", name: "Claude Sonnet 4.6", provider: "Anthropic", providerCode: "AN", contextWindow: "200,000", inputPrice: "$3.00",  outputPrice: "$15.00", modelId: "claude-sonnet-4-6" },
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -425,89 +300,13 @@ export const AI_MODELS: AiModel[] = [
 
 export type ChatMessage = {
   id: string;
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
 };
 
-export type ChatConversation = {
+export type ChatConversationSummary = {
   id: string;
   title: string;
-  snippet: string;
   model: string;
-  updatedAt: string;
-  messages: ChatMessage[];
+  updated_at: string;
 };
-
-export const CHAT_CONVERSATIONS: ChatConversation[] = [
-  {
-    id: "c1",
-    title: "Debounce a react effect",
-    snippet: "Show me the minimal version.",
-    model: "claude-opus-4",
-    updatedAt: "just now",
-    messages: [
-      { id: "m1", role: "user", content: "How do I debounce a react effect?" },
-      {
-        id: "m2",
-        role: "assistant",
-        content:
-          "Usually you don't debounce the effect itself — you debounce the value that feeds it. Derive a debounced version of your input and only let the effect run when the debounced value changes.",
-      },
-      { id: "m3", role: "user", content: "Show me the minimal version." },
-      {
-        id: "m4",
-        role: "assistant",
-        content:
-          "```tsx\nconst debounced = useDebouncedValue(query, 300);\n\nuseEffect(() => {\n  if (!debounced) return;\n  fetch(`/api/search?q=${debounced}`).then(/* … */);\n}, [debounced]);\n```",
-      },
-    ],
-  },
-  {
-    id: "c2",
-    title: "Next.js 16 server actions",
-    snippet: "Explain useActionState.",
-    model: "claude-opus-4",
-    updatedAt: "2h ago",
-    messages: [
-      { id: "m1", role: "user", content: "Explain useActionState in Next.js 16." },
-      {
-        id: "m2",
-        role: "assistant",
-        content:
-          "`useActionState(action, initialState)` returns `[state, formAction, isPending]`. The action has the shape `(prev, formData) => newState`, so you can drive a whole form flow from a single server action while keeping the UI inline.",
-      },
-    ],
-  },
-  {
-    id: "c3",
-    title: "Supabase OAuth flow",
-    snippet: "Walk me through PKCE.",
-    model: "gpt-5",
-    updatedAt: "yesterday",
-    messages: [
-      { id: "m1", role: "user", content: "Walk me through the PKCE flow in Supabase OAuth." },
-      {
-        id: "m2",
-        role: "assistant",
-        content:
-          "Browser generates a code verifier + challenge, sends the challenge to the provider, receives a code back at your callback, then exchanges code + verifier for a session. Supabase's `exchangeCodeForSession` handles the last step.",
-      },
-    ],
-  },
-  {
-    id: "c4",
-    title: "VPS setup on bare linux",
-    snippet: "Best way to install systemd units?",
-    model: "claude-opus-4",
-    updatedAt: "2d ago",
-    messages: [
-      { id: "m1", role: "user", content: "Best way to install systemd units for a node app?" },
-      {
-        id: "m2",
-        role: "assistant",
-        content:
-          "Drop a `.service` file in `/etc/systemd/system/`, run `systemctl daemon-reload`, then `systemctl enable --now your-app`. Use `Restart=always` and `WorkingDirectory` so the app survives reboots.",
-      },
-    ],
-  },
-];

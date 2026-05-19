@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { requireUser } from "@/lib/server/auth-session";
-import { ApiError, fail, ok } from "@/lib/server/api-response";
+import { fail, ok } from "@/lib/server/api-response";
 import {
   describeInstances,
   normalizeInstance,
@@ -37,13 +37,6 @@ export async function POST(request: Request) {
       region: parsed.region,
     };
     const instances = await describeInstances(creds, { Offset: 0, Limit: 20 });
-    if (instances.length === 0) {
-      throw new ApiError(
-        400,
-        "BYOK_INSTANCE_REQUIRED",
-        "You must have at least 1 Lighthouse instance before connecting BYOK",
-      );
-    }
 
     return ok({
       connected: true,

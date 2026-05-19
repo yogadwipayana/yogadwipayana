@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -13,6 +13,17 @@ import {
   EyeOff,
   X,
 } from "lucide-react";
+
+import { vpsApi } from "@/lib/client/vps-api";
+import { validateVpsPassword } from "@/lib/client/vps-password";
+
+type Blueprint = {
+  BlueprintId: string;
+  BlueprintName?: string;
+  OsName?: string;
+  Platform?: string;
+  PlatformType?: string;
+};
 
 /* -------------------------------------------------------------------------- */
 /*  OS families                                                                */
@@ -70,20 +81,39 @@ const OS_FAMILIES: OsFamily[] = [
 ];
 
 /* -------------------------------------------------------------------------- */
-/*  Password validation                                                        */
+/*  Blueprint matcher                                                          */
 /* -------------------------------------------------------------------------- */
 
-const SPECIAL_RE = /[`~!@#$%^&*()\-_=+[\]{};:'",.<>?/\\|]/;
+/**
+ * Map an OS version label like "Ubuntu 22.04 LTS" onto a Tencent BlueprintId
+ * by fuzzy-matching against the blueprint's name and OS name fields. Returns
+ * null when no candidate matches — caller should disable the option.
+ */
+function matchBlueprintId(blueprints: Blueprint[], versionLabel: string): string | null {
+  if (!blueprints.length || !versionLabel) return null;
+  const target = versionLabel.toLowerCase().replace(/\s+/g, " ").trim();
 
-function validatePassword(pw: string) {
-  const sets = [/[a-z]/, /[A-Z]/, /[0-9]/, SPECIAL_RE].filter((r) => r.test(pw)).length;
-  return {
-    hasLength: pw.length >= 8 && pw.length <= 30,
-    noSpaces: !pw.includes(" "),
-    noLeadingSlash: !pw.startsWith("/"),
-    hasThreeSets: sets >= 3,
-    allPassed: pw.length >= 8 && pw.length <= 30 && !pw.includes(" ") && !pw.startsWith("/") && sets >= 3,
-  };
+  // Tokens extracted from the label: words and version numbers.
+  const tokens = target.split(/[^a-z0-9.]+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+
+  let best: { score: number; id: string } | null = null;
+  for (const bp of blueprints) {
+    if (!bp.BlueprintId) continue;
+    const haystack = [bp.BlueprintName, bp.OsName, bp.Platform]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    if (!haystack) continue;
+    let score = 0;
+    for (const t of tokens) {
+      if (haystack.includes(t)) score += t.length;
+    }
+    if (score > 0 && (!best || score > best.score)) {
+      best = { score, id: bp.BlueprintId };
+    }
+  }
+  return best?.id ?? null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -133,8 +163,13 @@ function SectionCard({ step, title, children }: { step: number; title: string; c
 
 function ReinstallContent() {
   const params = useSearchParams();
-  const instanceId = params.get("id") ?? "v1";
+  const instanceId = params.get("id") ?? "";
   const backHref = `/dashboard/vps`;
+
+  /* Catalog of available blueprints from Tencent */
+  const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
 
   /* OS selection */
   const [selectedFamily, setSelectedFamily] = useState(OS_FAMILIES[0].key);
@@ -157,30 +192,112 @@ function ReinstallContent() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = (await vpsApi.getCatalog()) as { blueprints?: Blueprint[] };
+        if (cancelled) return;
+        setBlueprints(data.blueprints ?? []);
+      } catch (err) {
+        if (cancelled) return;
+        setCatalogError(
+          err instanceof Error ? err.message : "Failed to load OS catalog",
+        );
+      } finally {
+        if (!cancelled) setCatalogLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const currentFamily = OS_FAMILIES.find((f) => f.key === selectedFamily) ?? OS_FAMILIES[0];
-  const pwVal = validatePassword(password);
-  const canSubmit = risk1 && risk2;
+  const pwVal = validateVpsPassword(password);
+  const matchedBlueprintId = matchBlueprintId(blueprints, selectedVersion);
+  const versionAvailability = currentFamily.versions.map((v) => ({
+    label: v,
+    available: matchBlueprintId(blueprints, v) !== null,
+  }));
+  const credsValid =
+    loginTab === "password"
+      ? pwVal.allPassed && password === confirmPw
+      : sshKey.trim().length > 0;
+  const canSubmit =
+    risk1 &&
+    risk2 &&
+    credsValid &&
+    matchedBlueprintId !== null &&
+    !catalogLoading &&
+    !catalogError;
 
   function selectFamily(key: string) {
     const fam = OS_FAMILIES.find((f) => f.key === key) ?? OS_FAMILIES[0];
     setSelectedFamily(key);
-    setSelectedVersion(fam.versions[0]);
+    const firstAvailable = fam.versions.find(
+      (v) => matchBlueprintId(blueprints, v) !== null,
+    );
+    setSelectedVersion(firstAvailable ?? fam.versions[0]);
   }
 
   async function doReinstall() {
+    if (!instanceId) {
+      setSubmitError("Missing instance id.");
+      setConfirmOpen(false);
+      return;
+    }
+    if (!matchedBlueprintId) {
+      setSubmitError("Selected OS image is not available.");
+      setConfirmOpen(false);
+      return;
+    }
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1000));
-    setSuccess(true);
-    setLoading(false);
-    setConfirmOpen(false);
+    setSubmitError(null);
+    try {
+      const body: { blueprintId: string; password?: string; keyId?: string } = {
+        blueprintId: matchedBlueprintId,
+      };
+      if (loginTab === "password" && password) body.password = password;
+      if (loginTab === "ssh" && sshKey.trim()) {
+        // Reinstall expects a Tencent KeyId, but the only thing we have here
+        // is a raw public key. Import it first, then pass the resulting KeyId.
+        const imported = (await vpsApi.importSshKey(
+          `reinstall-${Date.now()}`,
+          sshKey.trim(),
+        )) as { KeyId?: string };
+        if (!imported.KeyId) throw new Error("Imported key did not return an ID");
+        body.keyId = imported.KeyId;
+      }
+      await vpsApi.reinstall(instanceId, body);
+      setSuccess(true);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Reinstall failed");
+    } finally {
+      setLoading(false);
+      setConfirmOpen(false);
+    }
   }
 
   function handleSubmitClick() {
     if (loginTab === "password") {
       if (!pwVal.allPassed) { setShowRules(true); return; }
-      if (password !== confirmPw) return;
+      if (password !== confirmPw) {
+        setSubmitError("Passwords do not match.");
+        return;
+      }
     }
+    if (loginTab === "ssh" && !sshKey.trim()) {
+      setSubmitError("Public key is required.");
+      return;
+    }
+    if (!matchedBlueprintId) {
+      setSubmitError("Selected OS image is not available in this region.");
+      return;
+    }
+    setSubmitError(null);
     setConfirmOpen(true);
   }
 
@@ -261,8 +378,11 @@ function ReinstallContent() {
                 onChange={(e) => setSelectedVersion(e.target.value)}
                 className="w-full bg-transparent text-[13px] text-white focus:outline-none"
               >
-                {currentFamily.versions.map((v) => (
-                  <option key={v} value={v}>{v}</option>
+                {versionAvailability.map((v) => (
+                  <option key={v.label} value={v.label} disabled={!v.available}>
+                    {v.label}
+                    {!v.available && !catalogLoading ? " — not available" : ""}
+                  </option>
                 ))}
               </select>
             </div>
@@ -273,6 +393,20 @@ function ReinstallContent() {
             <p className="mb-1 text-[13px] font-medium text-white">{selectedVersion}</p>
             <p className="text-[12px] leading-relaxed text-white/45">{currentFamily.description}</p>
           </div>
+
+          {catalogLoading && (
+            <p className="mt-3 text-[12px] text-white/40">Loading available OS images…</p>
+          )}
+          {catalogError && (
+            <div className="mt-3 rounded-md border border-red-500/20 bg-red-500/[0.06] p-3 text-[12px] text-red-300">
+              {catalogError}
+            </div>
+          )}
+          {!catalogLoading && !catalogError && !matchedBlueprintId && (
+            <div className="mt-3 rounded-md border border-amber-500/20 bg-amber-500/[0.06] p-3 text-[12px] text-amber-300">
+              Selected image is not available in this region. Pick a different version.
+            </div>
+          )}
         </SectionCard>
 
         {/* Step 3: Login credential */}
@@ -398,6 +532,11 @@ function ReinstallContent() {
         </SectionCard>
 
         {/* Actions */}
+        {submitError && (
+          <div className="rounded-md border border-red-500/20 bg-red-500/[0.06] p-3 text-[12px] text-red-300">
+            {submitError}
+          </div>
+        )}
         <div className="flex items-center justify-end gap-3">
           <Link
             href={backHref}

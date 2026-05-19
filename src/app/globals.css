@@ -245,3 +245,133 @@
     animation: none !important;
   }
 }
+
+/* highlight.js — Supabase-toned dark theme */
+.hljs {
+  color: rgba(255, 255, 255, 0.85);
+  background: transparent;
+}
+.hljs-comment,
+.hljs-quote {
+  color: rgba(255, 255, 255, 0.32);
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-meta-keyword,
+.hljs-doctag,
+.hljs-section,
+.hljs-name {
+  color: #c084fc;
+}
+.hljs-tag {
+  color: rgba(255, 255, 255, 0.55);
+}
+.hljs-attr,
+.hljs-attribute {
+  color: #7dd3fc;
+}
+.hljs-variable,
+.hljs-template-variable,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: #fde68a;
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-meta-string {
+  color: #3ecf8e;
+}
+.hljs-built_in,
+.hljs-class .hljs-title,
+.hljs-title.class_,
+.hljs-title.function_ {
+  color: #facc15;
+}
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link {
+  color: #f0abfc;
+}
+.hljs-meta {
+  color: rgba(255, 255, 255, 0.45);
+}
+.hljs-deletion {
+  color: #fb7185;
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}
+
+/* Custom scrollbars — Supabase-toned dark theme */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+  transition: background-color 150ms ease;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.18);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background-color: rgba(62, 207, 142, 0.45);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Slimmer variant for code blocks (horizontal overflow) */
+pre::-webkit-scrollbar {
+  height: 8px;
+}
+pre::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-width: 2px;
+}
+pre::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+/* Markdown — trim outer margins so bubbles don't get extra padding */
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+/* Tighten list items: avoid paragraph margins inside <li> creating big gaps */
+.markdown li > p {
+  margin: 0;
+}
+.markdown li > p + p {
+  margin-top: 0.25rem;
+}
+.markdown li + li {
+  margin-top: 0.125rem;
+}

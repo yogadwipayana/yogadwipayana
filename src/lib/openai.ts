@@ -22,8 +22,11 @@ export const openai = () => {
   _client = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
     baseURL: process.env.OPENAI_BASE_URL || undefined,
+    defaultHeaders: {
+      "User-Agent": "Mozilla/5.0",
+    },
   });
   return _client;
 };
 
-export const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+export const DEFAULT_MODEL = process.env.OPENAI_MODEL ?? "gpt-5.5";

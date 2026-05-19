@@ -1,5 +1,7 @@
+import { cookies } from "next/headers";
+
 import { decryptString, encryptString } from "@/lib/server/crypto";
-import { query } from "@/lib/server/db";
+import { createClient } from "@/utils/supabase/server";
 import {
   associateKeyPair,
   createFirewallRule,
@@ -47,11 +49,16 @@ type InstanceRow = {
   bandwidth_mbps: number | null;
   os_name: string | null;
   expires_at: string | null;
+  expires_at_overridden: boolean;
   source: string;
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
 };
+
+async function sb() {
+  return createClient(await cookies());
+}
 
 export function decodeInstanceCreds(
   instance: Pick<InstanceRow, "secret_id_enc" | "secret_key_enc" | "region">,
@@ -64,17 +71,19 @@ export function decodeInstanceCreds(
 }
 
 async function getCredentialSourceInstance(userId: string) {
-  const result = await query<InstanceRow>(
-    `select *
-     from instance
-     where user_id = $1
-       and secret_id_enc is not null
-       and secret_key_enc is not null
-     order by updated_at desc, created_at desc
-     limit 1`,
-    [userId],
-  );
-  return result.rows[0] ?? null;
+  const client = await sb();
+  const { data, error } = await client
+    .from("instance")
+    .select("*")
+    .eq("user_id", userId)
+    .not("secret_id_enc", "is", null)
+    .not("secret_key_enc", "is", null)
+    .order("updated_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as InstanceRow | null) ?? null;
 }
 
 /**
@@ -104,99 +113,110 @@ export async function upsertInstance(
   instance: NormalizedInstance,
   credentials?: { secretId?: string; secretKey?: string },
 ) {
+  const client = await sb();
   const secretIdEnc = credentials?.secretId ? encryptString(credentials.secretId) : null;
   const secretKeyEnc = credentials?.secretKey ? encryptString(credentials.secretKey) : null;
 
-  const result = await query<InstanceRow>(
-    `insert into instance (
-      user_id, provider, external_instance_id, name, region, zone, status, provider_status,
-      secret_id_enc, secret_key_enc,
-      ip_public, ip_private, cpu, memory_gb, system_disk_gb, bandwidth_mbps,
-      os_name, expires_at, source, last_synced_at
-    ) values (
-      $1, 'tencent_lighthouse', $2, $3, $4, $5, 'active', $6,
-      $7, $8,
-      $9, $10, $11, $12, $13, $14, $15, $16, $17, now()
-    )
-    on conflict (provider, external_instance_id, user_id)
-    do update set
-      name = excluded.name,
-      region = excluded.region,
-      zone = excluded.zone,
-      status = case
-        when instance.status = 'inactive' then instance.status
-        else 'active'
-      end,
-      provider_status = excluded.provider_status,
-      secret_id_enc = coalesce(excluded.secret_id_enc, instance.secret_id_enc),
-      secret_key_enc = coalesce(excluded.secret_key_enc, instance.secret_key_enc),
-      ip_public = excluded.ip_public,
-      ip_private = excluded.ip_private,
-      cpu = excluded.cpu,
-      memory_gb = excluded.memory_gb,
-      system_disk_gb = excluded.system_disk_gb,
-      bandwidth_mbps = excluded.bandwidth_mbps,
-      os_name = excluded.os_name,
-      expires_at = case
-        when instance.expires_at_overridden then instance.expires_at
-        else excluded.expires_at
-      end,
-      source = excluded.source,
-      last_synced_at = now(),
-      updated_at = now()
-    returning *`,
-    [
-      userId,
-      instance.externalInstanceId,
-      instance.name,
-      instance.region,
-      instance.zone,
-      instance.status,
-      secretIdEnc,
-      secretKeyEnc,
-      instance.ipPublic,
-      instance.ipPrivate,
-      instance.cpu,
-      instance.memoryGb,
-      instance.systemDiskGb,
-      instance.bandwidthMbps,
-      instance.osName,
-      instance.expiresAt,
-      source,
-    ],
-  );
-  return result.rows[0];
+  // Read existing row (if any) so we can preserve credentials we're not
+  // explicitly overwriting and respect admin overrides on status / expiry.
+  const { data: existing } = await client
+    .from("instance")
+    .select("*")
+    .eq("provider", "tencent_lighthouse")
+    .eq("external_instance_id", instance.externalInstanceId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const existingRow = existing as InstanceRow | null;
+  const nowIso = new Date().toISOString();
+
+  const row = {
+    user_id: userId,
+    provider: "tencent_lighthouse" as const,
+    external_instance_id: instance.externalInstanceId,
+    name: instance.name,
+    region: instance.region,
+    zone: instance.zone,
+    status: existingRow?.status === "inactive" ? "inactive" : "active",
+    provider_status: instance.status,
+    secret_id_enc: secretIdEnc ?? existingRow?.secret_id_enc ?? null,
+    secret_key_enc: secretKeyEnc ?? existingRow?.secret_key_enc ?? null,
+    ip_public: instance.ipPublic,
+    ip_private: instance.ipPrivate,
+    cpu: instance.cpu,
+    memory_gb: instance.memoryGb,
+    system_disk_gb: instance.systemDiskGb,
+    bandwidth_mbps: instance.bandwidthMbps,
+    os_name: instance.osName,
+    expires_at: existingRow?.expires_at_overridden
+      ? existingRow.expires_at
+      : instance.expiresAt,
+    source,
+    last_synced_at: nowIso,
+  };
+
+  const { data, error } = await client
+    .from("instance")
+    .upsert(row, { onConflict: "provider,external_instance_id,user_id" })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as InstanceRow;
 }
 
 export async function listUserInstances(userId: string) {
-  const result = await query<InstanceRow>(
-    `select
-      id, user_id, provider, external_instance_id, name, region, zone,
-      provider_status as status, provider_status,
-      ip_public, ip_private, cpu, memory_gb, system_disk_gb, bandwidth_mbps,
-      os_name, expires_at, source, last_synced_at, created_at, updated_at
-     from instance
-     where user_id = $1
-       and status = 'active'
-       and (expires_at is null or expires_at > now())
-     order by created_at desc`,
-    [userId],
-  );
-  return result.rows;
+  const client = await sb();
+  const nowIso = new Date().toISOString();
+  const { data, error } = await client
+    .from("instance")
+    .select(
+      "id, user_id, provider, external_instance_id, name, region, zone, provider_status, ip_public, ip_private, cpu, memory_gb, system_disk_gb, bandwidth_mbps, os_name, expires_at, source, last_synced_at, created_at, updated_at",
+    )
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  // The legacy SQL returned `provider_status as status`; mirror that so
+  // downstream consumers that read .status keep working.
+  return ((data ?? []) as Array<Omit<InstanceRow, "status">>).map((r) => ({
+    ...r,
+    status: r.provider_status,
+  })) as InstanceRow[];
 }
 
 export async function getUserInstanceById(userId: string, id: string) {
-  const result = await query<InstanceRow>(
-    `select *
-     from instance
-     where id = $1
-       and user_id = $2
-       and status = 'active'
-       and (expires_at is null or expires_at > now())
-     limit 1`,
-    [id, userId],
-  );
-  return result.rows[0] ?? null;
+  const client = await sb();
+  const nowIso = new Date().toISOString();
+  const { data, error } = await client
+    .from("instance")
+    .select("*")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as InstanceRow | null) ?? null;
+}
+
+export async function removeUserInstance(userId: string, id: string) {
+  const instance = await getUserInstanceById(userId, id);
+  if (!instance) {
+    throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
+  }
+  const client = await sb();
+  const { error } = await client
+    .from("instance")
+    .update({
+      status: "inactive",
+      secret_id_enc: null,
+      secret_key_enc: null,
+    })
+    .eq("id", id)
+    .eq("user_id", userId);
+  if (error) throw error;
+  return { removed: true, id };
 }
 
 export async function syncAllInstances(userId: string) {
@@ -233,12 +253,38 @@ function serializeInstanceForDashboard(instance: InstanceRow) {
   };
 }
 
-export async function refreshUserInstance(userId: string, instanceId: string) {
+/**
+ * Resolve an instance owned by `userId` and return Tencent credentials whose
+ * region is pinned to that instance's region.
+ *
+ * `preferStored` controls credential resolution: when true (the default),
+ * credentials stored on the instance row win — this preserves the previous
+ * behavior of `getInstanceDetail` and `refreshUserInstance`. When false, we
+ * always fall back to the user's BYOK / env credentials, which is what the
+ * action endpoints (start/stop, firewall, ssh-bind, …) historically used.
+ */
+async function resolveInstanceWithCreds(
+  userId: string,
+  instanceId: string,
+  preferStored = false,
+) {
   const instance = await getUserInstanceById(userId, instanceId);
   if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
   const hasStoredCredentials = Boolean(instance.secret_id_enc && instance.secret_key_enc);
-  const creds = hasStoredCredentials ? decodeInstanceCreds(instance) : await getCredentials(userId);
+  const creds =
+    preferStored && hasStoredCredentials
+      ? decodeInstanceCreds(instance)
+      : await getCredentials(userId);
   creds.region = instance.region;
+  return { instance, creds, hasStoredCredentials };
+}
+
+export async function refreshUserInstance(userId: string, instanceId: string) {
+  const { instance, creds, hasStoredCredentials } = await resolveInstanceWithCreds(
+    userId,
+    instanceId,
+    true,
+  );
 
   const providerInstances = await describeInstances(creds, {
     InstanceIds: [instance.external_instance_id],
@@ -310,10 +356,7 @@ export async function performInstanceAction(input: {
   instanceId: string;
   action: "start" | "stop" | "reboot";
 }) {
-  const instance = await getUserInstanceById(input.userId, input.instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(input.userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(input.userId, input.instanceId);
   const actionMap = {
     start: "StartInstances",
     stop: "StopInstances",
@@ -331,10 +374,7 @@ export async function performResetPassword(input: {
   username: string;
   password: string;
 }) {
-  const instance = await getUserInstanceById(input.userId, input.instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(input.userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(input.userId, input.instanceId);
   const requestId = await resetInstancePassword(
     creds,
     instance.external_instance_id,
@@ -351,10 +391,7 @@ export async function performReinstall(input: {
   password?: string;
   keyId?: string;
 }) {
-  const instance = await getUserInstanceById(input.userId, input.instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(input.userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(input.userId, input.instanceId);
   const requestId = await reinstallInstance(
     creds,
     instance.external_instance_id,
@@ -366,10 +403,7 @@ export async function performReinstall(input: {
 }
 
 export async function listFirewallRules(userId: string, instanceId: string) {
-  const instance = await getUserInstanceById(userId, instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(userId, instanceId);
   return describeFirewallRules(creds, instance.external_instance_id);
 }
 
@@ -382,10 +416,7 @@ export async function addFirewallRule(input: {
   action: string;
   description?: string;
 }) {
-  const instance = await getUserInstanceById(input.userId, input.instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(input.userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(input.userId, input.instanceId);
   const requestId = await createFirewallRule(creds, instance.external_instance_id, {
     protocol: input.protocol,
     port: input.port,
@@ -397,10 +428,7 @@ export async function addFirewallRule(input: {
 }
 
 export async function removeFirewallRule(input: { userId: string; instanceId: string; ruleId: string }) {
-  const instance = await getUserInstanceById(input.userId, input.instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(input.userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(input.userId, input.instanceId);
   const requestId = await deleteFirewallRule(creds, instance.external_instance_id, {
     firewallRuleId: input.ruleId,
   });
@@ -416,10 +444,7 @@ export async function removeFirewallRuleByDefinition(input: {
   action: string;
   description?: string;
 }) {
-  const instance = await getUserInstanceById(input.userId, input.instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(input.userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(input.userId, input.instanceId);
   const requestId = await deleteFirewallRule(creds, instance.external_instance_id, {
     rule: {
       protocol: input.protocol,
@@ -477,19 +502,13 @@ export async function createGeneratedSshKey(userId: string, keyName: string) {
 }
 
 export async function bindSshKeyToInstance(userId: string, instanceId: string, keyId: string) {
-  const instance = await getUserInstanceById(userId, instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(userId, instanceId);
   const requestId = await associateKeyPair(creds, instance.external_instance_id, keyId);
   return { requestId: requestId || null };
 }
 
 export async function unbindSshKeyFromInstance(userId: string, instanceId: string, keyId: string) {
-  const instance = await getUserInstanceById(userId, instanceId);
-  if (!instance) throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");
-  const creds = await getCredentials(userId);
-  creds.region = instance.region;
+  const { instance, creds } = await resolveInstanceWithCreds(userId, instanceId);
   const requestId = await disassociateKeyPair(creds, instance.external_instance_id, keyId);
   return { requestId: requestId || null };
 }

@@ -78,6 +78,8 @@ export const vpsApi = {
     apiGet<{ instances: VpsInstance[] }>(`/api/vps/instances${refresh ? "?refresh=true" : ""}`),
   getInstanceDetail: (id: string, refresh = false) =>
     apiGet(`/api/vps/instances/${id}/detail${refresh ? "?refresh=true" : ""}`),
+  removeInstance: (id: string) =>
+    apiSend<{ removed: boolean; id: string }>(`/api/vps/instances/${id}`, "DELETE"),
   performAction: (id: string, action: "start" | "stop" | "reboot") =>
     apiSend(`/api/vps/instances/${id}/actions/${action}`, "POST"),
   resetPassword: (id: string, body: { username?: string; password: string }) =>
@@ -97,6 +99,16 @@ export const vpsApi = {
   ) => apiSend(`/api/vps/instances/${id}/firewall`, "POST", body),
   removeFirewallRule: (id: string, ruleId: string) =>
     apiSend(`/api/vps/instances/${id}/firewall/${ruleId}`, "DELETE"),
+  removeFirewallRuleByDef: (
+    id: string,
+    rule: {
+      protocol: "TCP" | "UDP" | "ICMP" | "ALL";
+      port: string;
+      cidrBlock: string;
+      action: "ACCEPT" | "DROP";
+      description?: string;
+    },
+  ) => apiSend(`/api/vps/instances/${id}/firewall`, "DELETE", { rule }),
   bindSshKey: (id: string, keyId: string) =>
     apiSend(`/api/vps/instances/${id}/ssh-keys/bind`, "POST", { keyId }),
   unbindSshKey: (id: string, keyId: string) =>

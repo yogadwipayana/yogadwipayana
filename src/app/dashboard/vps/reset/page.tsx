@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -9,34 +9,12 @@ import {
   Check,
   Eye,
   EyeOff,
-  ExternalLink,
   Key,
   Lock,
 } from "lucide-react";
-import type { Metadata } from "next";
 
-/* -------------------------------------------------------------------------- */
-/*  Password validation                                                        */
-/* -------------------------------------------------------------------------- */
-
-const SPECIAL_RE = /[`~!@#$%^&*()\-_=+[\]{};:'",.<>?/\\|]/;
-
-function validatePassword(pw: string) {
-  const hasLength = pw.length >= 8 && pw.length <= 30;
-  const noSpaces = !pw.includes(" ");
-  const noLeadingSlash = !pw.startsWith("/");
-  const sets = [/[a-z]/, /[A-Z]/, /[0-9]/, SPECIAL_RE].filter((r) => r.test(pw)).length;
-  const allPassed = hasLength && noSpaces && noLeadingSlash && sets >= 3;
-  return { hasLength, noSpaces, noLeadingSlash, hasThreeSets: sets >= 3, allPassed };
-}
-
-function generatePassword() {
-  const chars =
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+~";
-  const arr = new Uint32Array(16);
-  crypto.getRandomValues(arr);
-  return Array.from(arr, (n) => chars[n % chars.length]).join("");
-}
+import { vpsApi } from "@/lib/client/vps-api";
+import { generateVpsPassword, validateVpsPassword } from "@/lib/client/vps-password";
 
 /* -------------------------------------------------------------------------- */
 /*  Rule indicator                                                             */
@@ -87,6 +65,7 @@ function ResetContent() {
   const [tab, setTab] = useState<Tab>("password");
 
   /* password state */
+  const [username, setUsername] = useState("ubuntu");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [showNew, setShowNew] = useState(false);
@@ -98,7 +77,17 @@ function ResetContent() {
   const [pwLoading, setPwLoading] = useState(false);
   const [pwSuccess, setPwSuccess] = useState(false);
   const hideRulesRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const handleHideRules = useCallback(() => setShowRules(false), []);
+
+  // Cancel the pending password-reveal timeout if the user navigates away
+  // while it's running, so we don't call setState on an unmounted component.
+  useEffect(() => {
+    return () => {
+      if (hideRulesRef.current) {
+        clearTimeout(hideRulesRef.current);
+        hideRulesRef.current = null;
+      }
+    };
+  }, []);
 
   /* ssh state */
   const [keyName, setKeyName] = useState("");
@@ -107,11 +96,11 @@ function ResetContent() {
   const [sshSuccess, setSshSuccess] = useState(false);
   const [sshError, setSshError] = useState<string | null>(null);
 
-  const pwVal = validatePassword(newPw);
+  const pwVal = validateVpsPassword(newPw);
   const started = newPw.length > 0;
 
   function handleGenerate() {
-    const pw = generatePassword();
+    const pw = generateVpsPassword();
     setNewPw(pw);
     setConfirmPw(pw);
     setShowNew(true);
@@ -127,10 +116,18 @@ function ResetContent() {
     e.preventDefault();
     if (!pwVal.allPassed) { setShowRules(true); return; }
     if (newPw !== confirmPw) { setPwMatchError(true); return; }
+    if (!username.trim()) { setPwError("Username is required."); return; }
+    if (!instanceId) { setPwError("Missing instance id."); return; }
     setPwLoading(true);
-    await new Promise((r) => setTimeout(r, 900));
-    setPwSuccess(true);
-    setPwLoading(false);
+    setPwError(null);
+    try {
+      await vpsApi.resetPassword(instanceId, { username: username.trim(), password: newPw });
+      setPwSuccess(true);
+    } catch (err) {
+      setPwError(err instanceof Error ? err.message : "Failed to reset password");
+    } finally {
+      setPwLoading(false);
+    }
   }
 
   async function handleSshSubmit(e: React.FormEvent) {
@@ -139,10 +136,26 @@ function ResetContent() {
       setSshError("Key name and public key are required.");
       return;
     }
+    if (!instanceId) {
+      setSshError("Missing instance id.");
+      return;
+    }
     setSshLoading(true);
-    await new Promise((r) => setTimeout(r, 900));
-    setSshSuccess(true);
-    setSshLoading(false);
+    setSshError(null);
+    try {
+      const imported = (await vpsApi.importSshKey(keyName.trim(), publicKey.trim())) as {
+        KeyId?: string;
+        keyId?: string;
+      };
+      const keyId = imported.KeyId ?? imported.keyId;
+      if (!keyId) throw new Error("Imported key did not return an ID");
+      await vpsApi.bindSshKey(instanceId, keyId);
+      setSshSuccess(true);
+    } catch (err) {
+      setSshError(err instanceof Error ? err.message : "Failed to bind SSH key");
+    } finally {
+      setSshLoading(false);
+    }
   }
 
   return (
@@ -198,12 +211,16 @@ function ResetContent() {
                   {/* Username */}
                   <Field label="Username">
                     <input
-                      disabled
-                      value="ubuntu"
-                      className="w-full cursor-not-allowed rounded-md border border-white/[0.06] bg-white/[0.03] px-3 py-2 text-[13px] text-white/40"
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="ubuntu"
+                      className="w-full rounded-md border border-white/[0.08] bg-[#1c1c1c] px-3 py-2 text-[13px] text-white placeholder:text-white/20 focus:border-[#3ecf8e]/40 focus:outline-none"
                     />
                     <p className="mt-1.5 text-[11px] text-white/30">
-                      You are changing the password for the ubuntu user.
+                      Default depends on the OS — Ubuntu: <span className="font-mono">ubuntu</span>, Debian:{" "}
+                      <span className="font-mono">debian</span>, Rocky / CentOS / OpenCloudOS:{" "}
+                      <span className="font-mono">root</span>.
                     </p>
                   </Field>
 
@@ -328,17 +345,9 @@ function ResetContent() {
             ) : (
               <form onSubmit={handleSshSubmit} className="space-y-5">
                 <div className="rounded-lg border border-white/[0.08] bg-[#171717] p-6 space-y-5">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <Key className="h-4 w-4 text-[#3ecf8e]" />
-                      <h2 className="text-[15px] font-medium text-white">Bind SSH Key</h2>
-                    </div>
-                    <a
-                      href="#"
-                      className="flex items-center gap-1 text-[12px] text-[#3ecf8e] hover:text-[#24b47e]"
-                    >
-                      Learn more <ExternalLink className="h-3 w-3" />
-                    </a>
+                  <div className="mb-2 flex items-center gap-2">
+                    <Key className="h-4 w-4 text-[#3ecf8e]" />
+                    <h2 className="text-[15px] font-medium text-white">Bind SSH Key</h2>
                   </div>
 
                   <Field label="Key Name">

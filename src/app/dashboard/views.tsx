@@ -1463,8 +1463,10 @@ function AssistantMarkdown({ content }: { content: string }) {
           },
           table({ children }) {
             return (
-              <div className="my-3 overflow-x-auto rounded-md border border-white/[0.08]">
-                <table className="w-full border-collapse text-[13px]">{children}</table>
+              <div className="-mx-1 my-3 overflow-x-auto rounded-md border border-white/[0.08] sm:mx-0">
+                <table className="w-full min-w-max border-collapse text-[12px] sm:text-[13px]">
+                  {children}
+                </table>
               </div>
             );
           },
@@ -1473,13 +1475,17 @@ function AssistantMarkdown({ content }: { content: string }) {
           },
           th({ children }) {
             return (
-              <th className="border-b border-white/[0.06] px-3 py-1.5 text-left font-medium text-white/70">
+              <th className="whitespace-nowrap border-b border-white/[0.06] px-2.5 py-1.5 text-left font-medium text-white/70 sm:px-3">
                 {children}
               </th>
             );
           },
           td({ children }) {
-            return <td className="border-b border-white/[0.04] px-3 py-1.5">{children}</td>;
+            return (
+              <td className="whitespace-nowrap border-b border-white/[0.04] px-2.5 py-1.5 align-top sm:px-3">
+                {children}
+              </td>
+            );
           },
         }}
       >

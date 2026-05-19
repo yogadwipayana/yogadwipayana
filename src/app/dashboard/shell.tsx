@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import type { ChatConversationSummary, ToolId } from "./data";
 
-import { TOOLS } from "./data";
+import { SETTINGS_TOOL, TOOLS } from "./data";
 import type { Tool } from "./data";
 import {
   AiOverview,
@@ -71,6 +71,28 @@ function buildSections(
   vpsInstances: readonly ApiVpsInstance[],
   onDeleteConversation?: (id: string) => void,
 ): SubSection[] {
+  if (toolId === "settings") {
+    return [
+      {
+        title: "Account",
+        items: [
+          { id: "settings:account", label: "Profile", href: "/dashboard/settings/account" },
+        ],
+      },
+      {
+        title: "Security",
+        items: [
+          { id: "settings:security", label: "Password & Sessions", href: "/dashboard/settings/security" },
+        ],
+      },
+      {
+        title: "Danger zone",
+        items: [
+          { id: "settings:danger", label: "Delete account", href: "/dashboard/settings/danger" },
+        ],
+      },
+    ];
+  }
   if (toolId === "vps") {
     return [
       {
@@ -173,11 +195,15 @@ export function DashboardShell({
         : vpsInstances[0]?.id ?? "",
     ai: "ai:usage",
     chat: chatConversations[0]?.id ?? "",
+    settings: initialActiveId ?? "settings:account",
   }));
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const tool = useMemo(
-    () => TOOLS.find((t) => t.id === toolId) ?? TOOLS[0],
+    () =>
+      toolId === "settings"
+        ? SETTINGS_TOOL
+        : TOOLS.find((t) => t.id === toolId) ?? TOOLS[0],
     [toolId],
   );
 
@@ -649,6 +675,8 @@ function PrimarySidebar({ activeTool }: { activeTool: ToolId }) {
           <RailButton
             icon={<Settings className="h-4 w-4" aria-hidden />}
             label="Settings"
+            active={activeTool === "settings"}
+            href="/dashboard/settings"
           />
         </div>
       </aside>
@@ -779,6 +807,7 @@ function SubSidebarHeader({
   onCreate?: () => void;
 }) {
   const createHref = TOOL_CREATE_HREF[tool.id];
+  const showCreate = Boolean(tool.createLabel);
   const btnCls =
     "inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.03] text-white/70 transition-colors hover:border-[#3ecf8e]/40 hover:bg-[#3ecf8e]/10 hover:text-[#3ecf8e] disabled:opacity-50 disabled:hover:border-white/[0.08] disabled:hover:bg-white/[0.03] disabled:hover:text-white/70";
 
@@ -787,7 +816,7 @@ function SubSidebarHeader({
       <h2 className="text-[15px] font-medium tracking-[-0.01em] text-white">
         {tool.name}
       </h2>
-      {createHref ? (
+      {!showCreate ? null : createHref ? (
         <Link
           href={createHref}
           aria-label={tool.createLabel}
@@ -1046,6 +1075,9 @@ function MobileDrawer({
             <RailButton
               icon={<Settings className="h-4 w-4" aria-hidden />}
               label="Settings"
+              active={activeTool === "settings"}
+              href="/dashboard/settings"
+              onClick={onClose}
             />
           </div>
         </div>

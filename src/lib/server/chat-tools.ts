@@ -1,8 +1,15 @@
 import type OpenAI from "openai";
 
 import {
+  addFirewallRule,
+  bindSshKeyToInstance,
   getInstanceDetail,
+  listFirewallRules,
+  listSshKeys,
   listUserInstances,
+  performInstanceAction,
+  removeFirewallRuleByDefinition,
+  unbindSshKeyFromInstance,
 } from "@/lib/server/dashboard-service";
 
 /**
@@ -108,6 +115,181 @@ export const CHAT_TOOLS: ChatTool[] = [
           },
         },
         required: ["id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "vps_action",
+      description:
+        "Perform a power action on a VPS instance: start, stop, or reboot. WRITE OPERATION. For `stop` and `reboot`, you MUST first describe the impact in chat and get explicit user confirmation in the same turn (e.g. user said 'yes, reboot it'). `start` is safe and can be executed without confirmation. The `id` is the internal UUID from `vps_list`.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            description: "Internal instance id (the `id` field from `vps_list`).",
+          },
+          action: {
+            type: "string",
+            enum: ["start", "stop", "reboot"],
+            description: "The power action to perform.",
+          },
+        },
+        required: ["id", "action"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "vps_firewall_list",
+      description:
+        "List inbound firewall rules for a VPS instance. Read-only. Returns each rule's protocol, port, source CIDR, action (ACCEPT/DROP), and description. The `id` is the internal UUID from `vps_list`.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            description: "Internal instance id (the `id` field from `vps_list`).",
+          },
+        },
+        required: ["id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "vps_firewall_add",
+      description:
+        "Add an inbound firewall rule to a VPS instance. WRITE OPERATION. Confirm with the user in chat before calling, especially for broad rules (e.g. 0.0.0.0/0 on sensitive ports like 22, 3306, 5432, 6379). Port can be a single port (`80`), a range (`80-443`), or `ALL`.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            description: "Internal instance id (the `id` field from `vps_list`).",
+          },
+          protocol: {
+            type: "string",
+            enum: ["TCP", "UDP", "ICMP", "ALL"],
+          },
+          port: {
+            type: "string",
+            description: "Single port, range (e.g. `80-443`), or `ALL`.",
+          },
+          cidr_block: {
+            type: "string",
+            description: "Source CIDR (e.g. `0.0.0.0/0` for any, `203.0.113.0/24`).",
+          },
+          action: {
+            type: "string",
+            enum: ["ACCEPT", "DROP"],
+          },
+          description: {
+            type: "string",
+            description: "Optional human-readable description of the rule.",
+          },
+        },
+        required: ["id", "protocol", "port", "cidr_block", "action"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "vps_firewall_remove",
+      description:
+        "Remove an inbound firewall rule from a VPS instance by its full definition (protocol + port + cidr + action, plus description if it had one). WRITE OPERATION. Confirm with the user in chat before calling. Use `vps_firewall_list` first to see the exact rule definitions.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            description: "Internal instance id (the `id` field from `vps_list`).",
+          },
+          protocol: {
+            type: "string",
+            enum: ["TCP", "UDP", "ICMP", "ALL"],
+          },
+          port: { type: "string" },
+          cidr_block: { type: "string" },
+          action: {
+            type: "string",
+            enum: ["ACCEPT", "DROP"],
+          },
+          description: {
+            type: "string",
+            description:
+              "Match the existing rule's description (omit only if the rule had no description).",
+          },
+        },
+        required: ["id", "protocol", "port", "cidr_block", "action"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "vps_ssh_keys_list",
+      description:
+        "List the user's SSH key pairs (across all their VPS instances, account-scoped). Read-only. Returns each key's id, name, public key, and which instance external ids it is currently associated with.",
+      parameters: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "vps_ssh_bind",
+      description:
+        "Bind an existing SSH key pair to a VPS instance so the user can log in with that key. WRITE OPERATION. Confirm with the user in chat before calling. The `id` is the internal UUID from `vps_list`; `key_id` is the `KeyId` from `vps_ssh_keys_list`.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            description: "Internal instance id (the `id` field from `vps_list`).",
+          },
+          key_id: {
+            type: "string",
+            description: "Tencent SSH key id (the `KeyId` field from `vps_ssh_keys_list`).",
+          },
+        },
+        required: ["id", "key_id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "vps_ssh_unbind",
+      description:
+        "Unbind an SSH key pair from a VPS instance. WRITE OPERATION. Confirm with the user in chat before calling. After unbinding, that key can no longer log in to the instance.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            description: "Internal instance id (the `id` field from `vps_list`).",
+          },
+          key_id: {
+            type: "string",
+            description: "Tencent SSH key id (the `KeyId` field from `vps_ssh_keys_list`).",
+          },
+        },
+        required: ["id", "key_id"],
         additionalProperties: false,
       },
     },
@@ -340,6 +522,133 @@ export async function executeTool(
       if (!id) return JSON.stringify({ error: "Missing id" });
       const detail = await getInstanceDetail(context.userId, id);
       return JSON.stringify(detail);
+    }
+
+    if (name === "vps_action") {
+      const id = typeof args.id === "string" ? args.id.trim() : "";
+      const action = typeof args.action === "string" ? args.action.trim() : "";
+      if (!id) return JSON.stringify({ error: "Missing id" });
+      if (action !== "start" && action !== "stop" && action !== "reboot") {
+        return JSON.stringify({ error: "Invalid action; expected start | stop | reboot" });
+      }
+      const result = await performInstanceAction({
+        userId: context.userId,
+        instanceId: id,
+        action,
+      });
+      return JSON.stringify({
+        ok: true,
+        id,
+        action,
+        request_id: result.requestId,
+        note:
+          "Action accepted by Tencent Cloud. Status will transition asynchronously; the user can refresh the dashboard to see the new state.",
+      });
+    }
+
+    if (name === "vps_firewall_list") {
+      const id = typeof args.id === "string" ? args.id.trim() : "";
+      if (!id) return JSON.stringify({ error: "Missing id" });
+      const rules = await listFirewallRules(context.userId, id);
+      return JSON.stringify({ id, count: rules.length, rules });
+    }
+
+    if (name === "vps_firewall_add") {
+      const id = typeof args.id === "string" ? args.id.trim() : "";
+      const protocol = typeof args.protocol === "string" ? args.protocol.trim() : "";
+      const port = typeof args.port === "string" ? args.port.trim() : "";
+      const cidrBlock = typeof args.cidr_block === "string" ? args.cidr_block.trim() : "";
+      const action = typeof args.action === "string" ? args.action.trim() : "";
+      const description =
+        typeof args.description === "string" && args.description.trim().length > 0
+          ? args.description.trim()
+          : undefined;
+      if (!id || !protocol || !port || !cidrBlock || !action) {
+        return JSON.stringify({
+          error: "Missing required field (id, protocol, port, cidr_block, action)",
+        });
+      }
+      const result = await addFirewallRule({
+        userId: context.userId,
+        instanceId: id,
+        protocol,
+        port,
+        cidrBlock,
+        action,
+        description,
+      });
+      return JSON.stringify({
+        ok: true,
+        id,
+        rule: { protocol, port, cidr_block: cidrBlock, action, description: description ?? null },
+        request_id: result.requestId,
+      });
+    }
+
+    if (name === "vps_firewall_remove") {
+      const id = typeof args.id === "string" ? args.id.trim() : "";
+      const protocol = typeof args.protocol === "string" ? args.protocol.trim() : "";
+      const port = typeof args.port === "string" ? args.port.trim() : "";
+      const cidrBlock = typeof args.cidr_block === "string" ? args.cidr_block.trim() : "";
+      const action = typeof args.action === "string" ? args.action.trim() : "";
+      const description =
+        typeof args.description === "string" && args.description.trim().length > 0
+          ? args.description.trim()
+          : undefined;
+      if (!id || !protocol || !port || !cidrBlock || !action) {
+        return JSON.stringify({
+          error: "Missing required field (id, protocol, port, cidr_block, action)",
+        });
+      }
+      const result = await removeFirewallRuleByDefinition({
+        userId: context.userId,
+        instanceId: id,
+        protocol,
+        port,
+        cidrBlock,
+        action,
+        description,
+      });
+      return JSON.stringify({
+        ok: true,
+        id,
+        removed: { protocol, port, cidr_block: cidrBlock, action, description: description ?? null },
+        request_id: result.requestId,
+      });
+    }
+
+    if (name === "vps_ssh_keys_list") {
+      const keys = await listSshKeys(context.userId);
+      return JSON.stringify({
+        count: keys.length,
+        keys: keys.map((k) => ({
+          key_id: k.KeyId,
+          key_name: k.KeyName ?? null,
+          public_key: k.PublicKey ?? null,
+          associated_instance_external_ids: k.AssociatedInstanceIds ?? [],
+          created_time: k.CreatedTime ?? null,
+        })),
+      });
+    }
+
+    if (name === "vps_ssh_bind") {
+      const id = typeof args.id === "string" ? args.id.trim() : "";
+      const keyId = typeof args.key_id === "string" ? args.key_id.trim() : "";
+      if (!id || !keyId) {
+        return JSON.stringify({ error: "Missing id or key_id" });
+      }
+      const result = await bindSshKeyToInstance(context.userId, id, keyId);
+      return JSON.stringify({ ok: true, id, key_id: keyId, request_id: result.requestId });
+    }
+
+    if (name === "vps_ssh_unbind") {
+      const id = typeof args.id === "string" ? args.id.trim() : "";
+      const keyId = typeof args.key_id === "string" ? args.key_id.trim() : "";
+      if (!id || !keyId) {
+        return JSON.stringify({ error: "Missing id or key_id" });
+      }
+      const result = await unbindSshKeyFromInstance(context.userId, id, keyId);
+      return JSON.stringify({ ok: true, id, key_id: keyId, request_id: result.requestId });
     }
 
     return JSON.stringify({ error: `Unknown tool: ${name}` });

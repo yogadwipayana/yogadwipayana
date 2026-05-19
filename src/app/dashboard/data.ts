@@ -1,11 +1,17 @@
 import type { LucideIcon } from "lucide-react";
-import { MessageSquare, Server, Waypoints } from "lucide-react";
+import { MessageSquare, Server, Settings, Waypoints } from "lucide-react";
 
 /* -------------------------------------------------------------------------- */
 /*  Tools                                                                     */
 /* -------------------------------------------------------------------------- */
 
-export type ToolId = "vps" | "ai" | "chat";
+/**
+ * Includes "settings" so the DashboardShell can host /dashboard/settings using
+ * the same primary-sidebar + sub-sidebar layout. Settings is intentionally
+ * absent from `TOOLS` because the primary rail renders it separately at the
+ * bottom (alongside the dedicated Settings rail button).
+ */
+export type ToolId = "vps" | "ai" | "chat" | "settings";
 
 export type Tool = {
   id: ToolId;
@@ -14,6 +20,15 @@ export type Tool = {
   icon: LucideIcon;
   createLabel: string;
   searchLabel: string;
+};
+
+export const SETTINGS_TOOL: Tool = {
+  id: "settings",
+  name: "Settings",
+  tag: "Account",
+  icon: Settings,
+  createLabel: "",
+  searchLabel: "",
 };
 
 export const TOOLS: readonly Tool[] = [

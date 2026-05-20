@@ -23,6 +23,8 @@ const handle = app.getRequestHandler();
 
 await app.prepare();
 
+const upgradeHandler = app.getUpgradeHandler();
+
 const wss = new WebSocketServer({ noServer: true });
 
 const httpServer = createServer((req, res) => {
@@ -34,7 +36,7 @@ httpServer.on("upgrade", async (req, socket, head) => {
   const url = req.url ?? "";
 
   if (!url.startsWith("/api/ssh/ws")) {
-    socket.destroy();
+    upgradeHandler(req, socket, head);
     return;
   }
 

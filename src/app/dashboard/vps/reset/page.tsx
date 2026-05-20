@@ -32,26 +32,6 @@ function RuleIndicator({ pass, started }: { pass: boolean; started: boolean }) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Page header                                                                */
-/* -------------------------------------------------------------------------- */
-
-function PageHeader({ backHref, title }: { backHref: string; title: string }) {
-  return (
-    <header className="border-b border-white/[0.06] bg-[#0f0f0f]">
-      <div className="mx-auto flex h-14 max-w-3xl items-center gap-3 px-6">
-        <Link
-          href={backHref}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-white/50 transition-colors hover:bg-white/[0.06] hover:text-white"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
-        <h1 className="text-[15px] font-medium text-white">{title}</h1>
-      </div>
-    </header>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
 /*  Reset content                                                              */
 /* -------------------------------------------------------------------------- */
 
@@ -159,10 +139,20 @@ function ResetContent() {
   }
 
   return (
-    <div className="min-h-screen bg-[#1c1c1c] text-white">
-      <PageHeader backHref={backHref} title="Server Access" />
+    <div className="pb-24 text-white">
+      <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-white/[0.06] bg-[#1c1c1c]/95 px-4 py-3 backdrop-blur sm:px-6">
+        <Link
+          href={backHref}
+          aria-label="Back to VPS"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-white/50 transition-colors hover:bg-white/[0.06] hover:text-white"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
+        <Lock className="h-4 w-4 text-white/40" aria-hidden />
+        <h1 className="text-[14px] font-medium text-white">Server Access</h1>
+      </header>
 
-      <main className="mx-auto max-w-3xl px-6 py-8">
+      <div className="mx-auto max-w-3xl px-6 py-8">
         {/* Tab switcher */}
         <div className="mb-8 flex rounded-lg bg-white/[0.04] p-1">
           {(["password", "ssh"] as Tab[]).map((t) => (
@@ -399,7 +389,7 @@ function ResetContent() {
             )}
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }
@@ -427,7 +417,7 @@ export default function ResetPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-[#1c1c1c] p-8 text-center text-[13px] text-white/30">
+        <div className="p-8 text-center text-[13px] text-white/30">
           Loading…
         </div>
       }

@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { ArrowLeft, TerminalSquare } from "lucide-react";
+import Link from "next/link";
 import { SshTerminal } from "./terminal";
 
 export type InstanceOption = {
@@ -272,18 +272,17 @@ export function SshTerminalView({ instances }: { instances: InstanceOption[] }) 
     savedCred?.hasPassphrase ? "(saved — type to override)" : "Leave blank if none";
 
   return (
-    <div className="min-h-screen bg-[#1c1c1c] pb-24 text-white">
-      <header className="border-b border-white/[0.06] bg-[#0f0f0f]">
-        <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4 sm:px-6">
-          <Link
-            href="/dashboard/vps"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-white/50 transition-colors hover:bg-white/[0.06] hover:text-white"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <TerminalSquare className="h-4 w-4 text-white/40" />
-          <h1 className="text-[15px] font-medium text-white">SSH Terminal</h1>
-        </div>
+    <div className="pb-24 text-white">
+      <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-white/[0.06] bg-[#1c1c1c]/95 px-4 py-3 backdrop-blur sm:px-6">
+        <Link
+          href="/dashboard/vps"
+          aria-label="Back to VPS"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-white/50 transition-colors hover:bg-white/[0.06] hover:text-white"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
+        <TerminalSquare className="h-4 w-4 text-white/40" aria-hidden />
+        <h1 className="text-[14px] font-medium text-white">SSH Terminal</h1>
       </header>
 
       <main className="mx-auto max-w-5xl space-y-5 px-4 py-8 sm:px-6">

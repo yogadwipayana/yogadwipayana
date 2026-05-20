@@ -110,7 +110,7 @@ export default function AiBillingPage() {
           <div className="divide-y divide-white/[0.04]">
             {[
               { label: "Pay as you go",  detail: "Charged per token · standard model rates", badge: "current" },
-              { label: "No minimum",     detail: "Top up any amount in IDR via QRIS", badge: null },
+              { label: "Minimum top-up", detail: "Rp 5,000 via QRIS", badge: null },
               { label: "Manual top-up",  detail: "Payment confirmed by admin within 1 business day", badge: null },
             ].map((row) => (
               <div key={row.label} className="flex items-center justify-between gap-4 px-5 py-4">

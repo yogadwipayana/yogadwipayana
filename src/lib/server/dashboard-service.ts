@@ -112,6 +112,7 @@ export async function upsertInstance(
   source: "order" | "byok_import",
   instance: NormalizedInstance,
   credentials?: { secretId?: string; secretKey?: string },
+  options?: { reactivate?: boolean },
 ) {
   const client = await sb();
   const secretIdEnc = credentials?.secretId ? encryptString(credentials.secretId) : null;
@@ -130,6 +131,27 @@ export async function upsertInstance(
   const existingRow = existing as InstanceRow | null;
   const nowIso = new Date().toISOString();
 
+  // Background sync must not revive a row the user has removed (status='inactive').
+  // An explicit user-triggered import (reactivate=true) should re-activate it.
+  const nextStatus =
+    existingRow?.status === "inactive" && !options?.reactivate ? "inactive" : "active";
+
+  // Give brand-new rows a sort_order at the end of the user's list. Existing
+  // rows keep their current order so reorders the user has made aren't reset
+  // by background sync.
+  let nextSortOrder: number | undefined;
+  if (!existingRow) {
+    const { data: maxRow } = await client
+      .from("instance")
+      .select("sort_order")
+      .eq("user_id", userId)
+      .order("sort_order", { ascending: false, nullsFirst: false })
+      .limit(1)
+      .maybeSingle();
+    const maxSort = (maxRow as { sort_order: number | null } | null)?.sort_order ?? 0;
+    nextSortOrder = maxSort + 1000;
+  }
+
   const row = {
     user_id: userId,
     provider: "tencent_lighthouse" as const,
@@ -137,7 +159,8 @@ export async function upsertInstance(
     name: instance.name,
     region: instance.region,
     zone: instance.zone,
-    status: existingRow?.status === "inactive" ? "inactive" : "active",
+    status: nextStatus,
+    ...(nextSortOrder !== undefined ? { sort_order: nextSortOrder } : {}),
     provider_status: instance.status,
     secret_id_enc: secretIdEnc ?? existingRow?.secret_id_enc ?? null,
     secret_key_enc: secretKeyEnc ?? existingRow?.secret_key_enc ?? null,
@@ -175,6 +198,7 @@ export async function listUserInstances(userId: string) {
     .eq("user_id", userId)
     .eq("status", "active")
     .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
+    .order("sort_order", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false });
   if (error) throw error;
   // The legacy SQL returned `provider_status as status`; mirror that so
@@ -217,6 +241,45 @@ export async function removeUserInstance(userId: string, id: string) {
     .eq("user_id", userId);
   if (error) throw error;
   return { removed: true, id };
+}
+
+export async function reorderUserInstances(userId: string, orderedIds: string[]) {
+  if (orderedIds.length === 0) return { reordered: 0 };
+
+  const client = await sb();
+
+  // Validate every id belongs to this user before touching anything. Without
+  // this check a malicious client could reset another user's sort_order via
+  // the unique-constraint-free UPDATE below.
+  const { data: owned, error: ownErr } = await client
+    .from("instance")
+    .select("id")
+    .eq("user_id", userId)
+    .in("id", orderedIds);
+  if (ownErr) throw ownErr;
+  const ownedSet = new Set(((owned ?? []) as Array<{ id: string }>).map((r) => r.id));
+  const invalid = orderedIds.filter((id) => !ownedSet.has(id));
+  if (invalid.length > 0) {
+    throw new ApiError(
+      404,
+      "INSTANCE_NOT_FOUND",
+      `Instances not found or not owned by user: ${invalid.join(", ")}`,
+    );
+  }
+
+  // Sparse spacing keeps room for future single-row inserts between two
+  // existing entries without a full renumbering.
+  await Promise.all(
+    orderedIds.map((id, index) =>
+      client
+        .from("instance")
+        .update({ sort_order: (index + 1) * 1000 })
+        .eq("id", id)
+        .eq("user_id", userId),
+    ),
+  );
+
+  return { reordered: orderedIds.length };
 }
 
 export async function syncAllInstances(userId: string) {

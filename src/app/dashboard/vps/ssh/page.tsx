@@ -189,7 +189,7 @@ export default function VpsSshKeysPage() {
           <h1 className="text-[15px] font-medium text-white">SSH Keys</h1>
           <div className="ml-auto">
             <Link
-              href="/dashboard/vps/ssh/terminal"
+              href="/dashboard/vps/terminal"
               className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-3 text-[13px] text-white/70 transition-colors hover:border-[#3ecf8e]/40 hover:bg-[#3ecf8e]/[0.06] hover:text-[#3ecf8e]"
             >
               <TerminalSquare className="h-3.5 w-3.5" />

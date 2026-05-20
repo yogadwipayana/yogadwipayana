@@ -108,6 +108,7 @@ function buildSections(
         items: [
           { id: "vps:byok", label: "BYOK", href: "/dashboard/vps/byok" },
           { id: "vps:ssh", label: "SSH", href: "/dashboard/vps/ssh" },
+          { id: "vps:terminal", label: "Terminal", href: "/dashboard/vps/terminal" },
         ],
       },
     ];

@@ -11,6 +11,7 @@ import {
   removeFirewallRuleByDefinition,
   unbindSshKeyFromInstance,
 } from "@/lib/server/dashboard-service";
+import { generateImage } from "@/lib/server/image-gen";
 import { sshExec } from "@/lib/server/ssh-exec";
 
 /**
@@ -322,6 +323,31 @@ export const CHAT_TOOLS: ChatTool[] = [
           },
         },
         required: ["id", "command"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "image_generate",
+      description:
+        "Generate an image from a text prompt. Use whenever the user asks for an image, picture, drawing, illustration, photo, logo, diagram, or any visual content. Returns a URL to the saved image. You MUST embed the returned URL in your reply as a markdown image: ![brief description](url). Generation takes ~60-90 seconds — do not call this tool more than once per user request unless the user explicitly asks for a regeneration or a different variant.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: {
+            type: "string",
+            description:
+              "A detailed description of the image to generate. Be specific about subject, style, composition, and lighting. Rewrite vague user requests into rich descriptions.",
+          },
+          size: {
+            type: "string",
+            description:
+              "Optional. Image dimensions like '1024x1024', '1536x1024', or 'auto'. Defaults to 'auto'.",
+          },
+        },
+        required: ["prompt"],
         additionalProperties: false,
       },
     },
@@ -698,6 +724,17 @@ export async function executeTool(
         command,
         timeoutMs,
       });
+      return JSON.stringify(result);
+    }
+
+    if (name === "image_generate") {
+      const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
+      if (!prompt) return JSON.stringify({ error: "Missing prompt" });
+      const size =
+        typeof args.size === "string" && args.size.trim().length > 0
+          ? args.size.trim()
+          : undefined;
+      const result = await generateImage({ prompt, size });
       return JSON.stringify(result);
     }
 

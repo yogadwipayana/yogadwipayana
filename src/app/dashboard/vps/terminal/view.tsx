@@ -276,7 +276,7 @@ export function SshTerminalView({ instances }: { instances: InstanceOption[] }) 
       <header className="border-b border-white/[0.06] bg-[#0f0f0f]">
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4 sm:px-6">
           <Link
-            href="/dashboard/vps/ssh"
+            href="/dashboard/vps"
             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-white/50 transition-colors hover:bg-white/[0.06] hover:text-white"
           >
             <ArrowLeft className="h-4 w-4" />

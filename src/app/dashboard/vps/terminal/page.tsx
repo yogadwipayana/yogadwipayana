@@ -16,7 +16,7 @@ export default async function SshTerminalPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/sign-in?next=/dashboard/vps/ssh/terminal");
+  if (!user) redirect("/sign-in?next=/dashboard/vps/terminal");
 
   const rows = await listUserInstances(user.id).catch(() => []);
 

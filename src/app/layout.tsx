@@ -37,7 +37,10 @@ export default function RootLayout({
       className={`dark ${geistMono.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col bg-[#1c1c1c] text-white">
+      <body
+        className="min-h-full flex flex-col bg-[#1c1c1c] text-white"
+        suppressHydrationWarning
+      >
         <PostHogProvider>{children}</PostHogProvider>
         {GA_ID ? <GoogleAnalytics gaId={GA_ID} /> : null}
       </body>

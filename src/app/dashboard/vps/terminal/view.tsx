@@ -285,7 +285,7 @@ export function SshTerminalView({ instances }: { instances: InstanceOption[] }) 
         <h1 className="text-[14px] font-medium text-white">SSH Terminal</h1>
       </header>
 
-      <main className="mx-auto max-w-5xl space-y-5 px-4 py-8 sm:px-6">
+      <main className="mx-auto w-full max-w-5xl space-y-5 px-4 py-8 sm:px-6 lg:max-w-6xl xl:max-w-[1600px] 2xl:max-w-[1920px]">
         {/* Connect form — shown when idle, error, or closed */}
         {(status === "idle" || status === "error" || status === "closed") && (
           <div className="space-y-4 rounded-lg border border-white/[0.08] bg-[#171717] p-4">

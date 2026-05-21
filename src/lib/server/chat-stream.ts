@@ -210,6 +210,9 @@ export function runChatStream(args: {
             });
             const result = await executeTool(call.name, call.arguments, {
               userId,
+              conversationId,
+              supabase,
+              abortSignal,
             });
             messages.push({
               role: "tool",

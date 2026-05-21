@@ -33,7 +33,19 @@ export async function buildUserContentWithAttachments(args: {
     return text;
   }
 
-  const parts: ContentPart[] = [{ type: "text", text }];
+  // Surface the URLs of any image attachments alongside the user's text so the
+  // model can pass them to URL-taking tools (image_edit, web_fetch). The model
+  // also sees the bytes via the image_url parts below — the URL line is purely
+  // so the assistant can quote it back into a tool call.
+  const imageUrls = attachments
+    .filter((a) => a.kind === "image")
+    .map((a) => a.url);
+  const textWithUrls =
+    imageUrls.length > 0
+      ? `${text}\n\n[Attached images: ${imageUrls.join(", ")}]`
+      : text;
+
+  const parts: ContentPart[] = [{ type: "text", text: textWithUrls }];
 
   for (const att of attachments) {
     if (att.kind === "image") {

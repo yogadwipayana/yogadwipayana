@@ -35,6 +35,7 @@ import {
   PlaceholderView,
   VpsView,
 } from "./views";
+import { GalleryView } from "./chat/gallery";
 import { vpsApi, type VpsInstance as ApiVpsInstance } from "@/lib/client/vps-api";
 import { normalizeStatus, toUiInstance } from "@/lib/client/vps-mappers";
 
@@ -96,6 +97,12 @@ function buildSections(
           { id: "settings:danger", label: "Delete account", href: "/dashboard/settings/danger" },
         ],
       },
+      {
+        title: "Admin",
+        items: [
+          { id: "admin:og", label: "OG Images", href: "/dashboard/admin/og" },
+        ],
+      },
     ];
   }
   if (toolId === "vps") {
@@ -135,6 +142,9 @@ function buildSections(
       },
     ];
   }
+  if (toolId === "image") {
+    return [];
+  }
   return [
     {
       title: "Conversations",
@@ -152,6 +162,7 @@ function buildSections(
       title: "Configuration",
       items: [
         { id: "chat:prompts", label: "System Prompts" },
+        { id: "chat:gallery", label: "Gallery" },
         { id: "chat:memory", label: "Memory" },
       ],
     },
@@ -217,6 +228,7 @@ export function DashboardShell({
         : vpsInstances[0]?.id ?? "",
     ai: "ai:usage",
     chat: chatConversations[0]?.id ?? "",
+    image: "",
     settings: initialActiveId ?? "settings:account",
   }));
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -440,6 +452,10 @@ function renderMain({
   onConversationUpdated: (c: ChatConversationSummary) => void;
   vpsInstances: readonly ApiVpsInstance[];
 }): React.ReactNode {
+  if (activeItemId === "chat:gallery" && activeTool === "chat") {
+    return <GalleryView />;
+  }
+
   // Configuration / Platform pages use prefixed IDs (e.g. "vps:ssh-keys")
   if (activeItemId && activeItemId.includes(":")) {
     const meta = PLACEHOLDER_LABELS[activeItemId];

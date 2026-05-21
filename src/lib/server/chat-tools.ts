@@ -1,5 +1,7 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type OpenAI from "openai";
 
+import { normalizeAspectInput, presetToSize } from "@/lib/aspect-ratio";
 import {
   addFirewallRule,
   bindSshKeyToInstance,
@@ -12,6 +14,7 @@ import {
   unbindSshKeyFromInstance,
 } from "@/lib/server/dashboard-service";
 import { generateImage } from "@/lib/server/image-gen";
+import { generateAndRecord } from "@/lib/server/image-service";
 import { sshExec } from "@/lib/server/ssh-exec";
 
 /**
@@ -341,13 +344,55 @@ export const CHAT_TOOLS: ChatTool[] = [
             description:
               "A detailed description of the image to generate. Be specific about subject, style, composition, and lighting. Rewrite vague user requests into rich descriptions.",
           },
+          aspect_ratio: {
+            type: "string",
+            enum: ["auto", "square", "portrait", "landscape", "wide", "tall"],
+            description:
+              "Optional aspect-ratio preset. 'square' (1:1), 'portrait' (3:4), 'landscape' (4:3), 'wide' (16:9), 'tall' (9:16), or 'auto' to let the model decide. Defaults to 'auto'.",
+          },
           size: {
             type: "string",
             description:
-              "Optional. Image dimensions like '1024x1024', '1536x1024', or 'auto'. Defaults to 'auto'.",
+              "Deprecated. Prefer `aspect_ratio`. Free-form size like '1024x1024' is still accepted for backwards compatibility.",
           },
         },
         required: ["prompt"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "image_edit",
+      description:
+        "Edit or transform an existing image using a text prompt. Use this when the user attaches an image and asks you to change, restyle, or build on it (\"make this black and white\", \"add a cat\", \"in the style of Van Gogh\", etc.), or clicks an Iterate button on a previously generated image. Returns a URL to the saved image — embed it as `![brief description](url)`. Same ~60–90s latency as image_generate. Don't call more than once per request unless the user asks for a variant.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: {
+            type: "string",
+            description:
+              "A detailed description of the edit. Describe both what to keep from the source image and what should change. Rewrite vague requests into rich descriptions.",
+          },
+          image_url: {
+            type: "string",
+            description:
+              "Absolute URL of the reference image to edit. Use the URL from a recent image_generate result, an attachment the user uploaded, or any publicly reachable URL.",
+          },
+          aspect_ratio: {
+            type: "string",
+            enum: ["auto", "square", "portrait", "landscape", "wide", "tall"],
+            description:
+              "Optional aspect-ratio preset for the output. Defaults to 'auto', which preserves the source aspect ratio when supported.",
+          },
+          size: {
+            type: "string",
+            description:
+              "Deprecated. Prefer `aspect_ratio`. Free-form size like '1024x1024' is still accepted.",
+          },
+        },
+        required: ["prompt", "image_url"],
         additionalProperties: false,
       },
     },
@@ -525,6 +570,12 @@ async function webFetch(rawUrl: string): Promise<FetchResult> {
 export type ToolContext = {
   /** Authenticated Supabase user id. Required for tools that touch user data. */
   userId: string;
+  /** Conversation the tool call belongs to (for tools that record per-conv state). */
+  conversationId?: string;
+  /** Authenticated Supabase client (for tools that need to write rows). */
+  supabase?: SupabaseClient;
+  /** Optional AbortSignal — propagated to slow tools so they can be cancelled. */
+  abortSignal?: AbortSignal;
 };
 
 export async function executeTool(
@@ -730,11 +781,40 @@ export async function executeTool(
     if (name === "image_generate") {
       const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
       if (!prompt) return JSON.stringify({ error: "Missing prompt" });
-      const size =
-        typeof args.size === "string" && args.size.trim().length > 0
-          ? args.size.trim()
-          : undefined;
-      const result = await generateImage({ prompt, size });
+      const size = resolveSize(args);
+      const result = await runAndPersist({
+        context,
+        prompt,
+        options: { prompt, size, abortSignal: context.abortSignal },
+      });
+      return JSON.stringify(result);
+    }
+
+    if (name === "image_edit") {
+      const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
+      const imageUrl =
+        typeof args.image_url === "string" ? args.image_url.trim() : "";
+      if (!prompt) return JSON.stringify({ error: "Missing prompt" });
+      if (!imageUrl) return JSON.stringify({ error: "Missing image_url" });
+      try {
+        const parsed = new URL(imageUrl);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          return JSON.stringify({ error: "image_url must be http(s)" });
+        }
+      } catch {
+        return JSON.stringify({ error: "Invalid image_url" });
+      }
+      const size = resolveSize(args);
+      const result = await runAndPersist({
+        context,
+        prompt,
+        options: {
+          prompt,
+          size,
+          image: imageUrl,
+          abortSignal: context.abortSignal,
+        },
+      });
       return JSON.stringify(result);
     }
 
@@ -743,6 +823,48 @@ export async function executeTool(
     const message = err instanceof Error ? err.message : "Tool execution failed";
     return JSON.stringify({ error: message });
   }
+}
+
+/**
+ * Resolves the canonical OpenAI-style `size` string from a tool call's args.
+ * Prefers `aspect_ratio` (preset) over the legacy free-form `size`.
+ */
+function resolveSize(args: Record<string, unknown>): string | undefined {
+  const aspect = typeof args.aspect_ratio === "string" ? args.aspect_ratio.trim() : "";
+  if (aspect) {
+    return presetToSize(normalizeAspectInput(aspect));
+  }
+  const size = typeof args.size === "string" ? args.size.trim() : "";
+  if (size) {
+    return presetToSize(normalizeAspectInput(size));
+  }
+  return undefined;
+}
+
+/**
+ * Runs the image generator and, when the tool was invoked with a Supabase
+ * context, also records the result in `generated_image` so it shows up in the
+ * gallery and the standalone /dashboard/image workspace. If we don't have a
+ * Supabase client (older callers), we fall back to a plain generation.
+ */
+async function runAndPersist(args: {
+  context: ToolContext;
+  prompt: string;
+  options: Parameters<typeof generateImage>[0];
+}): Promise<{ url: string; prompt: string }> {
+  const { context, prompt, options } = args;
+  if (context.supabase) {
+    const row = await generateAndRecord({
+      supabase: context.supabase,
+      userId: context.userId,
+      prompt,
+      conversationId: context.conversationId ?? null,
+      source: "chat",
+      options,
+    });
+    return { url: row.url, prompt: row.prompt };
+  }
+  return generateImage(options);
 }
 
 function getCurrentTime(timezone: string) {

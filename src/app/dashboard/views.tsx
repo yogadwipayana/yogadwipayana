@@ -19,6 +19,7 @@ import {
   Copy,
   CreditCard,
   Download,
+  ExternalLink,
   Globe,
   ImagePlus,
   Key,
@@ -1124,6 +1125,51 @@ export function ChatView({
     window.open(`/api/conversations/${conversation.id}/export`, "_blank");
   }, [conversation.id]);
 
+  // Iterate-on-image: pre-fill the prompt and attach the original image as a
+  // reference. The model's `image_edit` tool picks up the attachment URL when
+  // the message is sent. Switches the conversation to image mode if it isn't
+  // already, so the IMAGE_MODE_SYSTEM_PROMPT applies.
+  const handleIterateImage = useCallback(
+    (imageUrl: string) => {
+      // Resolve relative /generated-images/ paths to absolute so the model can
+      // fetch them — chat-tools rejects non-http(s) URLs.
+      let absoluteUrl = imageUrl;
+      if (imageUrl.startsWith("/")) {
+        if (typeof window !== "undefined") {
+          absoluteUrl = `${window.location.origin}${imageUrl}`;
+        }
+      }
+
+      const filename = imageUrl.split("/").pop() || "image.png";
+      const att: Attachment = {
+        key: `iterate-${Date.now()}`,
+        kind: "image",
+        name: filename,
+        mime: "image/png",
+        size: 0,
+        publicUrl: absoluteUrl,
+        uploading: false,
+      };
+      setAttachments((prev) =>
+        prev.length >= MAX_ATTACHMENTS ? prev : [...prev, att],
+      );
+      setInput("Iterate on this image: ");
+      if (mode !== "image") {
+        void handleSelectMode("image");
+      }
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.style.height = "auto";
+          el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+          el.setSelectionRange(el.value.length, el.value.length);
+        }
+      });
+    },
+    [handleSelectMode, mode],
+  );
+
   const lastAssistantId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       if (messages[i].role === "assistant") return messages[i].id;
@@ -1299,6 +1345,11 @@ export function ChatView({
                 onEdit={
                   isUser && isPersisted && !isStreaming
                     ? (next) => handleEditUser(m.id, next)
+                    : undefined
+                }
+                onIterateImage={
+                  m.role === "assistant" && !isStreaming
+                    ? handleIterateImage
                     : undefined
                 }
               />
@@ -1665,12 +1716,14 @@ function ChatBubble({
   streaming,
   onRegenerate,
   onEdit,
+  onIterateImage,
 }: {
   message: ChatMessage;
   prevRole: ChatMessage["role"] | null;
   streaming?: boolean;
   onRegenerate?: () => void;
   onEdit?: (nextContent: string) => void;
+  onIterateImage?: (url: string) => void;
 }) {
   const isUser = message.role === "user";
   const isFirstInGroup = prevRole !== message.role;
@@ -1828,7 +1881,11 @@ function ChatBubble({
             ))}
           </div>
         )}
-        <AssistantMarkdown content={message.content} streaming={streaming} />
+        <AssistantMarkdown
+          content={message.content}
+          streaming={streaming}
+          onIterateImage={message.role === "assistant" ? onIterateImage : undefined}
+        />
         {streaming && message.content === "" && (!message.toolEvents || message.toolEvents.length === 0) ? (
           <span className="inline-flex items-center gap-1.5 text-white/35">
             <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
@@ -2254,7 +2311,15 @@ function ModeSelector({
   );
 }
 
-function AssistantMarkdown({ content, streaming }: { content: string; streaming?: boolean }) {
+function AssistantMarkdown({
+  content,
+  streaming,
+  onIterateImage,
+}: {
+  content: string;
+  streaming?: boolean;
+  onIterateImage?: (url: string) => void;
+}) {
   // While streaming: keep raw content updating immediately (shown as pre),
   // and debounce the parsed markdown render by 80ms. Switch to markdown-only
   // once stable (streaming ended or content hasn't changed for 80ms).
@@ -2331,14 +2396,40 @@ function AssistantMarkdown({ content, streaming }: { content: string; streaming?
               );
             },
             img({ src, alt }) {
+              const url = typeof src === "string" ? src : undefined;
+              const isGenerated = !!url && /\/generated-images\//.test(url);
               return (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={typeof src === "string" ? src : undefined}
-                  alt={alt ?? ""}
-                  loading="lazy"
-                  className="my-3 max-w-full h-auto rounded-lg border border-white/[0.08]"
-                />
+                <span className="my-3 inline-block max-w-full">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    alt={alt ?? ""}
+                    loading="lazy"
+                    className="block max-w-full h-auto rounded-lg border border-white/[0.08]"
+                  />
+                  {isGenerated && onIterateImage && url ? (
+                    <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onIterateImage(url)}
+                        title="Iterate on this image"
+                        className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.02] px-2 py-0.5 text-[11px] text-white/55 transition-colors hover:border-[#3ecf8e]/30 hover:bg-[#3ecf8e]/[0.06] hover:text-[#3ecf8e]"
+                      >
+                        <Sparkles className="h-3 w-3" aria-hidden />
+                        Iterate
+                      </button>
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="inline-flex items-center gap-1 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-0.5 text-[11px] text-white/40 transition-colors hover:border-white/[0.12] hover:text-white/70"
+                      >
+                        <ExternalLink className="h-3 w-3" aria-hidden />
+                        Open
+                      </a>
+                    </span>
+                  ) : null}
+                </span>
               );
             },
             h1({ children }) {

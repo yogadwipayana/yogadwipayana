@@ -12,6 +12,8 @@ export type ConversationRow = {
   title: string;
   model: string;
   mode: ConversationMode;
+  is_public: boolean;
+  share_token: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -26,15 +28,15 @@ export type MessageRow = {
 
 export type ConversationSummary = Pick<
   ConversationRow,
-  "id" | "title" | "model" | "mode" | "updated_at"
+  "id" | "title" | "model" | "mode" | "is_public" | "share_token" | "updated_at"
 >;
 
 // `chat_mode` is aliased to `mode` here because Postgres has a built-in
 // `mode()` ordered-set aggregate that PostgREST otherwise mistakes the column
 // name for, raising 42809 ("WITHIN GROUP is required for ordered-set aggregate
 // mode"). The column is `chat_mode` on the row and `mode` on the wire.
-const SUMMARY_COLS = "id,title,model,mode:chat_mode,updated_at";
-const ROW_COLS = "id,user_id,title,model,mode:chat_mode,created_at,updated_at";
+const SUMMARY_COLS = "id,title,model,mode:chat_mode,is_public,share_token,updated_at";
+const ROW_COLS = "id,user_id,title,model,mode:chat_mode,is_public,share_token,created_at,updated_at";
 
 export async function listConversations(
   supabase: SupabaseClient,
@@ -206,6 +208,81 @@ export async function deleteLastAssistantMessage(
     .eq("id", latest.id);
   if (deleteErr) throw deleteErr;
   return true;
+}
+
+/**
+ * Toggles the public share state of a conversation.
+ * - makePublic=true: generates a share_token if none exists, sets is_public=true.
+ * - makePublic=false: sets is_public=false but keeps the token so re-publishing
+ *   returns the same URL.
+ * Always filters by user_id so non-owners cannot publish.
+ */
+export async function setConversationShare(
+  supabase: SupabaseClient,
+  id: string,
+  userId: string,
+  makePublic: boolean,
+): Promise<ConversationRow | null> {
+  // Read current row to check for an existing token (owner-gated via RLS).
+  const current = await getConversation(supabase, id, userId);
+  if (!current) return null;
+
+  const fields: Record<string, unknown> = {
+    is_public: makePublic,
+    updated_at: new Date().toISOString(),
+  };
+  if (makePublic && !current.share_token) {
+    fields.share_token = crypto.randomUUID();
+  }
+
+  const { data, error } = await supabase
+    .from("conversation")
+    .update(fields)
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select(ROW_COLS)
+    .maybeSingle<ConversationRow>();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Looks up a conversation by its public share token.
+ * Does NOT filter by user_id — relies on the RLS public-read policy.
+ * Returns null when the token doesn't exist or the conversation is not public.
+ */
+export async function getConversationByShareToken(
+  supabase: SupabaseClient,
+  token: string,
+): Promise<ConversationRow | null> {
+  const { data, error } = await supabase
+    .from("conversation")
+    .select(ROW_COLS)
+    .eq("share_token", token)
+    .eq("is_public", true)
+    .maybeSingle<ConversationRow>();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Lists all messages for a conversation without an ownership check.
+ * Safe to call only after confirming the conversation is public (e.g. via
+ * getConversationByShareToken), or when the caller already holds a verified
+ * ConversationRow. RLS on the message table enforces the public-read policy.
+ */
+export async function listMessagesByConversationId(
+  supabase: SupabaseClient,
+  conversationId: string,
+): Promise<MessageRow[]> {
+  const { data, error } = await supabase
+    .from("message")
+    .select("*")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: true })
+    .returns<MessageRow[]>();
+  if (error) throw error;
+  return data ?? [];
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   getMessages,
 } from "@/lib/server/chat-service";
 import { runChatStream } from "@/lib/server/chat-stream";
+import { parseSlash, slashSystemPrompt } from "@/lib/server/slash-commands";
 import { createClient } from "@/utils/supabase/server";
 
 export const runtime = "nodejs";
@@ -21,7 +22,7 @@ type RouteContext = { params: Promise<{ id: string }> };
  * completion using the conversation's existing user-side history. Useful for
  * "try that again" after a bad answer or a stream error.
  */
-export async function POST(_request: Request, { params }: RouteContext) {
+export async function POST(request: Request, { params }: RouteContext) {
   const supabase = createClient(await cookies());
   const {
     data: { user },
@@ -51,12 +52,20 @@ export async function POST(_request: Request, { params }: RouteContext) {
       );
     }
 
+    // Check the last user message for a slash command so the system prompt
+    // is re-injected consistently on regenerate.
+    const lastUserMessage = [...history].reverse().find((m) => m.role === "user");
+    const slashParsed = lastUserMessage ? parseSlash(lastUserMessage.content) : null;
+
     const messagesForModel = [
       { role: "system" as const, content: CHAT_SYSTEM_PROMPT },
       ...(conversation.mode === "image"
         ? [{ role: "system" as const, content: IMAGE_MODE_SYSTEM_PROMPT }]
         : []),
-      ...history.map((m) => ({ role: m.role, content: m.content })),
+      ...(slashParsed
+        ? [{ role: "system" as const, content: slashSystemPrompt(slashParsed) }]
+        : []),
+      ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
     ];
 
     return runChatStream({
@@ -65,6 +74,7 @@ export async function POST(_request: Request, { params }: RouteContext) {
       userId: user.id,
       model: conversation.model,
       messages: messagesForModel,
+      abortSignal: request.signal,
     });
   } catch (err) {
     console.error(

@@ -313,10 +313,19 @@ export const AI_MODELS: AiModel[] = [
 /*  Chat conversations                                                        */
 /* -------------------------------------------------------------------------- */
 
+export type ToolEvent = {
+  call_id: string;
+  name: string;
+  status: "running" | "done";
+  args?: unknown;
+  result?: unknown;
+};
+
 export type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  toolEvents?: ToolEvent[];
 };
 
 export type ChatMode = "chat" | "image";
@@ -327,6 +336,8 @@ export type ChatConversationSummary = {
   model: string;
   mode: ChatMode;
   updated_at: string;
+  is_public?: boolean;
+  share_token?: string | null;
 };
 
 export const CHAT_MODES: { slug: ChatMode; name: string; description: string }[] = [

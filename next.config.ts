@@ -6,6 +6,7 @@ const withMDX = createMDX({});
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["yogathedev.com", "test.yogathedev.com", "192.168.56.1"],
   pageExtensions: ["ts", "tsx", "js", "jsx", "md", "mdx"],
+  serverExternalPackages: ["ssh2", "pdf-parse"],
   turbopack: {
     root: process.cwd(),
   },

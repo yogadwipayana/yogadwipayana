@@ -31,6 +31,7 @@
     "lucide-react": "^1.14.0",
     "next": "16.2.6",
     "openai": "^6.38.0",
+    "pdf-parse": "^1.1.1",
     "posthog-js": "^1.373.5",
     "posthog-node": "^5.21.2",
     "radix-ui": "^1.4.3",
@@ -49,6 +50,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pdf-parse": "^1.1.4",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/ssh2": "^1.15.5",

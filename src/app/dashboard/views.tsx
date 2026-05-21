@@ -822,7 +822,7 @@ export function ChatView({
     <div className="flex h-full flex-col">
       {/* Header */}
       <header className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-4 py-3 sm:px-6 lg:px-8">
-        <div className="mx-auto flex w-full max-w-2xl items-center gap-3 lg:max-w-3xl xl:max-w-4xl">
+        <div className="mx-auto flex w-full max-w-2xl items-center gap-3 lg:max-w-3xl xl:max-w-5xl 2xl:max-w-6xl">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2.5">
               <EditableTitle
@@ -844,7 +844,7 @@ export function ChatView({
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-2xl flex-col px-4 py-6 sm:px-6 lg:max-w-3xl lg:px-8 xl:max-w-4xl">
+        <div className="mx-auto flex w-full max-w-2xl flex-col px-4 py-6 sm:px-6 lg:max-w-3xl lg:px-8 xl:max-w-5xl 2xl:max-w-6xl">
           {!loaded && messages.length === 0 ? (
             <div className="flex items-center justify-center py-12 text-[12px] text-white/35">
               <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -907,7 +907,7 @@ export function ChatView({
 
       {/* Input */}
       <div className="shrink-0 border-t border-white/[0.06] px-4 py-4 sm:px-6 lg:px-8">
-        <div className="mx-auto w-full max-w-2xl lg:max-w-3xl xl:max-w-4xl">
+        <div className="mx-auto w-full max-w-2xl lg:max-w-3xl xl:max-w-5xl 2xl:max-w-6xl">
           <div className="relative rounded-xl border border-white/[0.08] bg-[#171717] transition-colors focus-within:border-white/[0.16]">
             <textarea
               ref={textareaRef}

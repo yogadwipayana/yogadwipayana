@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { CHAT_SYSTEM_PROMPT } from "@/lib/server/chat-prompt";
+import { CHAT_SYSTEM_PROMPT, IMAGE_MODE_SYSTEM_PROMPT } from "@/lib/server/chat-prompt";
 import {
   deleteLastAssistantMessage,
   getConversation,
@@ -53,6 +53,9 @@ export async function POST(_request: Request, { params }: RouteContext) {
 
     const messagesForModel = [
       { role: "system" as const, content: CHAT_SYSTEM_PROMPT },
+      ...(conversation.mode === "image"
+        ? [{ role: "system" as const, content: IMAGE_MODE_SYSTEM_PROMPT }]
+        : []),
       ...history.map((m) => ({ role: m.role, content: m.content })),
     ];
 

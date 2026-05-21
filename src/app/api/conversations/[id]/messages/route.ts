@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { CHAT_SYSTEM_PROMPT } from "@/lib/server/chat-prompt";
+import { CHAT_SYSTEM_PROMPT, IMAGE_MODE_SYSTEM_PROMPT } from "@/lib/server/chat-prompt";
 import {
   appendMessage,
   deriveTitle,
@@ -63,6 +63,9 @@ export async function POST(request: Request, { params }: RouteContext) {
 
     const messagesForModel = [
       { role: "system" as const, content: CHAT_SYSTEM_PROMPT },
+      ...(conversation.mode === "image"
+        ? [{ role: "system" as const, content: IMAGE_MODE_SYSTEM_PROMPT }]
+        : []),
       ...priorMessages.map((m) => ({ role: m.role, content: m.content })),
       { role: "user" as const, content: parsed.data.content },
     ];

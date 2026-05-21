@@ -80,6 +80,8 @@ export const vpsApi = {
     apiGet(`/api/vps/instances/${id}/detail${refresh ? "?refresh=true" : ""}`),
   removeInstance: (id: string) =>
     apiSend<{ removed: boolean; id: string }>(`/api/vps/instances/${id}`, "DELETE"),
+  reorderInstances: (orderedIds: string[]) =>
+    apiSend<{ reordered: number }>(`/api/vps/instances/reorder`, "POST", { orderedIds }),
   performAction: (id: string, action: "start" | "stop" | "reboot") =>
     apiSend(`/api/vps/instances/${id}/actions/${action}`, "POST"),
   resetPassword: (id: string, body: { username?: string; password: string }) =>

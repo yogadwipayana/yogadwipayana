@@ -1424,6 +1424,17 @@ function AssistantMarkdown({ content }: { content: string }) {
               </a>
             );
           },
+          img({ src, alt }) {
+            return (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={typeof src === "string" ? src : undefined}
+                alt={alt ?? ""}
+                loading="lazy"
+                className="my-3 max-w-full h-auto rounded-lg border border-white/[0.08]"
+              />
+            );
+          },
           h1({ children }) {
             return <h1 className="mt-4 mb-2 text-[18px] font-medium text-white">{children}</h1>;
           },

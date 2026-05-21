@@ -11,6 +11,7 @@ import {
   Eye,
   EyeOff,
   Globe,
+  KeyRound,
   Plus,
   Server,
   Trash2,
@@ -165,20 +166,17 @@ export default function ByokPage() {
       : "bg-white/25";
 
   return (
-    <div className="min-h-screen bg-[#1c1c1c] pb-24 text-white">
-      {/* Header */}
-      <header className="border-b border-white/[0.06] bg-[#0f0f0f]">
-        <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-6">
-          <Link
-            href="/dashboard/vps"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-white/50 hover:bg-white/[0.06] hover:text-white transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <div>
-            <h1 className="text-[15px] font-medium text-white">BYOK — Bring Your Own VPS</h1>
-          </div>
-        </div>
+    <div className="pb-24 text-white">
+      <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-white/[0.06] bg-[#1c1c1c]/95 px-4 py-3 backdrop-blur sm:px-6">
+        <Link
+          href="/dashboard/vps"
+          aria-label="Back to VPS"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-white/50 transition-colors hover:bg-white/[0.06] hover:text-white"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
+        <KeyRound className="h-4 w-4 text-white/40" aria-hidden />
+        <h1 className="text-[14px] font-medium text-white">BYOK — Bring Your Own VPS</h1>
       </header>
 
       <main className="mx-auto max-w-5xl space-y-5 px-6 py-8">

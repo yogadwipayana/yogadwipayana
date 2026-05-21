@@ -41,6 +41,7 @@ export async function POST(request: Request) {
       "byok_import",
       normalizeInstance(instance, creds.region),
       { secretId: payload.secretId, secretKey: payload.secretKey },
+      { reactivate: true },
     );
     return ok({ instance: saved });
   } catch (err) {

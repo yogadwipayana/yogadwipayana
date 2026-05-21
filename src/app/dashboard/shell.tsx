@@ -35,7 +35,7 @@ import {
   PlaceholderView,
   VpsView,
 } from "./views";
-import type { VpsInstance as ApiVpsInstance } from "@/lib/client/vps-api";
+import { vpsApi, type VpsInstance as ApiVpsInstance } from "@/lib/client/vps-api";
 import { normalizeStatus, toUiInstance } from "@/lib/client/vps-mappers";
 
 /**
@@ -57,12 +57,16 @@ type SubItem = {
   /** When set, an inline trash button appears on hover and calls this. */
   onDelete?: () => void;
   deleteLabel?: string;
+  /** When true, this item participates in drag-to-reorder within its section. */
+  draggable?: boolean;
 };
 type SubSection = {
   title: string;
   items: SubItem[];
   /** When true and items is empty, renders the search-aware "No matches" state. */
   searchable?: boolean;
+  /** Called with the new ordered ids when the user reorders draggable items. */
+  onReorder?: (orderedIds: string[]) => void;
 };
 
 function buildSections(
@@ -70,6 +74,7 @@ function buildSections(
   chatConversations: ChatConversationSummary[],
   vpsInstances: readonly ApiVpsInstance[],
   onDeleteConversation?: (id: string) => void,
+  onReorderVps?: (orderedIds: string[]) => void,
 ): SubSection[] {
   if (toolId === "settings") {
     return [
@@ -97,15 +102,20 @@ function buildSections(
     return [
       {
         title: "Instances",
+        onReorder: onReorderVps,
         items: vpsInstances.map((i) => ({
           id: i.id,
           label: i.name,
           status: normalizeStatus(i.provider_status ?? i.status),
+          draggable: Boolean(onReorderVps),
         })),
       },
       {
         title: "Platform",
-        items: [{ id: "vps:byok", label: "BYOK", href: "/dashboard/vps/byok" }],
+        items: [
+          { id: "vps:byok", label: "BYOK", href: "/dashboard/vps/byok" },
+          { id: "vps:terminal", label: "Terminal", href: "/dashboard/vps/terminal" },
+        ],
       },
     ];
   }
@@ -186,7 +196,19 @@ export function DashboardShell({
   const [creatingConversation, setCreatingConversation] = useState(false);
   const [chatSearch, setChatSearch] = useState("");
 
-  const vpsInstances: readonly ApiVpsInstance[] = instances ?? NO_INSTANCES;
+  const [vpsInstancesState, setVpsInstancesState] = useState<readonly ApiVpsInstance[]>(
+    instances ?? NO_INSTANCES,
+  );
+  // Re-sync with the prop when the parent passes a new array (e.g. after
+  // `router.refresh()`), without an effect. Using the documented
+  // "adjusting state during render" pattern so an in-flight optimistic reorder
+  // isn't clobbered by an extra render.
+  const [lastInstancesProp, setLastInstancesProp] = useState(instances);
+  if (instances !== lastInstancesProp) {
+    setLastInstancesProp(instances);
+    setVpsInstancesState(instances ?? NO_INSTANCES);
+  }
+  const vpsInstances: readonly ApiVpsInstance[] = vpsInstancesState;
 
   const [activeItems, setActiveItems] = useState<Record<ToolId, string>>(() => ({
     vps:
@@ -210,6 +232,29 @@ export function DashboardShell({
   const setItem = useCallback((id: string) => {
     setActiveItems((prev) => ({ ...prev, [toolId]: id }));
   }, [toolId]);
+
+  const handleReorderVps = useCallback(
+    async (orderedIds: string[]) => {
+      const prev = vpsInstancesState;
+      const byId = new Map(prev.map((i) => [i.id, i]));
+      const reordered: ApiVpsInstance[] = [];
+      for (const id of orderedIds) {
+        const inst = byId.get(id);
+        if (inst) reordered.push(inst);
+      }
+      // Append any items the caller forgot — defensive but expected to be a no-op.
+      for (const inst of prev) {
+        if (!orderedIds.includes(inst.id)) reordered.push(inst);
+      }
+      setVpsInstancesState(reordered);
+      try {
+        await vpsApi.reorderInstances(reordered.map((i) => i.id));
+      } catch {
+        setVpsInstancesState(prev);
+      }
+    },
+    [vpsInstancesState],
+  );
 
   const handleDeleteConversation = useCallback(
     async (id: string) => {
@@ -257,12 +302,14 @@ export function DashboardShell({
         filteredChatConversations,
         vpsInstances,
         toolId === "chat" ? handleDeleteConversation : undefined,
+        toolId === "vps" ? handleReorderVps : undefined,
       ),
     [
       toolId,
       filteredChatConversations,
       vpsInstances,
       handleDeleteConversation,
+      handleReorderVps,
     ],
   );
 
@@ -857,30 +904,116 @@ function SubSidebarBody({
       className="flex-1 overflow-y-auto p-2"
     >
       {sections.map((section) => (
-        <div key={section.title} className="mb-3 last:mb-0">
-          <h3 className="mb-1 px-2.5 text-[10px] font-medium uppercase tracking-[0.12em] text-white/35">
-            {section.title}
-          </h3>
-          {section.items.length === 0 ? (
-            <p className="px-2.5 py-1 text-[12px] text-white/30">
-              {searching && section.searchable ? "No matches." : "No items yet."}
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-px">
-              {section.items.map((item) => (
-                <li key={item.id}>
-                  <SubItemButton
-                    item={item}
-                    active={item.id === activeItem}
-                    onClick={() => onSelectItem(item.id)}
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <SubSidebarSection
+          key={section.title}
+          section={section}
+          activeItem={activeItem}
+          onSelectItem={onSelectItem}
+          searching={searching}
+        />
       ))}
     </nav>
+  );
+}
+
+function SubSidebarSection({
+  section,
+  activeItem,
+  onSelectItem,
+  searching,
+}: {
+  section: SubSection;
+  activeItem: string;
+  onSelectItem: (id: string) => void;
+  searching?: boolean;
+}) {
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const reorderable = Boolean(section.onReorder);
+
+  const handleDragStart = (id: string) => (e: React.DragEvent) => {
+    if (!reorderable) return;
+    setDraggingId(id);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
+  };
+
+  const handleDragOver = (id: string) => (e: React.DragEvent) => {
+    if (!reorderable || !draggingId || draggingId === id) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverId(id);
+  };
+
+  const handleDragEnd = () => {
+    setDraggingId(null);
+    setDragOverId(null);
+  };
+
+  const handleDrop = (targetId: string) => (e: React.DragEvent) => {
+    if (!reorderable || !draggingId || !section.onReorder) return;
+    e.preventDefault();
+    if (draggingId === targetId) {
+      handleDragEnd();
+      return;
+    }
+    const ids = section.items.map((i) => i.id);
+    const fromIdx = ids.indexOf(draggingId);
+    const toIdx = ids.indexOf(targetId);
+    if (fromIdx === -1 || toIdx === -1) {
+      handleDragEnd();
+      return;
+    }
+    const next = [...ids];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    section.onReorder(next);
+    handleDragEnd();
+  };
+
+  return (
+    <div className="mb-3 last:mb-0">
+      <h3 className="mb-1 px-2.5 text-[10px] font-medium uppercase tracking-[0.12em] text-white/35">
+        {section.title}
+      </h3>
+      {section.items.length === 0 ? (
+        <p className="px-2.5 py-1 text-[12px] text-white/30">
+          {searching && section.searchable ? "No matches." : "No items yet."}
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-px">
+          {section.items.map((item) => {
+            const draggable = reorderable && item.draggable !== false;
+            const isDragging = draggingId === item.id;
+            const isDropTarget = dragOverId === item.id && draggingId !== item.id;
+            return (
+              <li
+                key={item.id}
+                draggable={draggable}
+                onDragStart={draggable ? handleDragStart(item.id) : undefined}
+                onDragOver={draggable ? handleDragOver(item.id) : undefined}
+                onDragLeave={
+                  draggable ? () => setDragOverId((cur) => (cur === item.id ? null : cur)) : undefined
+                }
+                onDrop={draggable ? handleDrop(item.id) : undefined}
+                onDragEnd={draggable ? handleDragEnd : undefined}
+                className={`relative ${
+                  isDropTarget
+                    ? "before:absolute before:inset-x-1 before:-top-px before:h-px before:bg-[#3ecf8e]"
+                    : ""
+                } ${isDragging ? "opacity-40" : ""}`}
+              >
+                <SubItemButton
+                  item={item}
+                  active={item.id === activeItem}
+                  onClick={() => onSelectItem(item.id)}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 

@@ -5,6 +5,7 @@ import {
   Check,
   MessageSquare,
   Server,
+  Terminal,
   Waypoints,
 } from "lucide-react";
 
@@ -75,216 +76,184 @@ function Hero() {
         className="pointer-events-none absolute -top-40 left-1/2 -z-0 h-[420px] w-[720px] -translate-x-1/2 rounded-full bg-[#3ecf8e]/10 blur-[120px]"
       />
 
-      <div className="relative mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-12 px-6 pt-20 pb-24 sm:px-8 sm:pt-28 lg:grid-cols-[minmax(0,1fr)_minmax(0,480px)] lg:gap-16 lg:pt-32 lg:pb-32">
-        <div className="flex flex-col gap-7">
-          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-3 py-1 text-xs text-white/80">
-            <span
-              aria-hidden
-              className="h-1.5 w-1.5 rounded-full bg-[#3ecf8e]"
-            />
-            Based in Bali · Building in public
-          </span>
+      <div className="relative mx-auto grid w-full max-w-6xl grid-cols-1 items-start gap-12 px-6 pt-20 pb-24 sm:px-8 sm:pt-28 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,440px)] lg:gap-16 lg:pt-32 lg:pb-32">
+        <div className="flex flex-col gap-8">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-white/35">
+              01 — Hello
+            </span>
+            <span aria-hidden className="h-px w-10 bg-white/10" />
+            <span className="inline-flex items-center gap-2 font-mono text-[11px] text-white/55">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#3ecf8e]/60" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#3ecf8e]" />
+              </span>
+              Online from Bali
+            </span>
+          </div>
 
-          <h1 className="text-[40px] font-medium leading-[1.02] tracking-[-0.035em] text-white sm:text-[56px] md:text-[64px] lg:text-[72px]">
-            Portfolio, playground,
-            <br />
-            and <span className="text-[#3ecf8e]">control room</span>
-            <br />
-            for my tools.
+          <h1 className="text-[44px] font-medium leading-[0.98] tracking-[-0.04em] text-white sm:text-[60px] md:text-[72px] lg:text-[80px]">
+            <span className="block text-white/40">Yoga Dwipayana</span>
+            <span className="block">builds quiet</span>
+            <span className="block">
+              tools that <span className="text-[#3ecf8e]">ship</span>.
+            </span>
           </h1>
 
-          <p className="max-w-xl text-[17px] leading-[1.6] text-white/65">
-            I&rsquo;m Yoga Dwipayana — a polyagentmorous builder shipping
-            AI-powered developer tools from Bali. This site is both a portfolio
-            and the hub where I run them.
+          <p className="max-w-lg text-[17px] leading-[1.65] text-white/60">
+            A polyagentmorous indie builder running a small fleet of AI-powered
+            developer tools — VPS, AI router, chat — from one operator console.
+            This site is the front door and the cockpit.
           </p>
 
-          <div className="flex flex-col gap-3 pt-1 sm:flex-row">
+          <div className="flex flex-col gap-3 pt-1 sm:flex-row sm:items-center">
+            <Link
+              href="/dashboard"
+              className="group inline-flex h-11 items-center justify-center gap-1.5 rounded-md bg-[#3ecf8e] px-5 text-sm font-medium text-[#171717] transition-colors hover:bg-[#24b47e]"
+            >
+              Open the cockpit
+              <ArrowUpRight className="h-4 w-4 transition-transform group-hover:-translate-y-px group-hover:translate-x-px" aria-hidden />
+            </Link>
             <Link
               href="/tools"
-              className="inline-flex h-11 items-center justify-center gap-1.5 rounded-md bg-[#3ecf8e] px-5 text-sm font-medium text-[#171717] transition-colors hover:bg-[#24b47e]"
+              className="inline-flex h-11 items-center justify-center rounded-md border border-white/15 bg-transparent px-5 text-sm font-medium text-white transition-colors hover:border-white/30 hover:bg-white/[0.04]"
             >
-              Explore tools
-              <ArrowUpRight className="h-4 w-4" aria-hidden />
+              Tour the tools
             </Link>
             <Link
               href="/about"
-              className="inline-flex h-11 items-center justify-center rounded-md border border-white/15 bg-transparent px-5 text-sm font-medium text-white transition-colors hover:border-white/30 hover:bg-white/[0.04]"
+              className="ml-0 inline-flex items-center gap-1 text-sm text-white/55 transition-colors hover:text-white sm:ml-2"
             >
-              About me
+              <Terminal className="h-3.5 w-3.5" aria-hidden />
+              whoami
             </Link>
           </div>
-
-          <dl className="mt-4 grid grid-cols-3 gap-6 border-t border-white/[0.08] pt-6 text-left sm:gap-10">
-            <Stat label="Years shipping" value="3+" />
-            <Stat label="Active tools" value="3" />
-            <Stat label="Stack" value="TS · Next" />
-          </dl>
         </div>
 
-        <DashboardMock />
+        <OperatorConsole />
       </div>
     </section>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-xs uppercase tracking-[0.08em] text-white/40">
-        {label}
-      </dt>
-      <dd className="mt-1 text-lg font-medium tracking-tight text-white">
-        {value}
-      </dd>
-    </div>
-  );
-}
-
 /* -------------------------------------------------------------------------- */
-/*  Dashboard mock (the decorative "product UI" panel)                        */
+/*  Operator console — the right-side feature panel                           */
 /* -------------------------------------------------------------------------- */
 
-function DashboardMock() {
+function OperatorConsole() {
+  const services = [
+    { name: "VPS Control", note: "3 instances · 1 ssh", icon: Server, href: "/dashboard/vps", status: "ok" as const },
+    { name: "AI Router", note: "p50 124ms · 0.02% err", icon: Waypoints, href: "/dashboard/ai", status: "ok" as const },
+    { name: "Chat AI", note: "context cached · ready", icon: MessageSquare, href: "/dashboard/chat", status: "idle" as const },
+  ];
+
+  const ships = [
+    { hash: "8aa3e22", msg: "ssh terminal in dashboard", when: "today" },
+    { hash: "f698b17", msg: "settings page · more tools", when: "3d" },
+    { hash: "f5b9449", msg: "fix copy button · local dev", when: "1w" },
+  ];
+
   return (
-    <div className="relative w-full">
-      <div className="pointer-events-none absolute -inset-6 -z-10 rounded-[24px] bg-gradient-to-br from-[#3ecf8e]/10 via-transparent to-transparent blur-2xl" />
+    <div className="relative w-full lg:mt-2">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -inset-6 -z-10 rounded-[24px] bg-gradient-to-br from-[#3ecf8e]/10 via-transparent to-transparent blur-2xl"
+      />
       <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#171717] shadow-[0_16px_48px_rgba(0,0,0,0.4)]">
-        {/* window chrome */}
-        <div className="flex items-center gap-2 border-b border-white/[0.06] px-4 py-3">
-          <span className="h-2.5 w-2.5 rounded-full bg-white/20" />
-          <span className="h-2.5 w-2.5 rounded-full bg-white/20" />
-          <span className="h-2.5 w-2.5 rounded-full bg-white/20" />
-          <span className="ml-3 rounded-md border border-white/[0.08] bg-white/[0.04] px-2 py-0.5 font-mono text-[11px] text-white/50">
-            yoga.dev/dashboard
+        <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2.5 font-mono text-[11px]">
+          <span className="flex items-center gap-2 text-white/45">
+            <span className="text-[#3ecf8e]">~</span>
+            <span className="text-white/30">/</span>
+            <span className="text-white/70">tools</span>
           </span>
+          <span className="text-white/35">{currentSession()}</span>
         </div>
 
-        {/* body */}
-        <div className="grid grid-cols-[120px_1fr] min-h-[320px]">
-          {/* sidebar */}
-          <aside className="border-r border-white/[0.06] bg-[#141414] p-3">
-            <div className="mb-3 px-2 text-[10px] uppercase tracking-[0.1em] text-white/30">
-              Tools
-            </div>
-            <ul className="flex flex-col gap-1 text-[13px]">
-              <MockSidebarItem icon={Server} label="VPS" />
-              <MockSidebarItem icon={Waypoints} label="Router" active />
-              <MockSidebarItem icon={MessageSquare} label="Chat" />
-            </ul>
-          </aside>
-
-          {/* main */}
-          <div className="flex flex-col gap-4 p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-[13px] font-medium text-white">
-                  AI Router
-                </div>
-                <div className="text-[11px] text-white/40">
-                  3 routes · healthy
-                </div>
-              </div>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#3ecf8e]/15 px-2 py-0.5 text-[10px] font-medium text-[#3ecf8e]">
-                <span className="h-1.5 w-1.5 rounded-full bg-[#3ecf8e]" />
-                live
-              </span>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2">
-              <MockMetric label="p50" value="124ms" bar={0.4} />
-              <MockMetric label="p95" value="612ms" bar={0.75} />
-              <MockMetric label="errors" value="0.02%" bar={0.12} />
-            </div>
-
-            <div className="rounded-md border border-white/[0.06] bg-[#1c1c1c]">
-              <div className="border-b border-white/[0.06] px-3 py-2 text-[11px] uppercase tracking-[0.08em] text-white/40">
-                Recent calls
-              </div>
-              <ul className="divide-y divide-white/[0.04] font-mono text-[11px]">
-                <MockRow method="POST" path="/v1/chat/completions" model="claude-opus-4" ms="312ms" />
-                <MockRow method="POST" path="/v1/chat/completions" model="gpt-5" ms="214ms" />
-                <MockRow method="POST" path="/v1/embed" model="voyage-3" ms="89ms" />
-                <MockRow method="POST" path="/v1/chat/completions" model="claude-opus-4" ms="441ms" />
-              </ul>
-            </div>
+        <div className="px-4 py-4">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-[0.14em] text-white/35">
+              Services
+            </span>
+            <span className="text-[10px] text-white/30">all systems normal</span>
           </div>
+          <ul className="flex flex-col gap-1.5">
+            {services.map(({ name, note, icon: Icon, href, status }) => (
+              <li key={name}>
+                <Link
+                  href={href}
+                  className="group flex items-center gap-3 rounded-md border border-transparent px-2.5 py-2 transition-colors hover:border-white/[0.08] hover:bg-white/[0.03]"
+                >
+                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.03] text-white/70 transition-colors group-hover:border-[#3ecf8e]/30 group-hover:text-[#3ecf8e]">
+                    <Icon className="h-3.5 w-3.5" aria-hidden />
+                  </span>
+                  <span className="flex flex-1 flex-col leading-tight">
+                    <span className="text-[13px] font-medium text-white">
+                      {name}
+                    </span>
+                    <span className="font-mono text-[11px] text-white/40">
+                      {note}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.1em]">
+                    <span
+                      aria-hidden
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        status === "ok" ? "bg-[#3ecf8e]" : "bg-white/40"
+                      }`}
+                    />
+                    <span
+                      className={
+                        status === "ok" ? "text-[#3ecf8e]" : "text-white/45"
+                      }
+                    >
+                      {status === "ok" ? "live" : "idle"}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="border-t border-white/[0.06] px-4 py-4">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-[0.14em] text-white/35">
+              Recently shipped
+            </span>
+            <span className="font-mono text-[10px] text-white/30">git log</span>
+          </div>
+          <ul className="flex flex-col gap-1 font-mono text-[12px]">
+            {ships.map(({ hash, msg, when }) => (
+              <li
+                key={hash}
+                className="flex items-center gap-3 rounded-md px-1.5 py-1 text-white/65"
+              >
+                <span className="text-[#3ecf8e]">{hash}</span>
+                <span className="flex-1 truncate text-white/70">{msg}</span>
+                <span className="text-white/35">{when}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="flex items-center justify-between border-t border-white/[0.06] bg-[#141414] px-4 py-2.5 font-mono text-[11px] text-white/40">
+          <span className="flex items-center gap-2">
+            <span className="text-[#3ecf8e]">$</span>
+            <span>./deploy --next</span>
+            <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-white/40" />
+          </span>
+          <span>uptime 99.9</span>
         </div>
       </div>
     </div>
   );
 }
 
-function MockSidebarItem({
-  icon: Icon,
-  label,
-  active,
-}: {
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
-  label: string;
-  active?: boolean;
-}) {
-  return (
-    <li
-      className={`flex items-center gap-2 rounded-md px-2 py-1.5 ${
-        active ? "bg-white/[0.06] text-white" : "text-white/60"
-      }`}
-    >
-      <Icon className="h-3.5 w-3.5" aria-hidden />
-      {label}
-    </li>
-  );
-}
-
-function MockMetric({
-  label,
-  value,
-  bar,
-}: {
-  label: string;
-  value: string;
-  bar: number;
-}) {
-  return (
-    <div className="rounded-md border border-white/[0.06] bg-[#1c1c1c] p-2.5">
-      <div className="text-[10px] uppercase tracking-[0.1em] text-white/40">
-        {label}
-      </div>
-      <div className="mt-1 text-[13px] font-medium text-white">{value}</div>
-      <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-white/[0.06]">
-        <div
-          className="h-full rounded-full bg-[#3ecf8e]"
-          style={{ width: `${Math.round(bar * 100)}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function MockRow({
-  method,
-  path,
-  model,
-  ms,
-}: {
-  method: string;
-  path: string;
-  model: string;
-  ms: string;
-}) {
-  return (
-    <li className="flex items-center justify-between px-3 py-1.5">
-      <span className="flex items-center gap-2 text-white/70">
-        <span className="rounded bg-[#3ecf8e]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[#3ecf8e]">
-          {method}
-        </span>
-        <span>{path}</span>
-        <span className="text-white/30">·</span>
-        <span className="text-white/50">{model}</span>
-      </span>
-      <span className="text-white/40">{ms}</span>
-    </li>
-  );
+function currentSession() {
+  const date = new Date();
+  const hh = String(date.getUTCHours()).padStart(2, "0");
+  const mm = String(date.getUTCMinutes()).padStart(2, "0");
+  return `session ${hh}:${mm} UTC`;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -319,9 +319,17 @@ export type ChatMessage = {
   content: string;
 };
 
+export type ChatMode = "chat" | "image";
+
 export type ChatConversationSummary = {
   id: string;
   title: string;
   model: string;
+  mode: ChatMode;
   updated_at: string;
 };
+
+export const CHAT_MODES: { slug: ChatMode; name: string; description: string }[] = [
+  { slug: "chat", name: "Chat", description: "Regular text conversation" },
+  { slug: "image", name: "Image", description: "Generate images from prompts" },
+];

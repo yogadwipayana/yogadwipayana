@@ -16,6 +16,7 @@ import {
   ChevronUp,
   Copy,
   CreditCard,
+  ImagePlus,
   Key,
   Loader2,
   MessageSquare,
@@ -34,8 +35,9 @@ import type {
   AiRoute,
   ChatConversationSummary,
   ChatMessage,
+  ChatMode,
 } from "./data";
-import { AI_MODELS, AI_RECENT_CALLS } from "./data";
+import { AI_MODELS, AI_RECENT_CALLS, CHAT_MODES } from "./data";
 import { deriveConversationTitle } from "@/lib/chat-title";
 import { copyToClipboard } from "@/lib/utils";
 
@@ -318,6 +320,7 @@ export function ChatView({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [model, setModel] = useState(conversation.model || defaultModel || "");
+  const [mode, setMode] = useState<ChatMode>(conversation.mode ?? "chat");
   const [loaded, setLoaded] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -343,12 +346,19 @@ export function ChatView({
           return;
         }
         const data = (await res.json()) as {
-          conversation: { id: string; title: string; model: string; updated_at: string };
+          conversation: {
+            id: string;
+            title: string;
+            model: string;
+            mode: ChatMode;
+            updated_at: string;
+          };
           messages: ChatMessage[];
         };
         if (cancelled) return;
         setMessages(data.messages);
         setModel(data.conversation.model);
+        setMode(data.conversation.mode ?? "chat");
         setLoaded(true);
       } catch {
         if (!cancelled) setError("Failed to load conversation.");
@@ -421,6 +431,33 @@ export function ChatView({
       }
     },
     [conversation.id, model, onConversationUpdated],
+  );
+
+  const handleSelectMode = useCallback(
+    async (slug: ChatMode) => {
+      const previous = mode;
+      setMode(slug);
+      try {
+        const res = await fetch(`/api/conversations/${conversation.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: slug }),
+        });
+        if (!res.ok) {
+          setMode((current) => (current === slug ? previous : current));
+          return;
+        }
+        const data = (await res.json()) as { conversation: ChatConversationSummary };
+        setMode((current) => {
+          if (current !== slug) return current;
+          onConversationUpdated?.(data.conversation);
+          return current;
+        });
+      } catch {
+        setMode((current) => (current === slug ? previous : current));
+      }
+    },
+    [conversation.id, mode, onConversationUpdated],
   );
 
   // Shared streaming consumer for both initial sends and regenerate. Mutates
@@ -555,6 +592,7 @@ export function ChatView({
           ? deriveConversationTitle(trimmed)
           : conversation.title,
         model,
+        mode,
         updated_at: new Date().toISOString(),
       });
     } catch (err) {
@@ -587,6 +625,7 @@ export function ChatView({
     isStreaming,
     messages.length,
     model,
+    mode,
     onConversationUpdated,
   ]);
 
@@ -628,6 +667,7 @@ export function ChatView({
         id: conversation.id,
         title: conversation.title,
         model,
+        mode,
         updated_at: new Date().toISOString(),
       });
     } catch (err) {
@@ -653,6 +693,7 @@ export function ChatView({
     isStreaming,
     messages,
     model,
+    mode,
     onConversationUpdated,
   ]);
 
@@ -721,6 +762,7 @@ export function ChatView({
           id: conversation.id,
           title: conversation.title,
           model,
+          mode,
           updated_at: new Date().toISOString(),
         });
       } catch (err) {
@@ -747,6 +789,7 @@ export function ChatView({
       isStreaming,
       messages,
       model,
+      mode,
       onConversationUpdated,
     ],
   );
@@ -878,7 +921,10 @@ export function ChatView({
               style={{ minHeight: "56px", maxHeight: "200px" }}
             />
             <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-3 pb-3">
-              <ModelSelector model={model} onSelect={handleSelectModel} />
+              <div className="flex items-center gap-2">
+                <ModelSelector model={model} onSelect={handleSelectModel} />
+                <ModeSelector mode={mode} onSelect={handleSelectMode} />
+              </div>
               {isStreaming ? (
                 <button
                   type="button"
@@ -1363,6 +1409,120 @@ function ModelSelector({
                             {m.provider}
                           </span>
                         </div>
+                      </div>
+                      {selected && (
+                        <Check
+                          className="h-3.5 w-3.5 shrink-0 text-[#3ecf8e]"
+                          aria-hidden
+                        />
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Mode selector dropdown                                                    */
+/* -------------------------------------------------------------------------- */
+
+function ModeSelector({
+  mode,
+  onSelect,
+}: {
+  mode: ChatMode;
+  onSelect: (slug: ChatMode) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = CHAT_MODES.find((m) => m.slug === mode) ?? CHAT_MODES[0];
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`group flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[11px] tracking-tight transition-colors ${
+          open
+            ? "border-white/[0.14] bg-white/[0.05] text-white/80"
+            : "border-white/[0.08] bg-white/[0.02] text-white/55 hover:border-white/[0.14] hover:bg-white/[0.04] hover:text-white/80"
+        }`}
+        aria-label="Choose conversation mode"
+      >
+        <ImagePlus
+          className={`h-3 w-3 ${
+            mode === "image" ? "text-[#3ecf8e]/80" : "text-white/40"
+          }`}
+          aria-hidden
+        />
+        <span className="max-w-[120px] truncate">{current.name}</span>
+        <ChevronUp
+          className={`h-3 w-3 text-white/30 transition-transform group-hover:text-white/55 ${
+            open ? "rotate-180" : ""
+          }`}
+          aria-hidden
+        />
+      </button>
+
+      {open && (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-10"
+            aria-label="Close mode picker"
+            onClick={() => setOpen(false)}
+          />
+
+          <div className="absolute bottom-full left-0 z-20 mb-2 w-[240px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30 backdrop-blur-sm">
+            <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
+              <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">
+                Mode
+              </span>
+              <span className="text-[10px] text-white/25">{CHAT_MODES.length}</span>
+            </div>
+            <ul className="p-1.5">
+              {CHAT_MODES.map((m) => {
+                const selected = mode === m.slug;
+                return (
+                  <li key={m.slug}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSelect(m.slug);
+                        setOpen(false);
+                      }}
+                      className={`group flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
+                        selected
+                          ? "bg-[#3ecf8e]/[0.08] text-white"
+                          : "text-white/70 hover:bg-white/[0.04] hover:text-white"
+                      }`}
+                    >
+                      <span
+                        aria-hidden
+                        className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border ${
+                          selected
+                            ? "border-[#3ecf8e]/35 bg-[#3ecf8e]/[0.1] text-[#3ecf8e]"
+                            : "border-white/[0.08] bg-white/[0.03] text-white/40 group-hover:border-white/[0.14] group-hover:text-white/60"
+                        }`}
+                      >
+                        {m.slug === "image" ? (
+                          <ImagePlus className="h-3 w-3" />
+                        ) : (
+                          <MessageSquare className="h-3 w-3" />
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-medium leading-tight">
+                          {m.name}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[10px] text-white/35">
+                          {m.description}
+                        </span>
                       </div>
                       {selected && (
                         <Check

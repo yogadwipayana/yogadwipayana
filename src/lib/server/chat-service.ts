@@ -4,11 +4,14 @@ import { deriveConversationTitle } from "@/lib/chat-title";
 
 export { deriveConversationTitle as deriveTitle };
 
+export type ConversationMode = "chat" | "image";
+
 export type ConversationRow = {
   id: string;
   user_id: string;
   title: string;
   model: string;
+  mode: ConversationMode;
   created_at: string;
   updated_at: string;
 };
@@ -23,10 +26,15 @@ export type MessageRow = {
 
 export type ConversationSummary = Pick<
   ConversationRow,
-  "id" | "title" | "model" | "updated_at"
+  "id" | "title" | "model" | "mode" | "updated_at"
 >;
 
-const SUMMARY_COLS = "id,title,model,updated_at";
+// `chat_mode` is aliased to `mode` here because Postgres has a built-in
+// `mode()` ordered-set aggregate that PostgREST otherwise mistakes the column
+// name for, raising 42809 ("WITHIN GROUP is required for ordered-set aggregate
+// mode"). The column is `chat_mode` on the row and `mode` on the wire.
+const SUMMARY_COLS = "id,title,model,mode:chat_mode,updated_at";
+const ROW_COLS = "id,user_id,title,model,mode:chat_mode,created_at,updated_at";
 
 export async function listConversations(
   supabase: SupabaseClient,
@@ -49,7 +57,7 @@ export async function getConversation(
 ): Promise<ConversationRow | null> {
   const { data, error } = await supabase
     .from("conversation")
-    .select("*")
+    .select(ROW_COLS)
     .eq("id", id)
     .eq("user_id", userId)
     .maybeSingle<ConversationRow>();
@@ -81,13 +89,14 @@ export async function getMessages(
 
 export async function createConversation(
   supabase: SupabaseClient,
-  args: { userId: string; model: string; title?: string },
+  args: { userId: string; model: string; mode?: ConversationMode; title?: string },
 ): Promise<ConversationSummary> {
   const { data, error } = await supabase
     .from("conversation")
     .insert({
       user_id: args.userId,
       model: args.model,
+      ...(args.mode ? { chat_mode: args.mode } : {}),
       ...(args.title ? { title: args.title } : {}),
     })
     .select(SUMMARY_COLS)
@@ -126,11 +135,12 @@ export async function updateConversation(
   supabase: SupabaseClient,
   id: string,
   userId: string,
-  patch: { title?: string; model?: string },
+  patch: { title?: string; model?: string; mode?: ConversationMode },
 ): Promise<ConversationSummary | null> {
   const fields: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (patch.title !== undefined) fields.title = patch.title;
   if (patch.model !== undefined) fields.model = patch.model;
+  if (patch.mode !== undefined) fields.chat_mode = patch.mode;
 
   const { data, error } = await supabase
     .from("conversation")

@@ -25,6 +25,8 @@ import {
   X,
 } from "lucide-react";
 import type { ChatConversationSummary, ToolId } from "./data";
+import type { GeneratedImageRow } from "@/lib/server/image-service";
+import { ImageWorkspace } from "./image/workspace";
 
 import { SETTINGS_TOOL, TOOLS } from "./data";
 import type { Tool } from "./data";
@@ -70,10 +72,15 @@ type SubSection = {
   onReorder?: (orderedIds: string[]) => void;
 };
 
+function truncatePrompt(prompt: string, max = 45): string {
+  return prompt.length > max ? prompt.slice(0, max) + "…" : prompt;
+}
+
 function buildSections(
   toolId: ToolId,
   chatConversations: ChatConversationSummary[],
   vpsInstances: readonly ApiVpsInstance[],
+  images: GeneratedImageRow[],
   onDeleteConversation?: (id: string) => void,
   onReorderVps?: (orderedIds: string[]) => void,
 ): SubSection[] {
@@ -143,7 +150,16 @@ function buildSections(
     ];
   }
   if (toolId === "image") {
-    return [];
+    return [
+      {
+        title: "Generations",
+        searchable: true,
+        items: images.map((img) => ({
+          id: img.id,
+          label: truncatePrompt(img.prompt),
+        })),
+      },
+    ];
   }
   return [
     {
@@ -190,6 +206,7 @@ export function DashboardShell({
   chatConversations: initialChatConversations,
   defaultChatModel,
   instances,
+  initialImages: initialImagesProp,
   initialActiveId,
 }: {
   toolId: ToolId;
@@ -198,6 +215,8 @@ export function DashboardShell({
   defaultChatModel?: string;
   /** Real instance rows for the VPS tool. Ignored for other tools. */
   instances?: ApiVpsInstance[];
+  /** Generated images for the Image Studio tool. Ignored for other tools. */
+  initialImages?: GeneratedImageRow[];
   /** Pre-selected sub-sidebar item id (e.g. from `?instance=<id>`). */
   initialActiveId?: string;
 }) {
@@ -206,6 +225,17 @@ export function DashboardShell({
   >(initialChatConversations ?? []);
   const [creatingConversation, setCreatingConversation] = useState(false);
   const [chatSearch, setChatSearch] = useState("");
+  const [imageSearch, setImageSearch] = useState("");
+
+  const [images, setImages] = useState<GeneratedImageRow[]>(
+    initialImagesProp ?? [],
+  );
+  // Re-sync prop → state when the server re-fetches (same pattern as VPS).
+  const [lastImagesProp, setLastImagesProp] = useState(initialImagesProp);
+  if (initialImagesProp !== lastImagesProp) {
+    setLastImagesProp(initialImagesProp);
+    setImages(initialImagesProp ?? []);
+  }
 
   const [vpsInstancesState, setVpsInstancesState] = useState<readonly ApiVpsInstance[]>(
     instances ?? NO_INSTANCES,
@@ -228,7 +258,7 @@ export function DashboardShell({
         : vpsInstances[0]?.id ?? "",
     ai: "ai:usage",
     chat: chatConversations[0]?.id ?? "",
-    image: "",
+    image: toolId === "image" ? (initialImagesProp?.[0]?.id ?? "") : "",
     settings: initialActiveId ?? "settings:account",
   }));
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -307,12 +337,20 @@ export function DashboardShell({
     );
   }, [chatConversations, chatSearch, toolId]);
 
+  const filteredImages = useMemo(() => {
+    if (toolId !== "image") return images;
+    const q = imageSearch.trim().toLowerCase();
+    if (!q) return images;
+    return images.filter((img) => img.prompt.toLowerCase().includes(q));
+  }, [images, imageSearch, toolId]);
+
   const sections = useMemo(
     () =>
       buildSections(
         toolId,
         filteredChatConversations,
         vpsInstances,
+        filteredImages,
         toolId === "chat" ? handleDeleteConversation : undefined,
         toolId === "vps" ? handleReorderVps : undefined,
       ),
@@ -320,6 +358,7 @@ export function DashboardShell({
       toolId,
       filteredChatConversations,
       vpsInstances,
+      filteredImages,
       handleDeleteConversation,
       handleReorderVps,
     ],
@@ -355,7 +394,21 @@ export function DashboardShell({
     [],
   );
 
-  const onCreate = toolId === "chat" ? handleCreateConversation : undefined;
+  const handleImageAdded = useCallback((img: GeneratedImageRow) => {
+    setImages((prev) => [img, ...prev]);
+    setActiveItems((prev) => ({ ...prev, image: img.id }));
+  }, []);
+
+  const handleNewGeneration = useCallback(() => {
+    setActiveItems((prev) => ({ ...prev, image: "" }));
+  }, []);
+
+  const onCreate =
+    toolId === "chat"
+      ? handleCreateConversation
+      : toolId === "image"
+        ? handleNewGeneration
+        : undefined;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#1c1c1c] text-white selection:bg-[#3ecf8e]/30 selection:text-white">
@@ -375,10 +428,26 @@ export function DashboardShell({
           activeItem={activeItems[toolId]}
           onSelectItem={setItem}
           onCreate={onCreate}
-          search={toolId === "chat" ? chatSearch : undefined}
-          onSearchChange={toolId === "chat" ? setChatSearch : undefined}
+          search={
+            toolId === "chat"
+              ? chatSearch
+              : toolId === "image"
+                ? imageSearch
+                : undefined
+          }
+          onSearchChange={
+            toolId === "chat"
+              ? setChatSearch
+              : toolId === "image"
+                ? setImageSearch
+                : undefined
+          }
           searchPlaceholder={
-            toolId === "chat" ? "Search conversations…" : undefined
+            toolId === "chat"
+              ? "Search conversations…"
+              : toolId === "image"
+                ? "Search generations…"
+                : undefined
           }
         />
 
@@ -394,6 +463,8 @@ export function DashboardShell({
               creatingConversation,
               onConversationUpdated: handleConversationUpdated,
               vpsInstances,
+              images,
+              onImageAdded: handleImageAdded,
             })}
         </main>
       </div>
@@ -418,10 +489,26 @@ export function DashboardShell({
                 }
               : undefined
           }
-          search={toolId === "chat" ? chatSearch : undefined}
-          onSearchChange={toolId === "chat" ? setChatSearch : undefined}
+          search={
+            toolId === "chat"
+              ? chatSearch
+              : toolId === "image"
+                ? imageSearch
+                : undefined
+          }
+          onSearchChange={
+            toolId === "chat"
+              ? setChatSearch
+              : toolId === "image"
+                ? setImageSearch
+                : undefined
+          }
           searchPlaceholder={
-            toolId === "chat" ? "Search conversations…" : undefined
+            toolId === "chat"
+              ? "Search conversations…"
+              : toolId === "image"
+                ? "Search generations…"
+                : undefined
           }
         />
       ) : null}
@@ -442,6 +529,8 @@ function renderMain({
   creatingConversation,
   onConversationUpdated,
   vpsInstances,
+  images,
+  onImageAdded,
 }: {
   activeTool: ToolId;
   activeItemId: string;
@@ -451,6 +540,8 @@ function renderMain({
   creatingConversation: boolean;
   onConversationUpdated: (c: ChatConversationSummary) => void;
   vpsInstances: readonly ApiVpsInstance[];
+  images: GeneratedImageRow[];
+  onImageAdded: (img: GeneratedImageRow) => void;
 }): React.ReactNode {
   if (activeItemId === "chat:gallery" && activeTool === "chat") {
     return <GalleryView />;
@@ -465,6 +556,17 @@ function renderMain({
         description={
           meta?.description ?? "This page hasn't been built yet."
         }
+      />
+    );
+  }
+
+  if (activeTool === "image") {
+    return (
+      <ImageWorkspace
+        key={activeItemId || "new"}
+        initialImages={images}
+        selectedImageId={activeItemId || undefined}
+        onImageAdded={onImageAdded}
       />
     );
   }

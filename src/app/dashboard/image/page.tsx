@@ -6,7 +6,6 @@ import { listGeneratedImages } from "@/lib/server/image-service";
 import { createClient } from "@/utils/supabase/server";
 
 import { DashboardShell } from "../shell";
-import { ImageWorkspace } from "./workspace";
 
 export const metadata: Metadata = {
   title: "Image Studio · Dashboard",
@@ -24,9 +23,5 @@ export default async function ImagePage() {
 
   const images = await listGeneratedImages(supabase, user.id, { limit: 60 });
 
-  return (
-    <DashboardShell toolId="image">
-      <ImageWorkspace initialImages={images} />
-    </DashboardShell>
-  );
+  return <DashboardShell toolId="image" initialImages={images} />;
 }

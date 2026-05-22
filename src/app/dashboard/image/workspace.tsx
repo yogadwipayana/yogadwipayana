@@ -31,10 +31,19 @@ function formatRelative(iso: string): string {
 
 export function ImageWorkspace({
   initialImages,
+  selectedImageId,
+  onImageAdded,
 }: {
   initialImages: GeneratedImageRow[];
+  /** When set, the workspace pre-selects this image on mount. */
+  selectedImageId?: string;
+  /** Called after a new image is successfully generated. */
+  onImageAdded?: (img: GeneratedImageRow) => void;
 }) {
-  const [prompt, setPrompt] = useState("");
+  const initialSelected = selectedImageId
+    ? (initialImages.find((i) => i.id === selectedImageId) ?? initialImages[0] ?? null)
+    : null;
+  const [prompt, setPrompt] = useState(initialSelected?.prompt ?? "");
   const [aspect, setAspect] = useState<AspectRatioPreset>("square");
   const [referenceUrl, setReferenceUrl] = useState<string | null>(null);
   const [refUrlInput, setRefUrlInput] = useState("");
@@ -44,9 +53,7 @@ export function ImageWorkspace({
   const [isGenerating, setIsGenerating] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [current, setCurrent] = useState<GeneratedImageRow | null>(
-    initialImages[0] ?? null,
-  );
+  const [current, setCurrent] = useState<GeneratedImageRow | null>(initialSelected);
   const [images, setImages] = useState<GeneratedImageRow[]>(initialImages);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -116,6 +123,7 @@ export function ImageWorkspace({
       setImages((prev) => [data.image, ...prev]);
       setCurrent(data.image);
       setPrompt("");
+      onImageAdded?.(data.image);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
       setError(err instanceof Error ? err.message : "Generation failed.");

@@ -367,10 +367,12 @@ export function ChatView({
   conversation,
   defaultModel,
   onConversationUpdated,
+  onStreamingChange,
 }: {
   conversation: ChatConversationSummary;
   defaultModel?: string;
   onConversationUpdated?: (c: ChatConversationSummary) => void;
+  onStreamingChange?: (conversationId: string, streaming: boolean) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -469,12 +471,19 @@ export function ChatView({
     }
   }, [messages]);
 
-  // Cancel any in-flight stream when the view unmounts (conversation switch).
-  useEffect(() => {
-    return () => {
-      abortRef.current?.abort();
-    };
-  }, []);
+  // Intentionally not aborting on unmount: background generation should
+  // complete and persist to DB even when the user navigates to another
+  // conversation or tool. The Stop button still works via handleStop().
+
+  // Wrapper that keeps local isStreaming in sync and also notifies the parent
+  // shell so the sub-sidebar can show a spinner on background conversations.
+  const notifyStreaming = useCallback(
+    (value: boolean) => {
+      setIsStreaming(value);
+      onStreamingChange?.(conversation.id, value);
+    },
+    [conversation.id, onStreamingChange],
+  );
 
   const handleSelectModel = useCallback(
     async (slug: string) => {
@@ -683,7 +692,7 @@ export function ChatView({
     setInput("");
     setAttachments([]);
     setSlashOpen(false);
-    setIsStreaming(true);
+    notifyStreaming(true);
     setError(null);
 
     const ctrl = new AbortController();
@@ -744,7 +753,7 @@ export function ChatView({
       });
     } finally {
       if (abortRef.current === ctrl) abortRef.current = null;
-      setIsStreaming(false);
+      notifyStreaming(false);
     }
   }, [
     attachments,
@@ -756,6 +765,7 @@ export function ChatView({
     messages.length,
     model,
     mode,
+    notifyStreaming,
     onConversationUpdated,
   ]);
 
@@ -777,7 +787,7 @@ export function ChatView({
 
     pinnedToBottomRef.current = true;
     setMessages([...next, assistantMsg]);
-    setIsStreaming(true);
+    notifyStreaming(true);
     setError(null);
 
     const ctrl = new AbortController();
@@ -814,7 +824,7 @@ export function ChatView({
       });
     } finally {
       if (abortRef.current === ctrl) abortRef.current = null;
-      setIsStreaming(false);
+      notifyStreaming(false);
     }
   }, [
     consumeStream,
@@ -824,6 +834,7 @@ export function ChatView({
     messages,
     model,
     mode,
+    notifyStreaming,
     onConversationUpdated,
   ]);
 
@@ -871,7 +882,7 @@ export function ChatView({
       const truncated = messages.slice(0, idx);
       pinnedToBottomRef.current = true;
       setMessages([...truncated, editedUser, assistantMsg]);
-      setIsStreaming(true);
+      notifyStreaming(true);
       setError(null);
 
       const ctrl = new AbortController();
@@ -909,7 +920,7 @@ export function ChatView({
         });
       } finally {
         if (abortRef.current === ctrl) abortRef.current = null;
-        setIsStreaming(false);
+        notifyStreaming(false);
       }
     },
     [
@@ -920,6 +931,7 @@ export function ChatView({
       messages,
       model,
       mode,
+      notifyStreaming,
       onConversationUpdated,
     ],
   );

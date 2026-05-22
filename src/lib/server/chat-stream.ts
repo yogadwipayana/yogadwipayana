@@ -56,12 +56,28 @@ export function runChatStream(args: {
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (payload: unknown) => {
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
-        );
+        try {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
+          );
+        } catch {
+          // Client disconnected; silently ignore — generation continues in the
+          // background and the result is still persisted via persistFinal().
+        }
       };
       const sendDone = () => {
-        controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+        try {
+          controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+        } catch {
+          // ignore
+        }
+      };
+      const closeStream = () => {
+        try {
+          controller.close();
+        } catch {
+          // Already closed; ignore.
+        }
       };
 
       const persistFinal = async () => {
@@ -103,7 +119,7 @@ export function runChatStream(args: {
           if (abortSignal?.aborted) {
             await persistFinal();
             sendDone();
-            controller.close();
+            closeStream();
             return;
           }
 
@@ -169,7 +185,7 @@ export function runChatStream(args: {
             finalAssistantText = roundText || finalAssistantText;
             await persistFinal();
             sendDone();
-            controller.close();
+            closeStream();
             return;
           }
 
@@ -178,7 +194,7 @@ export function runChatStream(args: {
           if (finishReason !== "tool_calls" || toolCalls.size === 0) {
             await persistFinal();
             sendDone();
-            controller.close();
+            closeStream();
             return;
           }
 
@@ -241,7 +257,7 @@ export function runChatStream(args: {
         finalAssistantText = note;
         await persistFinal();
         sendDone();
-        controller.close();
+        closeStream();
       } catch (err) {
         if (finalAssistantText.length > 0) {
           try {
@@ -256,7 +272,7 @@ export function runChatStream(args: {
         }
         const message = err instanceof Error ? err.message : "stream error";
         send({ error: message });
-        controller.close();
+        closeStream();
       }
     },
   });

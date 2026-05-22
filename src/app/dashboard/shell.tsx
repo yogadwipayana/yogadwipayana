@@ -15,6 +15,7 @@ import {
   ExternalLink,
   HelpCircle,
   Home,
+  Loader2,
   LogOut,
   Menu,
   MoreHorizontal,
@@ -59,6 +60,8 @@ type SubItem = {
   external?: boolean;
   status?: string;
   href?: string;
+  /** When true, a spinner is shown to indicate a background streaming process. */
+  streaming?: boolean;
   /** When set, a ⋯ menu appears with a Delete action. */
   onDelete?: () => void;
   deleteLabel?: string;
@@ -88,6 +91,7 @@ function buildSections(
   onDeleteConversation?: (id: string) => void,
   onRenameConversation?: (id: string, title: string) => void,
   onReorderVps?: (orderedIds: string[]) => void,
+  streamingConversationIds?: Set<string>,
 ): SubSection[] {
   if (toolId === "settings") {
     return [
@@ -173,6 +177,7 @@ function buildSections(
       items: chatConversations.map((c) => ({
         id: c.id,
         label: c.title,
+        streaming: streamingConversationIds?.has(c.id) ?? false,
         onDelete: onDeleteConversation
           ? () => onDeleteConversation(c.id)
           : undefined,
@@ -270,6 +275,23 @@ export function DashboardShell({
     settings: initialActiveId ?? "settings:account",
   }));
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Tracks which conversation IDs have a streaming response in-flight so the
+  // sub-sidebar can show a spinner even after the user navigates away.
+  const [streamingConversationIds, setStreamingConversationIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const handleStreamingChange = useCallback((conversationId: string, streaming: boolean) => {
+    setStreamingConversationIds((prev) => {
+      const next = new Set(prev);
+      if (streaming) {
+        next.add(conversationId);
+      } else {
+        next.delete(conversationId);
+      }
+      return next;
+    });
+  }, []);
 
   const tool = useMemo(
     () =>
@@ -383,6 +405,7 @@ export function DashboardShell({
         toolId === "chat" ? handleDeleteConversation : undefined,
         toolId === "chat" ? handleRenameConversation : undefined,
         toolId === "vps" ? handleReorderVps : undefined,
+        toolId === "chat" ? streamingConversationIds : undefined,
       ),
     [
       toolId,
@@ -392,6 +415,7 @@ export function DashboardShell({
       handleDeleteConversation,
       handleRenameConversation,
       handleReorderVps,
+      streamingConversationIds,
     ],
   );
 
@@ -493,6 +517,7 @@ export function DashboardShell({
               onCreateConversation: handleCreateConversation,
               creatingConversation,
               onConversationUpdated: handleConversationUpdated,
+              onStreamingChange: handleStreamingChange,
               vpsInstances,
               images,
               onImageAdded: handleImageAdded,
@@ -559,6 +584,7 @@ function renderMain({
   onCreateConversation,
   creatingConversation,
   onConversationUpdated,
+  onStreamingChange,
   vpsInstances,
   images,
   onImageAdded,
@@ -570,6 +596,7 @@ function renderMain({
   onCreateConversation: () => void;
   creatingConversation: boolean;
   onConversationUpdated: (c: ChatConversationSummary) => void;
+  onStreamingChange?: (conversationId: string, streaming: boolean) => void;
   vpsInstances: readonly ApiVpsInstance[];
   images: GeneratedImageRow[];
   onImageAdded: (img: GeneratedImageRow) => void;
@@ -631,6 +658,7 @@ function renderMain({
       conversation={conversation}
       defaultModel={defaultChatModel}
       onConversationUpdated={onConversationUpdated}
+      onStreamingChange={onStreamingChange}
     />
   );
 }
@@ -1266,7 +1294,12 @@ function SubItemButton({
     <span aria-hidden className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${statusCls}`} />
   ) : null;
 
-  const trailing = item.external ? (
+  const trailing = item.streaming ? (
+    <Loader2
+      className="h-3 w-3 shrink-0 animate-spin text-[#3ecf8e]/70"
+      aria-label="Generating…"
+    />
+  ) : item.external ? (
     <ExternalLink className="h-3 w-3 shrink-0 text-white/35" aria-hidden />
   ) : null;
 

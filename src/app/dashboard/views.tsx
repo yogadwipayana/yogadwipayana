@@ -26,6 +26,7 @@ import {
   Link2,
   Loader2,
   MessageSquare,
+  MoreHorizontal,
   Paperclip,
   Pencil,
   Plus,
@@ -1208,22 +1209,22 @@ export function ChatView({
               type="button"
               onClick={handleExport}
               title="Export as Markdown"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.02] text-white/40 transition-colors hover:border-white/[0.14] hover:bg-white/[0.05] hover:text-white/70"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.02] text-white/40 transition-colors hover:border-white/[0.14] hover:bg-white/[0.05] hover:text-white/70 sm:h-7 sm:w-7"
             >
-              <Download className="h-3.5 w-3.5" aria-hidden />
+              <Download className="h-4 w-4 sm:h-3.5 sm:w-3.5" aria-hidden />
             </button>
             {/* Share */}
             <button
               type="button"
               onClick={() => setShareOpen((v) => !v)}
               title="Share conversation"
-              className={`inline-flex h-7 w-7 items-center justify-center rounded-md border transition-colors ${
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-md border transition-colors sm:h-7 sm:w-7 ${
                 shareOpen
                   ? "border-[#3ecf8e]/30 bg-[#3ecf8e]/[0.08] text-[#3ecf8e]/80"
                   : "border-white/[0.08] bg-white/[0.02] text-white/40 hover:border-white/[0.14] hover:bg-white/[0.05] hover:text-white/70"
               }`}
             >
-              <Share2 className="h-3.5 w-3.5" aria-hidden />
+              <Share2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" aria-hidden />
             </button>
             {shareOpen && (
               <>
@@ -1233,7 +1234,7 @@ export function ChatView({
                   aria-label="Close share panel"
                   onClick={() => setShareOpen(false)}
                 />
-                <div className="absolute right-0 top-full z-20 mt-2 w-[280px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30">
+                <div className="absolute right-0 top-full z-20 mt-2 w-[calc(100vw-2rem)] max-w-[280px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30">
                   <div className="border-b border-white/[0.06] px-3 py-2.5">
                     <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-white/40">
                       Share
@@ -1516,38 +1517,38 @@ export function ChatView({
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isStreaming || attachments.length >= MAX_ATTACHMENTS}
                   title="Attach file"
-                  className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.02] text-white/40 transition-colors hover:border-white/[0.14] hover:bg-white/[0.04] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.02] text-white/40 transition-colors hover:border-white/[0.14] hover:bg-white/[0.04] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40 sm:h-6 sm:w-6"
                 >
-                  <Paperclip className="h-3 w-3" aria-hidden />
+                  <Paperclip className="h-3.5 w-3.5 sm:h-3 sm:w-3" aria-hidden />
                 </button>
               </div>
               {isStreaming ? (
                 <button
                   type="button"
                   onClick={handleStop}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.04] text-white/80 transition-colors hover:border-white/[0.2] hover:bg-white/[0.08]"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.04] text-white/80 transition-colors hover:border-white/[0.2] hover:bg-white/[0.08] sm:h-8 sm:w-8"
                   aria-label="Stop generating"
                 >
-                  <Square className="h-3 w-3 fill-current" aria-hidden />
+                  <Square className="h-3.5 w-3.5 fill-current sm:h-3 sm:w-3" aria-hidden />
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={handleSend}
                   disabled={!canSend}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#3ecf8e] text-[#171717] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-white/30"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[#3ecf8e] text-[#171717] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-white/30 sm:h-8 sm:w-8"
                   aria-label="Send message"
                 >
                   {anyUploading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                    <Loader2 className="h-4 w-4 animate-spin sm:h-3.5 sm:w-3.5" aria-hidden />
                   ) : (
-                    <ArrowUp className="h-3.5 w-3.5" aria-hidden />
+                    <ArrowUp className="h-4 w-4 sm:h-3.5 sm:w-3.5" aria-hidden />
                   )}
                 </button>
               )}
             </div>
           </div>
-          <p className="mt-2 text-center text-[11px] text-white/20">
+          <p className="mt-2 hidden text-center text-[11px] text-white/20 sm:block">
             <kbd className="rounded border border-white/[0.08] px-1 py-0.5 font-mono text-[10px]">
               Enter
             </kbd>{" "}
@@ -1710,6 +1711,84 @@ export function ChatEmptyState({
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Message actions menu (⋯)                                                  */
+/* -------------------------------------------------------------------------- */
+
+function MessageActionsMenu({
+  onCopy,
+  copied,
+  onEdit,
+  onRegenerate,
+}: {
+  onCopy: () => void;
+  copied: boolean;
+  onEdit?: () => void;
+  onRegenerate?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Message actions"
+        className="inline-flex h-7 w-7 items-center justify-center rounded border border-white/[0.06] bg-white/[0.02] text-white/40 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white/75 sm:h-6 sm:w-6"
+      >
+        <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
+      </button>
+
+      {open && (
+        <div className="absolute bottom-full right-0 z-30 mb-1.5 min-w-[148px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
+          <button
+            type="button"
+            onClick={() => { setOpen(false); onCopy(); }}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-white/75 transition-colors hover:bg-white/[0.05] hover:text-white"
+          >
+            {copied ? (
+              <Check className="h-3 w-3 shrink-0 text-[#3ecf8e]" aria-hidden />
+            ) : (
+              <Copy className="h-3 w-3 shrink-0 text-white/40" aria-hidden />
+            )}
+            {copied ? "Copied!" : "Copy"}
+          </button>
+          {onEdit && (
+            <button
+              type="button"
+              onClick={() => { setOpen(false); onEdit(); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-white/75 transition-colors hover:bg-white/[0.05] hover:text-white"
+            >
+              <Pencil className="h-3 w-3 shrink-0 text-white/40" aria-hidden />
+              Edit
+            </button>
+          )}
+          {onRegenerate && (
+            <button
+              type="button"
+              onClick={() => { setOpen(false); onRegenerate(); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-white/75 transition-colors hover:bg-white/[0.05] hover:text-white"
+            >
+              <RefreshCw className="h-3 w-3 shrink-0 text-white/40" aria-hidden />
+              Regenerate
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ChatBubble({
   message,
   prevRole,
@@ -1820,41 +1899,12 @@ function ChatBubble({
           <div className="whitespace-pre-wrap rounded-2xl rounded-br-md border border-[#3ecf8e]/12 bg-[#3ecf8e]/[0.07] px-4 py-3 text-[14px] leading-relaxed text-white/90">
             {message.content}
           </div>
-          <div className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-            <button
-              type="button"
-              onClick={handleCopy}
-              aria-label="Copy message"
-              title="Copy message"
-              className="inline-flex items-center gap-1 rounded border border-white/[0.06] bg-white/[0.02] px-1.5 py-0.5 text-[10px] text-white/40 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white/75"
-            >
-              {copied ? (
-                <>
-                  <Check className="h-2.5 w-2.5" aria-hidden />
-                  Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="h-2.5 w-2.5" aria-hidden />
-                  Copy
-                </>
-              )}
-            </button>
-            {onEdit ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setDraft(message.content);
-                  setEditing(true);
-                }}
-                aria-label="Edit message"
-                title="Edit and resend"
-                className="inline-flex items-center gap-1 rounded border border-white/[0.06] bg-white/[0.02] px-1.5 py-0.5 text-[10px] text-white/40 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white/75"
-              >
-                <Pencil className="h-2.5 w-2.5" aria-hidden />
-                Edit
-              </button>
-            ) : null}
+          <div className="mt-1.5 flex items-center justify-end">
+            <MessageActionsMenu
+              onCopy={handleCopy}
+              copied={copied}
+              onEdit={onEdit ? () => { setDraft(message.content); setEditing(true); } : undefined}
+            />
           </div>
         </div>
       </div>
@@ -1893,38 +1943,12 @@ function ChatBubble({
           </span>
         ) : null}
         {showActions ? (
-          <div className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-            <button
-              type="button"
-              onClick={handleCopy}
-              aria-label="Copy reply"
-              title="Copy reply"
-              className="inline-flex items-center gap-1 rounded border border-white/[0.06] bg-white/[0.02] px-1.5 py-0.5 text-[10px] text-white/40 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white/75"
-            >
-              {copied ? (
-                <>
-                  <Check className="h-2.5 w-2.5" aria-hidden />
-                  Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="h-2.5 w-2.5" aria-hidden />
-                  Copy
-                </>
-              )}
-            </button>
-            {onRegenerate ? (
-              <button
-                type="button"
-                onClick={onRegenerate}
-                aria-label="Regenerate reply"
-                title="Regenerate reply"
-                className="inline-flex items-center gap-1 rounded border border-white/[0.06] bg-white/[0.02] px-1.5 py-0.5 text-[10px] text-white/40 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white/75"
-              >
-                <RefreshCw className="h-2.5 w-2.5" aria-hidden />
-                Regenerate
-              </button>
-            ) : null}
+          <div className="mt-1.5 flex items-center">
+            <MessageActionsMenu
+              onCopy={handleCopy}
+              copied={copied}
+              onRegenerate={onRegenerate}
+            />
           </div>
         ) : null}
       </div>
@@ -2087,14 +2111,14 @@ function ModelSelector({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`group flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[11px] tracking-tight transition-colors ${
+        className={`group flex items-center gap-1.5 rounded-md border px-2 py-1.5 font-mono text-[11px] tracking-tight transition-colors sm:py-1 ${
           open
             ? "border-white/[0.14] bg-white/[0.05] text-white/80"
             : "border-white/[0.08] bg-white/[0.02] text-white/55 hover:border-white/[0.14] hover:bg-white/[0.04] hover:text-white/80"
         }`}
       >
         <Sparkles className="h-3 w-3 text-[#3ecf8e]/70" aria-hidden />
-        <span className="max-w-[140px] truncate">{buttonLabel}</span>
+        <span className="max-w-[120px] truncate sm:max-w-[140px]">{buttonLabel}</span>
         <ChevronUp
           className={`h-3 w-3 text-white/30 transition-transform group-hover:text-white/55 ${
             open ? "rotate-180" : ""
@@ -2114,7 +2138,7 @@ function ModelSelector({
           />
 
           {/* Dropdown panel — opens upward */}
-          <div className="absolute bottom-full left-0 z-20 mb-2 w-[260px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30 backdrop-blur-sm">
+          <div className="absolute bottom-full left-0 z-20 mb-2 w-[calc(100vw-2rem)] max-w-[260px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30 backdrop-blur-sm">
             <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
               <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">
                 Choose model
@@ -2216,7 +2240,7 @@ function ModeSelector({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`group flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[11px] tracking-tight transition-colors ${
+        className={`group flex items-center gap-1.5 rounded-md border px-2 py-1.5 font-mono text-[11px] tracking-tight transition-colors sm:py-1 ${
           open
             ? "border-white/[0.14] bg-white/[0.05] text-white/80"
             : "border-white/[0.08] bg-white/[0.02] text-white/55 hover:border-white/[0.14] hover:bg-white/[0.04] hover:text-white/80"
@@ -2229,7 +2253,7 @@ function ModeSelector({
           }`}
           aria-hidden
         />
-        <span className="max-w-[120px] truncate">{current.name}</span>
+        <span className="max-w-[80px] truncate sm:max-w-[120px]">{current.name}</span>
         <ChevronUp
           className={`h-3 w-3 text-white/30 transition-transform group-hover:text-white/55 ${
             open ? "rotate-180" : ""
@@ -2247,7 +2271,7 @@ function ModeSelector({
             onClick={() => setOpen(false)}
           />
 
-          <div className="absolute bottom-full left-0 z-20 mb-2 w-[240px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30 backdrop-blur-sm">
+          <div className="absolute bottom-full left-0 z-20 mb-2 w-[calc(100vw-2rem)] max-w-[240px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30 backdrop-blur-sm">
             <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
               <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">
                 Mode

@@ -408,7 +408,7 @@ export function ImageWorkspace({
                 >
                   <Sparkles className="h-3.5 w-3.5" aria-hidden />
                   Generate
-                  <span className="ml-1 text-[11px] font-normal opacity-60">⌘↵</span>
+                  <span className="ml-1 hidden text-[11px] font-normal opacity-60 sm:inline">⌘↵</span>
                 </button>
               )}
             </div>

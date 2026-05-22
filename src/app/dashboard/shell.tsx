@@ -17,6 +17,8 @@ import {
   Home,
   LogOut,
   Menu,
+  MoreHorizontal,
+  Pencil,
   Plus,
   Search,
   Server,
@@ -57,9 +59,11 @@ type SubItem = {
   external?: boolean;
   status?: string;
   href?: string;
-  /** When set, an inline trash button appears on hover and calls this. */
+  /** When set, a ⋯ menu appears with a Delete action. */
   onDelete?: () => void;
   deleteLabel?: string;
+  /** When set, the ⋯ menu gains a Rename action with inline editing. */
+  onRename?: (newLabel: string) => void;
   /** When true, this item participates in drag-to-reorder within its section. */
   draggable?: boolean;
 };
@@ -82,6 +86,7 @@ function buildSections(
   vpsInstances: readonly ApiVpsInstance[],
   images: GeneratedImageRow[],
   onDeleteConversation?: (id: string) => void,
+  onRenameConversation?: (id: string, title: string) => void,
   onReorderVps?: (orderedIds: string[]) => void,
 ): SubSection[] {
   if (toolId === "settings") {
@@ -172,6 +177,9 @@ function buildSections(
           ? () => onDeleteConversation(c.id)
           : undefined,
         deleteLabel: "Delete conversation",
+        onRename: onRenameConversation
+          ? (newTitle: string) => onRenameConversation(c.id, newTitle)
+          : undefined,
       })),
     },
     {
@@ -328,6 +336,27 @@ export function DashboardShell({
     [activeItems.chat, chatConversations],
   );
 
+  const handleRenameConversation = useCallback(
+    async (id: string, title: string) => {
+      const trimmed = title.trim();
+      if (!trimmed) return;
+      // Optimistic update
+      setChatConversations((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, title: trimmed } : c)),
+      );
+      try {
+        await fetch(`/api/conversations/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: trimmed }),
+        });
+      } catch {
+        // ignore — the optimistic update stays; a full refresh will correct it
+      }
+    },
+    [],
+  );
+
   const filteredChatConversations = useMemo(() => {
     if (toolId !== "chat") return chatConversations;
     const q = chatSearch.trim().toLowerCase();
@@ -352,6 +381,7 @@ export function DashboardShell({
         vpsInstances,
         filteredImages,
         toolId === "chat" ? handleDeleteConversation : undefined,
+        toolId === "chat" ? handleRenameConversation : undefined,
         toolId === "vps" ? handleReorderVps : undefined,
       ),
     [
@@ -360,6 +390,7 @@ export function DashboardShell({
       vpsInstances,
       filteredImages,
       handleDeleteConversation,
+      handleRenameConversation,
       handleReorderVps,
     ],
   );
@@ -1172,6 +1203,50 @@ function SubItemButton({
   active: boolean;
   onClick: () => void;
 }) {
+  const hasMenu = Boolean(item.onDelete || item.onRename);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(item.label);
+  const menuContainerRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Sync draft with label if it changes externally (after optimistic rename)
+  const [lastLabel, setLastLabel] = useState(item.label);
+  if (item.label !== lastLabel && !renaming) {
+    setLastLabel(item.label);
+    setDraft(item.label);
+  }
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (!menuContainerRef.current?.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
+
+  // Focus & select input when rename mode activates
+  useEffect(() => {
+    if (renaming && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [renaming]);
+
+  const commitRename = useCallback(() => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== item.label) {
+      item.onRename?.(trimmed);
+    } else {
+      setDraft(item.label);
+    }
+    setRenaming(false);
+  }, [draft, item]);
+
   const statusCls =
     item.status === "running"
       ? "bg-[#3ecf8e] shadow-[0_0_5px_#3ecf8e]"
@@ -1181,80 +1256,131 @@ function SubItemButton({
           ? "bg-white/25"
           : null;
 
-  const cls = `group/sub flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors ${
+  const cls = `group/sub flex w-full items-center justify-between gap-2 rounded-md px-2.5 py-2.5 text-left text-[13px] transition-colors sm:py-1.5 ${
     active
       ? "bg-white/[0.06] text-white"
       : "text-white/65 hover:bg-white/[0.04] hover:text-white"
   }`;
 
-  const content = (
-    <span className="flex min-w-0 items-center gap-2">
-      {statusCls && (
-        <span
-          aria-hidden
-          className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${statusCls}`}
-        />
-      )}
-      <span className="truncate">{item.label}</span>
-    </span>
-  );
+  const statusDot = statusCls ? (
+    <span aria-hidden className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${statusCls}`} />
+  ) : null;
 
   const trailing = item.external ? (
     <ExternalLink className="h-3 w-3 shrink-0 text-white/35" aria-hidden />
   ) : null;
 
-  if (item.onDelete) {
-    const onDelete = item.onDelete;
-    const handleDelete = (e: React.MouseEvent) => {
-      e.stopPropagation();
-      e.preventDefault();
-      onDelete();
-    };
+  // ── Inline rename mode ────────────────────────────────────────────────────
+  if (renaming) {
     return (
-      <div className={cls} onClick={onClick} role="button" tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onClick();
-          }
-        }}
-      >
-        {content}
-        <span className="flex shrink-0 items-center gap-1">
-          {trailing}
-          <button
-            type="button"
-            onClick={handleDelete}
-            aria-label={item.deleteLabel ?? "Delete"}
-            title={item.deleteLabel ?? "Delete"}
-            className="inline-flex h-5 w-5 items-center justify-center rounded text-white/25 opacity-0 transition-opacity hover:bg-red-500/15 hover:text-red-300 group-hover/sub:opacity-100 focus:opacity-100 focus:outline-none"
-          >
-            <Trash2 className="h-3 w-3" aria-hidden />
-          </button>
-        </span>
+      <div className={`flex items-center gap-1.5 rounded-md px-2.5 py-2.5 sm:py-1.5 ${active ? "bg-white/[0.06]" : ""}`}>
+        {statusDot}
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); commitRename(); }
+            if (e.key === "Escape") { setDraft(item.label); setRenaming(false); }
+          }}
+          onBlur={commitRename}
+          maxLength={200}
+          className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-white/30"
+        />
+        <button
+          type="button"
+          onMouseDown={(e) => { e.preventDefault(); setDraft(item.label); setRenaming(false); }}
+          aria-label="Cancel rename"
+          className="shrink-0 text-white/30 hover:text-white/60"
+        >
+          <X className="h-3.5 w-3.5" aria-hidden />
+        </button>
       </div>
     );
   }
 
-  const inner = (
-    <>
-      {content}
-      {trailing}
-    </>
+  // ── 3-dots context menu ───────────────────────────────────────────────────
+  const menuButton = hasMenu ? (
+    <div
+      ref={menuContainerRef}
+      className="relative shrink-0"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
+        aria-label="More options"
+        className="inline-flex h-6 w-6 items-center justify-center rounded text-white/30 transition-colors hover:bg-white/[0.08] hover:text-white/70 focus:outline-none"
+      >
+        <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
+      </button>
+
+      {menuOpen && (
+        <div className="absolute right-0 top-full z-30 mt-1 min-w-[148px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
+          {item.onRename && (
+            <button
+              type="button"
+              onClick={() => { setMenuOpen(false); setDraft(item.label); setRenaming(true); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-white/75 transition-colors hover:bg-white/[0.05] hover:text-white"
+            >
+              <Pencil className="h-3 w-3 shrink-0 text-white/40" aria-hidden />
+              Rename
+            </button>
+          )}
+          {item.onDelete && (
+            <button
+              type="button"
+              onClick={() => { setMenuOpen(false); item.onDelete?.(); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-red-300/80 transition-colors hover:bg-red-500/[0.08] hover:text-red-300"
+            >
+              <Trash2 className="h-3 w-3 shrink-0" aria-hidden />
+              {item.deleteLabel ?? "Delete"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  // ── Shared content span ───────────────────────────────────────────────────
+  const content = (
+    <span className="flex min-w-0 items-center gap-2">
+      {statusDot}
+      <span className="truncate">{item.label}</span>
+    </span>
   );
 
+  // ── Link variant ──────────────────────────────────────────────────────────
   if (item.href) {
     return (
       <Link href={item.href} onClick={onClick} className={cls}>
-        {inner}
+        {content}
+        {trailing}
       </Link>
     );
   }
 
+  // ── Button variant (with or without menu) ─────────────────────────────────
   return (
-    <button type="button" onClick={onClick} className={cls}>
-      {inner}
-    </button>
+    <div
+      className={cls}
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+    >
+      {content}
+      <span className="flex shrink-0 items-center gap-1">
+        {trailing}
+        {menuButton}
+      </span>
+    </div>
   );
 }
 

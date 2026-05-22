@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { Client } from "ssh2";
 import type { WebSocket } from "ws";
 
-import { makeHostVerifier } from "@/lib/server/ssh-host-pin";
+import { makeHostVerifier } from "./ssh-host-pin.ts";
 
 // ---------------------------------------------------------------------------
 // Types

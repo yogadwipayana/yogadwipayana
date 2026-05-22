@@ -37,6 +37,9 @@ import {
   Square,
   Sparkles,
   Terminal,
+  Trash2,
+  ThumbsUp,
+  ThumbsDown,
   X,
 } from "lucide-react";
 import hljs from "highlight.js/lib/common";
@@ -406,11 +409,13 @@ export function ChatView({
   defaultModel,
   onConversationUpdated,
   onStreamingChange,
+  onDelete,
 }: {
   conversation: ChatConversationSummary;
   defaultModel?: string;
   onConversationUpdated?: (c: ChatConversationSummary) => void;
   onStreamingChange?: (conversationId: string, streaming: boolean) => void;
+  onDelete?: (id: string) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState(() => _draftCache.get(conversation.id) ?? "");
@@ -447,6 +452,14 @@ export function ChatView({
   const [shareLoading, setShareLoading] = useState(false);
   const [shareConv, setShareConv] = useState<ChatConversationSummary>(conversation);
   const [shareCopied, setShareCopied] = useState(false);
+
+  // ⋯ more-menu dropdown
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  // Inline header rename (triggered from ⋯ menu)
+  const [headerRenaming, setHeaderRenaming] = useState(false);
+  const [headerRenameDraft, setHeaderRenameDraft] = useState("");
+  const headerRenameRef = useRef<HTMLInputElement | null>(null);
 
   // Keep shareConv in sync when conversation prop changes (e.g. after sidebar update)
   useEffect(() => {
@@ -1283,6 +1296,30 @@ export function ChatView({
     window.open(`/api/conversations/${conversation.id}/export`, "_blank");
   }, [conversation.id]);
 
+  // Header rename (triggered from ⋯ menu)
+  const openHeaderRename = useCallback(() => {
+    setHeaderRenameDraft(conversation.title);
+    setHeaderRenaming(true);
+    setMoreOpen(false);
+  }, [conversation.title]);
+
+  const commitHeaderRename = useCallback(() => {
+    setHeaderRenaming(false);
+    const next = headerRenameDraft.trim();
+    if (next && next !== conversation.title) void handleRename(next);
+    else setHeaderRenameDraft(conversation.title);
+  }, [headerRenameDraft, conversation.title, handleRename]);
+
+  // Auto-focus rename input when it opens
+  useEffect(() => {
+    if (headerRenaming) {
+      requestAnimationFrame(() => {
+        headerRenameRef.current?.focus();
+        headerRenameRef.current?.select();
+      });
+    }
+  }, [headerRenaming]);
+
   // Iterate-on-image: pre-fill the prompt and attach the original image as a
   // reference. The model's `image_edit` tool picks up the attachment URL when
   // the message is sent. Switches the conversation to image mode if it isn't
@@ -1362,54 +1399,186 @@ export function ChatView({
     return null;
   }, [messages]);
 
+  // Header tab state: "answer" | "links" | "images"
+  const [tab, setTab] = useState<"answer" | "links" | "images">("answer");
+
+  // Auto-return to answer tab when streaming starts (new content incoming)
+  useEffect(() => {
+    if (isStreaming) setTab("answer");
+  }, [isStreaming]);
+
+  // Collect all sources from every message in the conversation
+  const allSources = useMemo(
+    () => extractSources(messages.flatMap((m) => m.toolEvents ?? [])),
+    [messages],
+  );
+
+  // Collect all generated images from every message in the conversation
+  const allImages = useMemo((): Array<{ url: string; prompt: string }> => {
+    const seen = new Set<string>();
+    const imgs: Array<{ url: string; prompt: string }> = [];
+    for (const msg of messages) {
+      for (const evt of msg.toolEvents ?? []) {
+        if (evt.status !== "done" || !evt.result) continue;
+        if (evt.name === "image_generate" || evt.name === "image_edit") {
+          const r = evt.result as { url?: string; prompt?: string };
+          if (r.url && !seen.has(r.url)) {
+            seen.add(r.url);
+            imgs.push({ url: r.url, prompt: r.prompt ?? "" });
+          }
+        }
+      }
+    }
+    return imgs;
+  }, [messages]);
+
   const anyUploading = attachments.some((a) => a.uploading);
   const canSend = !!input.trim() && !isStreaming && !anyUploading;
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Header */}
-      <header className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-4 py-3 sm:px-6 lg:px-8">
-        <div className="mx-auto flex w-full max-w-2xl items-center gap-3 lg:max-w-3xl xl:max-w-5xl 2xl:max-w-6xl">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2.5">
-              <EditableTitle
-                title={conversation.title}
-                onSave={handleRename}
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* Header — Perplexity-inspired */}
+      <header className="relative flex h-[52px] shrink-0 items-center border-b border-white/[0.06] px-4 sm:px-6 lg:px-8">
+        {/* Tabs / rename — centered with content column */}
+        <div className="mx-auto flex h-[52px] w-full max-w-[720px] items-stretch">
+          {headerRenaming ? (
+            <div className="flex min-w-0 flex-1 items-center px-2">
+              <input
+                ref={headerRenameRef}
+                value={headerRenameDraft}
+                onChange={(e) => setHeaderRenameDraft(e.target.value)}
+                onBlur={commitHeaderRename}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); commitHeaderRename(); }
+                  if (e.key === "Escape") { e.preventDefault(); setHeaderRenaming(false); }
+                }}
+                maxLength={200}
+                className="w-full rounded border border-white/[0.12] bg-white/[0.04] px-2 py-1 text-center text-[13px] text-white/80 outline-none focus:border-[#3ecf8e]/40"
               />
-              {model ? (
-                <span className="shrink-0 rounded-full border border-[#3ecf8e]/20 bg-[#3ecf8e]/[0.07] px-2.5 py-0.5 font-mono text-[10px] text-[#3ecf8e]/70">
-                  {model}
-                </span>
-              ) : null}
             </div>
-            <p className="mt-0.5 text-[11px] text-white/30">
-              {messages.length} messages · updated {formatRelative(conversation.updated_at)}
-            </p>
-          </div>
-          {/* Share + Export buttons */}
-          <div className="relative flex shrink-0 items-center gap-1">
-            {/* Export */}
+          ) : (
+            <div className="flex h-[52px] flex-1 items-stretch pr-24">
+              <ConversationTab
+                icon={Sparkles}
+                label="Answer"
+                active={tab === "answer"}
+                onClick={() => setTab("answer")}
+              />
+              <ConversationTab
+                icon={Globe}
+                label="Links"
+                count={allSources.length}
+                active={tab === "links"}
+                onClick={() => setTab("links")}
+              />
+              <ConversationTab
+                icon={ImagePlus}
+                label="Images"
+                count={allImages.length}
+                active={tab === "images"}
+                onClick={() => setTab("images")}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Right actions — pinned to the full viewport right edge */}
+        <div className="absolute right-4 top-0 flex h-full items-center gap-1.5 sm:right-6 lg:right-8">
+
+            {/* ⋯ more-options button */}
             <button
               type="button"
-              onClick={handleExport}
-              title="Export as Markdown"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.02] text-white/40 transition-colors hover:border-white/[0.14] hover:bg-white/[0.05] hover:text-white/70 sm:h-7 sm:w-7"
-            >
-              <Download className="h-4 w-4 sm:h-3.5 sm:w-3.5" aria-hidden />
-            </button>
-            {/* Share */}
-            <button
-              type="button"
-              onClick={() => setShareOpen((v) => !v)}
-              title="Share conversation"
-              className={`inline-flex h-9 w-9 items-center justify-center rounded-md border transition-colors sm:h-7 sm:w-7 ${
-                shareOpen
-                  ? "border-[#3ecf8e]/30 bg-[#3ecf8e]/[0.08] text-[#3ecf8e]/80"
-                  : "border-white/[0.08] bg-white/[0.02] text-white/40 hover:border-white/[0.14] hover:bg-white/[0.05] hover:text-white/70"
+              onClick={() => { setMoreOpen((v) => !v); setShareOpen(false); }}
+              aria-label="More options"
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+                moreOpen
+                  ? "bg-white/[0.07] text-white/70"
+                  : "text-white/40 hover:bg-white/[0.06] hover:text-white/60"
               }`}
             >
-              <Share2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" aria-hidden />
+              <MoreHorizontal className="h-4 w-4" aria-hidden />
             </button>
+
+            {/* ⋯ dropdown */}
+            {moreOpen && (
+              <>
+                <button
+                  type="button"
+                  className="fixed inset-0 z-10"
+                  aria-label="Close menu"
+                  onClick={() => setMoreOpen(false)}
+                />
+                <div className="absolute right-16 top-full z-20 mt-2 w-72 overflow-hidden rounded-xl border border-white/[0.08] bg-[#1c1c1c] shadow-[0_16px_48px_rgba(0,0,0,0.65)] ring-1 ring-black/20">
+                  {/* Thread info */}
+                  <div className="border-b border-white/[0.06] px-4 py-3.5">
+                    <p className="line-clamp-2 text-[14px] font-medium leading-snug text-white">
+                      {conversation.title}
+                    </p>
+                    <div className="mt-2 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-white/35">Last updated</span>
+                        <span className="text-[11px] text-white/55">
+                          {formatRelative(conversation.updated_at)}
+                        </span>
+                      </div>
+                      {model ? (
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-white/35">Model</span>
+                          <span className="font-mono text-[10px] text-[#3ecf8e]/70">{model}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="py-1.5">
+                    <button
+                      type="button"
+                      onClick={openHeaderRename}
+                      className="flex w-full items-center gap-3 px-4 py-2 text-[13px] text-white/65 transition-colors hover:bg-white/[0.04] hover:text-white/90"
+                    >
+                      <Pencil className="h-3.5 w-3.5 shrink-0 text-white/35" aria-hidden />
+                      Rename Thread
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setMoreOpen(false); handleExport(); }}
+                      className="flex w-full items-center gap-3 px-4 py-2 text-[13px] text-white/65 transition-colors hover:bg-white/[0.04] hover:text-white/90"
+                    >
+                      <Download className="h-3.5 w-3.5 shrink-0 text-white/35" aria-hidden />
+                      Export as Markdown
+                    </button>
+                  </div>
+
+                  <div className="border-t border-white/[0.06] py-1.5">
+                    <button
+                      type="button"
+                      onClick={() => { setMoreOpen(false); onDelete?.(conversation.id); }}
+                      className="flex w-full items-center gap-3 px-4 py-2 text-[13px] text-red-400/75 transition-colors hover:bg-red-500/[0.06] hover:text-red-400"
+                    >
+                      <Trash2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Share button */}
+            <button
+              type="button"
+              onClick={() => { setShareOpen((v) => !v); setMoreOpen(false); }}
+              className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12px] font-medium transition-colors ${
+                shareOpen
+                  ? "border-[#3ecf8e]/30 bg-[#3ecf8e]/[0.08] text-[#3ecf8e]/80"
+                  : "border-white/[0.1] text-white/55 hover:border-white/[0.18] hover:text-white/80"
+              }`}
+            >
+              <Share2 className="h-3.5 w-3.5" aria-hidden />
+              Share
+            </button>
+
+            {/* Share dropdown */}
             {shareOpen && (
               <>
                 <button
@@ -1418,13 +1587,13 @@ export function ChatView({
                   aria-label="Close share panel"
                   onClick={() => setShareOpen(false)}
                 />
-                <div className="absolute right-0 top-full z-20 mt-2 w-[calc(100vw-2rem)] max-w-[280px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30">
-                  <div className="border-b border-white/[0.06] px-3 py-2.5">
-                    <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-white/40">
+                <div className="absolute right-0 top-full z-20 mt-2 w-[calc(100vw-2rem)] max-w-[280px] overflow-hidden rounded-xl border border-white/[0.08] bg-[#1c1c1c] shadow-[0_16px_48px_rgba(0,0,0,0.65)] ring-1 ring-black/20">
+                  <div className="border-b border-white/[0.06] px-4 py-3">
+                    <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-white/35">
                       Share
                     </span>
                   </div>
-                  <div className="p-3">
+                  <div className="p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-[13px] font-medium text-white/80">Public link</p>
@@ -1487,12 +1656,14 @@ export function ChatView({
               </>
             )}
           </div>
-        </div>
       </header>
 
+      {/* ── Answer tab: messages + terminals ── */}
+      <div className={tab !== "answer" ? "hidden" : "flex flex-1 flex-col overflow-hidden"}>
+
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-2xl flex-col px-4 py-6 sm:px-6 lg:max-w-3xl lg:px-8 xl:max-w-5xl 2xl:max-w-6xl">
+      <div ref={scrollRef} className="flex flex-1 flex-col overflow-y-auto px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto mt-auto flex w-full max-w-[720px] flex-col py-6">
           {!loaded && messages.length === 0 ? (
             <div className="flex items-center justify-center py-12 text-[12px] text-white/35">
               <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -1566,7 +1737,7 @@ export function ChatView({
       {/* Inline terminal panels — shown when AI opens a terminal session */}
       {terminalSessions.size > 0 && (
         <div className="shrink-0 border-t border-white/[0.06] px-4 pt-3 pb-0 sm:px-6 lg:px-8">
-          <div className="mx-auto w-full max-w-2xl space-y-2 lg:max-w-3xl xl:max-w-5xl 2xl:max-w-6xl">
+          <div className="mx-auto w-full max-w-[720px] space-y-2">
             {[...terminalSessions.entries()].map(([instanceId, session]) => (
               <InlineSshTerminal
                 key={instanceId}
@@ -1586,9 +1757,20 @@ export function ChatView({
         </div>
       )}
 
-      {/* Input */}
-      <div className="shrink-0 border-t border-white/[0.06] px-4 py-4 sm:px-6 lg:px-8">
-        <div className="mx-auto w-full max-w-2xl lg:max-w-3xl xl:max-w-5xl 2xl:max-w-6xl">
+      {/* ── End answer tab ── */}
+      </div>
+
+      {/* ── Links tab ── */}
+      {tab === "links" && <LinksTabView sources={allSources} />}
+
+      {/* ── Images tab ── */}
+      {tab === "images" && (
+        <ImagesTabView images={allImages} onIterateImage={handleIterateImage} />
+      )}
+
+      {/* ── Input — always at the absolute bottom ── */}
+      <div className="shrink-0 px-4 pt-3 pb-3 sm:px-6 lg:px-8">
+        <div className="mx-auto w-full max-w-[720px]">
           {/* Slash command autocomplete */}
           {slashOpen && filteredCommands.length > 0 && (
             <div className="mb-1.5 overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
@@ -1632,51 +1814,6 @@ export function ChatView({
             </div>
           )}
 
-          {/* Attachment chips */}
-          {attachments.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-2">
-              {attachments.map((att) => (
-                <div
-                  key={att.key}
-                  className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] ${
-                    att.error
-                      ? "border-red-500/30 bg-red-500/[0.06] text-red-300"
-                      : "border-white/[0.08] bg-white/[0.04] text-white/70"
-                  }`}
-                >
-                  {att.uploading ? (
-                    <Loader2 className="h-3 w-3 animate-spin text-white/40" aria-hidden />
-                  ) : att.kind === "image" && att.publicUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={att.publicUrl}
-                      alt=""
-                      className="h-4 w-4 rounded object-cover"
-                    />
-                  ) : (
-                    <Paperclip className="h-3 w-3 text-white/40" aria-hidden />
-                  )}
-                  <span className="max-w-[120px] truncate">
-                    {att.error ? att.error : att.name}
-                  </span>
-                  {!att.uploading && (
-                    <span className="text-white/30">{formatBytes(att.size)}</span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setAttachments((prev) => prev.filter((a) => a.key !== att.key))
-                    }
-                    aria-label={`Remove ${att.name}`}
-                    className="ml-0.5 text-white/30 transition-colors hover:text-white/70"
-                  >
-                    <X className="h-3 w-3" aria-hidden />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
           {/* Hidden file input */}
           <input
             ref={fileInputRef}
@@ -1690,22 +1827,22 @@ export function ChatView({
             }}
           />
 
-          {/* Textarea container with drag-and-drop */}
+          {/* Prompt box */}
           <div
-            className={`relative rounded-xl border bg-[#171717] transition-colors focus-within:border-white/[0.16] ${
-              dragOver
-                ? "border-[#3ecf8e]/50 bg-[#3ecf8e]/[0.03]"
-                : "border-white/[0.08]"
+            className={`rounded-2xl bg-[#141414] transition-colors ${
+              dragOver ? "bg-[#3ecf8e]/[0.03]" : ""
             }`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
             {dragOver && (
-              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-[#3ecf8e]/50">
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-[#3ecf8e]/50">
                 <span className="text-[13px] text-[#3ecf8e]/70">Drop files here</span>
               </div>
             )}
+
+            {/* Text area */}
             <textarea
               ref={textareaRef}
               rows={1}
@@ -1714,63 +1851,101 @@ export function ChatView({
               onKeyDown={onKeyDown}
               onPaste={handlePaste}
               disabled={isStreaming}
-              placeholder="Message Chat AI…"
-              className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-14 text-[14px] leading-relaxed text-white placeholder:text-white/25 focus:outline-none disabled:opacity-60"
-              style={{ minHeight: "56px", maxHeight: "200px" }}
+              placeholder="Ask a follow-up"
+              className="block w-full resize-none bg-transparent px-4 pt-4 pb-2 text-[14px] leading-relaxed text-white placeholder:text-white/30 focus:outline-none disabled:opacity-60"
+              style={{ minHeight: "52px", maxHeight: "200px" }}
             />
-            <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-3 pb-3">
-              <div className="flex items-center gap-2">
-                <ModelSelector model={model} onSelect={handleSelectModel} />
-                <ModeSelector mode={mode} onSelect={handleSelectMode} />
-                {/* Paperclip / file picker */}
+
+            {/* Attachment previews */}
+            {attachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 px-4 pb-2">
+                {attachments.map((att) => (
+                  <div
+                    key={att.key}
+                    className="group relative flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-1.5"
+                  >
+                    {att.uploading ? (
+                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-white/40" aria-hidden />
+                    ) : att.error ? (
+                      <X className="h-3.5 w-3.5 shrink-0 text-red-400" aria-hidden />
+                    ) : att.kind === "image" ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={att.publicUrl} alt={att.name} className="h-5 w-5 rounded object-cover" />
+                    ) : (
+                      <Paperclip className="h-3.5 w-3.5 shrink-0 text-white/40" aria-hidden />
+                    )}
+                    <span className="max-w-[120px] truncate text-[11px] text-white/60">{att.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => setAttachments((prev) => prev.filter((a) => a.key !== att.key))}
+                      className="ml-0.5 text-white/25 transition-colors hover:text-white/60"
+                      aria-label={`Remove ${att.name}`}
+                    >
+                      <X className="h-3 w-3" aria-hidden />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Divider */}
+            <div className="mx-4 h-px bg-white/[0.06]" />
+
+            {/* Toolbar */}
+            <div className="flex items-center justify-between gap-2 px-3 py-2.5">
+              {/* Left — attach + mode */}
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isStreaming || attachments.length >= MAX_ATTACHMENTS}
                   title="Attach file"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.02] text-white/40 transition-colors hover:border-white/[0.14] hover:bg-white/[0.04] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40 sm:h-6 sm:w-6"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  <Paperclip className="h-3.5 w-3.5 sm:h-3 sm:w-3" aria-hidden />
+                  <Plus className="h-4 w-4" aria-hidden />
                 </button>
+                <ModeSelector mode={mode} onSelect={handleSelectMode} />
               </div>
-              {isStreaming ? (
-                <button
-                  type="button"
-                  onClick={handleStop}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.04] text-white/80 transition-colors hover:border-white/[0.2] hover:bg-white/[0.08] sm:h-8 sm:w-8"
-                  aria-label="Stop generating"
-                >
-                  <Square className="h-3.5 w-3.5 fill-current sm:h-3 sm:w-3" aria-hidden />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => handleSend()}
-                  disabled={!canSend}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[#3ecf8e] text-[#171717] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-white/30 sm:h-8 sm:w-8"
-                  aria-label="Send message"
-                >
-                  {anyUploading ? (
-                    <Loader2 className="h-4 w-4 animate-spin sm:h-3.5 sm:w-3.5" aria-hidden />
-                  ) : (
-                    <ArrowUp className="h-4 w-4 sm:h-3.5 sm:w-3.5" aria-hidden />
-                  )}
-                </button>
-              )}
+
+              {/* Right — model + send */}
+              <div className="flex items-center gap-2">
+                <ModelSelector model={model} onSelect={handleSelectModel} />
+                {isStreaming ? (
+                  <button
+                    type="button"
+                    onClick={handleStop}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] text-white/70 transition-colors hover:border-white/[0.2] hover:bg-white/[0.08]"
+                    aria-label="Stop generating"
+                  >
+                    <Square className="h-3 w-3 fill-current" aria-hidden />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleSend()}
+                    disabled={!canSend}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#3ecf8e] text-[#0a0a0a] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-white/25"
+                    aria-label="Send message"
+                  >
+                    {anyUploading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                    ) : (
+                      <ArrowUp className="h-3.5 w-3.5" aria-hidden />
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-          <p className="mt-2 hidden text-center text-[11px] text-white/20 sm:block">
-            <kbd className="rounded border border-white/[0.08] px-1 py-0.5 font-mono text-[10px]">
-              Enter
-            </kbd>{" "}
+          <p className="mt-1 hidden text-center text-[11px] text-white/20 sm:block">
+            <kbd className="rounded border border-white/[0.08] px-1 py-0.5 font-mono text-[10px]">Enter</kbd>{" "}
             to send ·{" "}
-            <kbd className="rounded border border-white/[0.08] px-1 py-0.5 font-mono text-[10px]">
-              Shift+Enter
-            </kbd>{" "}
+            <kbd className="rounded border border-white/[0.08] px-1 py-0.5 font-mono text-[10px]">Shift+Enter</kbd>{" "}
             for new line
           </p>
         </div>
       </div>
+
     </div>
   );
 }
@@ -1786,6 +1961,179 @@ function formatRelative(iso: string): string {
   if (hr < 24) return `${hr}h ago`;
   const day = Math.floor(hr / 24);
   return `${day}d ago`;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Header tab button                                                          */
+/* -------------------------------------------------------------------------- */
+
+function ConversationTab({
+  icon: Icon,
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
+  label: string;
+  count?: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative flex h-[52px] items-center gap-1.5 px-3 text-[13px] font-medium transition-colors ${
+        active ? "text-white" : "text-white/40 hover:text-white/65"
+      }`}
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      {label}
+      {count != null && count > 0 ? (
+        <span
+          className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+            active ? "bg-white/[0.1] text-white/70" : "bg-white/[0.06] text-white/35"
+          }`}
+        >
+          {count}
+        </span>
+      ) : null}
+      {/* Active underline — sits flush against the header bottom border */}
+      {active && (
+        <span className="absolute bottom-0 left-0 right-0 h-[1.5px] bg-white" />
+      )}
+    </button>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Links tab view                                                             */
+/* -------------------------------------------------------------------------- */
+
+function LinksTabView({ sources }: { sources: Source[] }) {
+  if (sources.length === 0) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+        <Globe className="h-9 w-9 text-white/15" aria-hidden />
+        <p className="text-[14px] text-white/40">No links yet</p>
+        <p className="max-w-xs text-[12px] leading-relaxed text-white/25">
+          Links appear here when the AI uses web search or fetches pages.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[720px] py-6">
+        <p className="mb-4 text-[12px] text-white/30">
+          {sources.length} {sources.length === 1 ? "source" : "sources"}
+        </p>
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          {sources.map((s, i) => {
+            let hostname = "";
+            try { hostname = new URL(s.url).hostname; } catch {}
+            return (
+              <a
+                key={i}
+                href={s.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group flex items-start gap-3 rounded-xl border border-white/[0.07] bg-[#181818] p-3.5 transition-colors hover:border-white/[0.13] hover:bg-white/[0.03]"
+              >
+                {/* Favicon */}
+                {hostname ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={`https://www.google.com/s2/favicons?domain=${hostname}&sz=32`}
+                    alt=""
+                    width={16}
+                    height={16}
+                    className="mt-0.5 h-4 w-4 shrink-0 rounded object-contain opacity-80"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                ) : (
+                  <ExternalLink className="mt-0.5 h-4 w-4 shrink-0 text-white/20" aria-hidden />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-2 text-[13px] font-medium text-white/75 transition-colors group-hover:text-white/90">
+                    {s.title}
+                  </p>
+                  <p className="mt-0.5 truncate text-[11px] text-white/30">{hostname}</p>
+                </div>
+                <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-white/20 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden />
+              </a>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Images tab view                                                            */
+/* -------------------------------------------------------------------------- */
+
+function ImagesTabView({
+  images,
+  onIterateImage,
+}: {
+  images: Array<{ url: string; prompt: string }>;
+  onIterateImage?: (url: string) => void;
+}) {
+  if (images.length === 0) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+        <ImagePlus className="h-9 w-9 text-white/15" aria-hidden />
+        <p className="text-[14px] text-white/40">No images yet</p>
+        <p className="max-w-xs text-[12px] leading-relaxed text-white/25">
+          Images generated during this conversation will appear here.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-[720px] py-6">
+        <p className="mb-4 text-[12px] text-white/30">
+          {images.length} {images.length === 1 ? "image" : "images"}
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {images.map((img, i) => (
+            <div
+              key={i}
+              className="group relative aspect-square overflow-hidden rounded-xl border border-white/[0.08] bg-[#181818]"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={img.url}
+                alt={img.prompt}
+                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+              />
+              {/* Hover overlay */}
+              <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/75 via-black/20 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
+                <p className="line-clamp-2 text-[12px] leading-snug text-white/90">
+                  {img.prompt}
+                </p>
+                {onIterateImage && (
+                  <button
+                    type="button"
+                    onClick={() => onIterateImage(img.url)}
+                    className="mt-2 self-start rounded-md border border-white/20 bg-white/[0.1] px-2.5 py-1 text-[11px] font-medium text-white/85 backdrop-blur-sm transition-colors hover:bg-white/[0.2]"
+                  >
+                    Iterate
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -2224,15 +2572,8 @@ function ChatBubble({
   const showActions = !streaming && message.content.length > 0;
 
   return (
-    <div className={`group flex items-start gap-2.5 ${isFirstInGroup ? "mt-5" : "mt-1"}`}>
-      {isFirstInGroup ? (
-        <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.04] text-white/40">
-          <Sparkles className="h-3 w-3" aria-hidden />
-        </span>
-      ) : (
-        <span className="inline-flex h-6 w-6 shrink-0" aria-hidden />
-      )}
-      <div className="min-w-0 flex-1 text-[14px] leading-relaxed text-white/80">
+    <div className={`group ${isFirstInGroup ? "mt-5" : "mt-1"}`}>
+      <div className="text-[14px] leading-relaxed text-white/80">
         {/* Tool call cards — individual while streaming, collapsed summary when done */}
         {message.toolEvents && message.toolEvents.length > 0 && (
           <div className="mb-2">
@@ -2266,7 +2607,48 @@ function ChatBubble({
           </span>
         ) : null}
         {showActions ? (
-          <div className="mt-1.5 flex items-center gap-2">
+          <div className="mt-3 flex items-center gap-0.5 border-t border-white/[0.05] pt-2.5">
+            {/* Left: copy + regenerate */}
+            <button
+              type="button"
+              onClick={handleCopy}
+              title={copied ? "Copied!" : "Copy response"}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-white/30 transition-colors hover:bg-white/[0.05] hover:text-white/60"
+            >
+              {copied
+                ? <Check className="h-3.5 w-3.5 text-[#3ecf8e]" aria-hidden />
+                : <Copy className="h-3.5 w-3.5" aria-hidden />}
+            </button>
+            {onRegenerate && (
+              <button
+                type="button"
+                onClick={onRegenerate}
+                title="Regenerate response"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-white/30 transition-colors hover:bg-white/[0.05] hover:text-white/60"
+              >
+                <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            )}
+            {/* Thumbs — decorative feedback hints */}
+            <button
+              type="button"
+              title="Good response"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-white/20 transition-colors hover:bg-white/[0.05] hover:text-white/50"
+            >
+              <ThumbsUp className="h-3.5 w-3.5" aria-hidden />
+            </button>
+            <button
+              type="button"
+              title="Bad response"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-white/20 transition-colors hover:bg-white/[0.05] hover:text-white/50"
+            >
+              <ThumbsDown className="h-3.5 w-3.5" aria-hidden />
+            </button>
+
+            {/* Spacer */}
+            <div className="flex-1" />
+
+            {/* Right: sources pill + ⋯ */}
             {message.toolEvents && message.toolEvents.length > 0 && (
               <SourcesButton events={message.toolEvents} />
             )}
@@ -2634,18 +3016,11 @@ function ModelSelector({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`group flex items-center gap-1.5 rounded-md border px-2 py-1.5 font-mono text-[11px] tracking-tight transition-colors sm:py-1 ${
-          open
-            ? "border-white/[0.14] bg-white/[0.05] text-white/80"
-            : "border-white/[0.08] bg-white/[0.02] text-white/55 hover:border-white/[0.14] hover:bg-white/[0.04] hover:text-white/80"
-        }`}
+        className="group flex items-center gap-1 text-[12px] text-white/50 transition-colors hover:text-white/80"
       >
-        <Sparkles className="h-3 w-3 text-[#3ecf8e]/70" aria-hidden />
-        <span className="max-w-[120px] truncate sm:max-w-[140px]">{buttonLabel}</span>
-        <ChevronUp
-          className={`h-3 w-3 text-white/30 transition-transform group-hover:text-white/55 ${
-            open ? "rotate-180" : ""
-          }`}
+        <span className="max-w-[120px] truncate sm:max-w-[140px]">Model</span>
+        <ChevronDown
+          className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`}
           aria-hidden
         />
       </button>
@@ -2770,12 +3145,11 @@ function ModeSelector({
         }`}
         aria-label="Choose conversation mode"
       >
-        <ImagePlus
-          className={`h-3 w-3 ${
-            mode === "image" ? "text-[#3ecf8e]/80" : "text-white/40"
-          }`}
-          aria-hidden
-        />
+        {mode === "image" ? (
+          <ImagePlus className="h-3 w-3 text-[#3ecf8e]/80" aria-hidden />
+        ) : (
+          <Globe className="h-3 w-3 text-white/40" aria-hidden />
+        )}
         <span className="max-w-[80px] truncate sm:max-w-[120px]">{current.name}</span>
         <ChevronUp
           className={`h-3 w-3 text-white/30 transition-transform group-hover:text-white/55 ${
@@ -2939,6 +3313,27 @@ function AssistantMarkdown({
                     {children}
                   </Link>
                 );
+              }
+              // Inline source chip: short external links (≤ 3 words, < 25 chars)
+              // These are citation-style links like [Sumber](url) or [Source](url)
+              if (href && (href.startsWith("http://") || href.startsWith("https://"))) {
+                const childText = String(children ?? "").trim();
+                const wordCount = childText.split(/\s+/).filter(Boolean).length;
+                if (childText.length < 25 && wordCount <= 3) {
+                  let hostname = "";
+                  try { hostname = new URL(href).hostname.replace(/^www\./, ""); } catch {}
+                  return (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      title={href}
+                      className="mx-0.5 inline-flex items-center align-middle rounded border border-white/[0.1] bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-white/50 no-underline transition-colors hover:border-white/[0.18] hover:bg-white/[0.08] hover:text-white/70"
+                    >
+                      {hostname || childText}
+                    </a>
+                  );
+                }
               }
               return (
                 <a

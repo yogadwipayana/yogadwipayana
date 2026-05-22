@@ -518,6 +518,7 @@ export function DashboardShell({
               creatingConversation,
               onConversationUpdated: handleConversationUpdated,
               onStreamingChange: handleStreamingChange,
+              onDeleteConversation: handleDeleteConversation,
               vpsInstances,
               images,
               onImageAdded: handleImageAdded,
@@ -585,6 +586,7 @@ function renderMain({
   creatingConversation,
   onConversationUpdated,
   onStreamingChange,
+  onDeleteConversation,
   vpsInstances,
   images,
   onImageAdded,
@@ -597,6 +599,7 @@ function renderMain({
   creatingConversation: boolean;
   onConversationUpdated: (c: ChatConversationSummary) => void;
   onStreamingChange?: (conversationId: string, streaming: boolean) => void;
+  onDeleteConversation?: (id: string) => void;
   vpsInstances: readonly ApiVpsInstance[];
   images: GeneratedImageRow[];
   onImageAdded: (img: GeneratedImageRow) => void;
@@ -659,6 +662,7 @@ function renderMain({
       defaultModel={defaultChatModel}
       onConversationUpdated={onConversationUpdated}
       onStreamingChange={onStreamingChange}
+      onDelete={onDeleteConversation}
     />
   );
 }

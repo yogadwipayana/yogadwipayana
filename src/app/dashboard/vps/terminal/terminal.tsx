@@ -70,16 +70,42 @@ export function SshTerminal({ config, onStatus }: Props) {
         if (mounted) fitAddon.fit();
       });
 
-      // Ctrl+Shift+F → open search
+      const encoder = new TextEncoder();
+
+      // Custom key bindings:
+      //   Ctrl+C  — copy selection if text is selected; otherwise pass through
+      //             as SIGINT so running processes can still be interrupted.
+      //   Ctrl+V  — paste from clipboard into the terminal.
+      //   Ctrl+Shift+F — open search.
       term.attachCustomKeyEventHandler((e) => {
+        if (e.type !== "keydown") return true;
+
+        if (e.ctrlKey && !e.shiftKey && e.key === "c") {
+          const sel = term.getSelection();
+          if (sel) {
+            navigator.clipboard.writeText(sel).catch(() => {});
+            return false; // consumed — do NOT send SIGINT
+          }
+          // no selection → fall through so the terminal receives SIGINT
+          return true;
+        }
+
+        if (e.ctrlKey && !e.shiftKey && e.key === "v") {
+          navigator.clipboard.readText().then((text) => {
+            if (text && ws?.readyState === WebSocket.OPEN) {
+              ws.send(encoder.encode(text));
+            }
+          }).catch(() => {});
+          return false; // consumed
+        }
+
         if (e.ctrlKey && e.shiftKey && e.key === "F") {
           searchAddon.findNext("");
           return false;
         }
+
         return true;
       });
-
-      const encoder = new TextEncoder();
 
       const wsUrl =
         window.location.origin.replace(/^http/, "ws") + "/api/ssh/ws";

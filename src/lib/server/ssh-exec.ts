@@ -1,7 +1,10 @@
+import { cookies } from "next/headers";
 import { Client } from "ssh2";
 
 import { getUserInstanceById } from "@/lib/server/dashboard-service";
 import { getSshCredential } from "@/lib/server/ssh-credential-service";
+import { makeHostVerifier } from "@/lib/server/ssh-host-pin";
+import { createClient } from "@/utils/supabase/server";
 
 export type SshExecResult = {
   ok: boolean;
@@ -52,6 +55,7 @@ export async function sshExec(input: {
   }
 
   const host = credential.hostOverride ?? instance.ip_public;
+  const supabase = createClient(await cookies());
 
   return new Promise<SshExecResult>((resolve, reject) => {
     const conn = new Client();
@@ -163,10 +167,11 @@ export async function sshExec(input: {
       port: credential.port,
       username: credential.username,
       readyTimeout: 10_000,
-      // TODO: replace with fingerprint pinning once credential storage supports it
-      hostVerifier: (_fingerprint: Buffer, cb: (valid: boolean) => void) => {
-        cb(true);
-      },
+      hostVerifier: makeHostVerifier({
+        supabase,
+        instanceId,
+        userId,
+      }),
     };
 
     if (credential.authMethod === "password" && credential.password) {

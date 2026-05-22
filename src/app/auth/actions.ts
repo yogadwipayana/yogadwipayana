@@ -183,9 +183,21 @@ export async function signIn(
   rateLimitReset("sign-in", rlKey);
 
   const next = (formData.get("next") as string | null) ?? "/dashboard";
-  const safeNext = next.startsWith("/") ? next : "/dashboard";
+  const safeNext = sanitizeRedirectPath(next);
   revalidatePath("/", "layout");
   redirect(safeNext);
+}
+
+/**
+ * Restrict post-auth redirects to same-origin path-only URLs. Rejects
+ * protocol-relative (`//evil.com/x`), backslash-prefixed, and absolute URLs to
+ * prevent open-redirect phishing chains.
+ */
+function sanitizeRedirectPath(input: string): string {
+  if (typeof input !== "string") return "/dashboard";
+  if (!input.startsWith("/")) return "/dashboard";
+  if (input.startsWith("//") || input.startsWith("/\\")) return "/dashboard";
+  return input;
 }
 
 export async function resendConfirmation(

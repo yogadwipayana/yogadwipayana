@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { MessageSquare, Server, Settings, Waypoints } from "lucide-react";
+import { ImagePlus, MessageSquare, Server, Settings, Waypoints } from "lucide-react";
 
 /* -------------------------------------------------------------------------- */
 /*  Tools                                                                     */
@@ -11,7 +11,7 @@ import { MessageSquare, Server, Settings, Waypoints } from "lucide-react";
  * absent from `TOOLS` because the primary rail renders it separately at the
  * bottom (alongside the dedicated Settings rail button).
  */
-export type ToolId = "vps" | "ai" | "chat" | "settings";
+export type ToolId = "vps" | "ai" | "chat" | "image" | "settings";
 
 export type Tool = {
   id: ToolId;
@@ -55,6 +55,14 @@ export const TOOLS: readonly Tool[] = [
     icon: MessageSquare,
     createLabel: "New conversation",
     searchLabel: "Search conversations",
+  },
+  {
+    id: "image",
+    name: "Image Studio",
+    tag: "Media",
+    icon: ImagePlus,
+    createLabel: "New generation",
+    searchLabel: "Search images",
   },
 ] as const;
 
@@ -313,15 +321,34 @@ export const AI_MODELS: AiModel[] = [
 /*  Chat conversations                                                        */
 /* -------------------------------------------------------------------------- */
 
+export type ToolEvent = {
+  call_id: string;
+  name: string;
+  status: "running" | "done";
+  args?: unknown;
+  result?: unknown;
+};
+
 export type ChatMessage = {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
+  toolEvents?: ToolEvent[];
 };
+
+export type ChatMode = "chat" | "image";
 
 export type ChatConversationSummary = {
   id: string;
   title: string;
   model: string;
+  mode: ChatMode;
   updated_at: string;
+  is_public?: boolean;
+  share_token?: string | null;
 };
+
+export const CHAT_MODES: { slug: ChatMode; name: string; description: string }[] = [
+  { slug: "chat", name: "Chat", description: "Regular text conversation" },
+  { slug: "image", name: "Image", description: "Generate images from prompts" },
+];

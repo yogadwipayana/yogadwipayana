@@ -15,6 +15,7 @@ export const runtime = "nodejs";
 const PatchBody = z.object({
   title: z.string().min(1).max(200).optional(),
   model: z.string().min(1).max(120).optional(),
+  mode: z.enum(["chat", "image"]).optional(),
 });
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -56,7 +57,11 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     );
   }
 
-  if (parsed.data.title === undefined && parsed.data.model === undefined) {
+  if (
+    parsed.data.title === undefined &&
+    parsed.data.model === undefined &&
+    parsed.data.mode === undefined
+  ) {
     return NextResponse.json(
       { error: "Nothing to update" },
       { status: 400 },

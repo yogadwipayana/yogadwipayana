@@ -1,13 +1,21 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { CHAT_SYSTEM_PROMPT } from "@/lib/server/chat-prompt";
+import { CHAT_SYSTEM_PROMPT, IMAGE_MODE_SYSTEM_PROMPT } from "@/lib/server/chat-prompt";
 import {
   deleteLastAssistantMessage,
   getConversation,
   getMessages,
 } from "@/lib/server/chat-service";
+import { fail } from "@/lib/server/api-response";
 import { runChatStream } from "@/lib/server/chat-stream";
+import {
+  checkRateLimit,
+  getClientIp,
+  getRateLimitIdentifier,
+  ratelimits,
+} from "@/lib/server/rate-limit";
+import { parseSlash, slashSystemPrompt } from "@/lib/server/slash-commands";
 import { createClient } from "@/utils/supabase/server";
 
 export const runtime = "nodejs";
@@ -21,7 +29,7 @@ type RouteContext = { params: Promise<{ id: string }> };
  * completion using the conversation's existing user-side history. Useful for
  * "try that again" after a bad answer or a stream error.
  */
-export async function POST(_request: Request, { params }: RouteContext) {
+export async function POST(request: Request, { params }: RouteContext) {
   const supabase = createClient(await cookies());
   const {
     data: { user },
@@ -33,6 +41,11 @@ export async function POST(_request: Request, { params }: RouteContext) {
   const { id: conversationId } = await params;
 
   try {
+    await checkRateLimit(
+      ratelimits.chat,
+      getRateLimitIdentifier(user.id, getClientIp(request.headers)),
+      "chat regenerate",
+    );
     const conversation = await getConversation(supabase, conversationId, user.id);
     if (!conversation) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -51,9 +64,20 @@ export async function POST(_request: Request, { params }: RouteContext) {
       );
     }
 
+    // Check the last user message for a slash command so the system prompt
+    // is re-injected consistently on regenerate.
+    const lastUserMessage = [...history].reverse().find((m) => m.role === "user");
+    const slashParsed = lastUserMessage ? parseSlash(lastUserMessage.content) : null;
+
     const messagesForModel = [
       { role: "system" as const, content: CHAT_SYSTEM_PROMPT },
-      ...history.map((m) => ({ role: m.role, content: m.content })),
+      ...(conversation.mode === "image"
+        ? [{ role: "system" as const, content: IMAGE_MODE_SYSTEM_PROMPT }]
+        : []),
+      ...(slashParsed
+        ? [{ role: "system" as const, content: slashSystemPrompt(slashParsed) }]
+        : []),
+      ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
     ];
 
     return runChatStream({
@@ -62,13 +86,9 @@ export async function POST(_request: Request, { params }: RouteContext) {
       userId: user.id,
       model: conversation.model,
       messages: messagesForModel,
+      abortSignal: request.signal,
     });
   } catch (err) {
-    console.error(
-      "[/api/conversations/[id]/messages/regenerate] setup failed:",
-      err,
-    );
-    const message = err instanceof Error ? err.message : "Internal error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return fail(err);
   }
 }

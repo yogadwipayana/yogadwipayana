@@ -3,6 +3,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { Client } from "ssh2";
 import type { WebSocket } from "ws";
 
+import { makeHostVerifier } from "./ssh-host-pin.ts";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -200,13 +202,18 @@ export function attachSshSession(
       username: frame.username,
       readyTimeout: 20_000,
       keepaliveInterval: 10_000,
-      // TODO: persist fingerprint in DB and pin on subsequent connections
-      hostVerifier: (key: Buffer, cb: (valid: boolean) => void) => {
-        const fingerprint = key.toString("hex").slice(0, 32);
-        console.info("SSH host key fingerprint (first 32 hex chars):", fingerprint);
-        cb(true);
-        return undefined;
-      },
+      hostVerifier: makeHostVerifier({
+        supabase,
+        instanceId: frame.instanceId,
+        userId,
+        onReject: (reason) => {
+          sendStatus(ws, {
+            type: "status",
+            status: "error",
+            message: `SSH host key rejected: ${reason}`,
+          });
+        },
+      }),
     };
 
     if (frame.authMethod === "password") {

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { requireUser } from "@/lib/server/auth-session";
 import { fail, ok } from "@/lib/server/api-response";
+import { recordAudit } from "@/lib/server/audit";
 import { performResetPassword } from "@/lib/server/dashboard-service";
 
 export const runtime = "nodejs";
@@ -24,6 +25,13 @@ export async function POST(
       instanceId: id,
       username: payload.username,
       password: payload.password,
+    });
+    await recordAudit({
+      userId: user.id,
+      action: "vps.reset_password",
+      resourceType: "instance",
+      resourceId: id,
+      metadata: { username: payload.username },
     });
     return ok({ operation });
   } catch (err) {

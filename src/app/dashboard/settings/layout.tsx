@@ -8,6 +8,7 @@ const PATH_TO_ITEM_ID: Record<string, string> = {
   "/dashboard/settings/account": "settings:account",
   "/dashboard/settings/security": "settings:security",
   "/dashboard/settings/danger": "settings:danger",
+  "/dashboard/admin/og": "admin:og",
 };
 
 export default function SettingsLayout({

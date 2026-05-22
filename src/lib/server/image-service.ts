@@ -45,7 +45,7 @@ export async function generateAndRecord(args: {
       conversation_id: conversationId ?? null,
       url: result.url,
       prompt: result.prompt,
-      model: "cx/gpt-5.5-image",
+      model: "cx/gpt-5.4-image",
       size: options?.size ?? null,
       source_url: options?.image ?? null,
       source,

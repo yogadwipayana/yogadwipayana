@@ -11,7 +11,7 @@ create table if not exists public.generated_image (
   conversation_id uuid references public.conversation(id) on delete set null,
   url             text not null,
   prompt          text not null,
-  model           text not null default 'cx/gpt-5.5-image',
+  model           text not null default 'cx/gpt-5.4-image',
   size            text,
   source_url      text,
   source          text not null default 'chat'

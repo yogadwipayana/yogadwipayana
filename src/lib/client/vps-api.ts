@@ -75,7 +75,9 @@ export interface VpsInstance {
 
 export const vpsApi = {
   listInstances: (refresh = false) =>
-    apiGet<{ instances: VpsInstance[] }>(`/api/vps/instances${refresh ? "?refresh=true" : ""}`),
+    refresh
+      ? apiSend<{ instances: VpsInstance[] }>(`/api/vps/instances/sync`, "POST")
+      : apiGet<{ instances: VpsInstance[] }>(`/api/vps/instances`),
   getInstanceDetail: (id: string, refresh = false) =>
     apiGet(`/api/vps/instances/${id}/detail${refresh ? "?refresh=true" : ""}`),
   removeInstance: (id: string) =>

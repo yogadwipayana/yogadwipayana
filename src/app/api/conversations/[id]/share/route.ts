@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+import { recordAudit } from "@/lib/server/audit";
 import {
   getConversation,
   setConversationShare,
@@ -71,6 +72,13 @@ export async function POST(request: Request, { params }: RouteContext) {
   if (!conversation) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+
+  await recordAudit({
+    userId: user.id,
+    action: parsed.data.make_public ? "chat.share_publish" : "chat.share_unpublish",
+    resourceType: "conversation",
+    resourceId: id,
+  });
 
   return NextResponse.json({
     conversation,

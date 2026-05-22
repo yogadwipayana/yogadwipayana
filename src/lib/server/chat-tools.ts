@@ -15,6 +15,7 @@ import {
 } from "@/lib/server/dashboard-service";
 import { generateImage } from "@/lib/server/image-gen";
 import { generateAndRecord } from "@/lib/server/image-service";
+import { safeFetch, validatePublicHttpUrl } from "@/lib/server/safe-fetch";
 import { sshExec } from "@/lib/server/ssh-exec";
 
 /**
@@ -411,7 +412,7 @@ async function tavilySearch(
   maxResults: number,
   apiKey: string,
 ): Promise<SearchResult[]> {
-  const res = await fetch("https://api.tavily.com/search", {
+  const res = await safeFetch("https://api.tavily.com/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -420,7 +421,7 @@ async function tavilySearch(
       max_results: maxResults,
       search_depth: "basic",
     }),
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    timeoutMs: FETCH_TIMEOUT_MS,
   });
   if (!res.ok) {
     throw new Error(`Tavily HTTP ${res.status}`);
@@ -469,14 +470,14 @@ async function duckDuckGoSearch(
   query: string,
   maxResults: number,
 ): Promise<SearchResult[]> {
-  const res = await fetch(
+  const res = await safeFetch(
     `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
     {
       headers: {
         "User-Agent": USER_AGENT,
         Accept: "text/html",
       },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      timeoutMs: FETCH_TIMEOUT_MS,
     },
   );
   if (!res.ok) {
@@ -523,17 +524,13 @@ async function webFetch(rawUrl: string): Promise<FetchResult> {
   } catch {
     throw new Error("Invalid URL");
   }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("Only http(s) URLs are allowed");
-  }
 
-  const res = await fetch(parsed.toString(), {
+  const res = await safeFetch(parsed.toString(), {
     headers: {
       "User-Agent": USER_AGENT,
       Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
     },
-    redirect: "follow",
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    timeoutMs: FETCH_TIMEOUT_MS,
   });
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}`);
@@ -796,13 +793,9 @@ export async function executeTool(
         typeof args.image_url === "string" ? args.image_url.trim() : "";
       if (!prompt) return JSON.stringify({ error: "Missing prompt" });
       if (!imageUrl) return JSON.stringify({ error: "Missing image_url" });
-      try {
-        const parsed = new URL(imageUrl);
-        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-          return JSON.stringify({ error: "image_url must be http(s)" });
-        }
-      } catch {
-        return JSON.stringify({ error: "Invalid image_url" });
+      const validation = await validatePublicHttpUrl(imageUrl);
+      if (!validation.ok) {
+        return JSON.stringify({ error: validation.error });
       }
       const size = resolveSize(args);
       const result = await runAndPersist({

@@ -3,7 +3,10 @@
  * Uses a dynamic import so the heavy native module is only loaded on demand.
  */
 
+import { safeFetch } from "@/lib/server/safe-fetch";
+
 const FETCH_TIMEOUT_MS = 10_000;
+const MAX_PDF_BYTES = 20 * 1024 * 1024; // 20 MB
 
 /**
  * Fetch a PDF from `url`, extract its text content, and return it truncated
@@ -15,22 +18,24 @@ export async function extractPdfText(
   url: string,
   maxBytes = 30_000,
 ): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
   let buffer: ArrayBuffer;
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await safeFetch(url, { timeoutMs: FETCH_TIMEOUT_MS });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status} fetching PDF`);
     }
+    const sizeHeader = res.headers.get("content-length");
+    if (sizeHeader && Number(sizeHeader) > MAX_PDF_BYTES) {
+      throw new Error("PDF exceeds 20 MB limit");
+    }
     buffer = await res.arrayBuffer();
+    if (buffer.byteLength > MAX_PDF_BYTES) {
+      throw new Error("PDF exceeds 20 MB limit");
+    }
   } catch (err) {
     throw new Error(
       `Failed to fetch PDF: ${err instanceof Error ? err.message : String(err)}`,
     );
-  } finally {
-    clearTimeout(timer);
   }
 
   try {

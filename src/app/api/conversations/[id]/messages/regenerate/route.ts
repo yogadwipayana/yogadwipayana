@@ -7,7 +7,14 @@ import {
   getConversation,
   getMessages,
 } from "@/lib/server/chat-service";
+import { fail } from "@/lib/server/api-response";
 import { runChatStream } from "@/lib/server/chat-stream";
+import {
+  checkRateLimit,
+  getClientIp,
+  getRateLimitIdentifier,
+  ratelimits,
+} from "@/lib/server/rate-limit";
 import { parseSlash, slashSystemPrompt } from "@/lib/server/slash-commands";
 import { createClient } from "@/utils/supabase/server";
 
@@ -34,6 +41,11 @@ export async function POST(request: Request, { params }: RouteContext) {
   const { id: conversationId } = await params;
 
   try {
+    await checkRateLimit(
+      ratelimits.chat,
+      getRateLimitIdentifier(user.id, getClientIp(request.headers)),
+      "chat regenerate",
+    );
     const conversation = await getConversation(supabase, conversationId, user.id);
     if (!conversation) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -77,11 +89,6 @@ export async function POST(request: Request, { params }: RouteContext) {
       abortSignal: request.signal,
     });
   } catch (err) {
-    console.error(
-      "[/api/conversations/[id]/messages/regenerate] setup failed:",
-      err,
-    );
-    const message = err instanceof Error ? err.message : "Internal error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return fail(err);
   }
 }

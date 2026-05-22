@@ -3,7 +3,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { presetToSize } from "@/lib/aspect-ratio";
+import { recordAudit } from "@/lib/server/audit";
 import { generateAndRecord, listGeneratedImages } from "@/lib/server/image-service";
+import { validatePublicHttpUrl } from "@/lib/server/safe-fetch";
 import { createClient } from "@/utils/supabase/server";
 
 export const runtime = "nodejs";
@@ -101,6 +103,16 @@ export async function POST(request: Request) {
 
   const { target, page, prompt: promptOverride, reference_image_url } = parsed.data;
 
+  if (reference_image_url) {
+    const validation = await validatePublicHttpUrl(reference_image_url);
+    if (!validation.ok) {
+      return NextResponse.json(
+        { error: `reference_image_url rejected: ${validation.error}` },
+        { status: 400 },
+      );
+    }
+  }
+
   // Resolve prompt and size
   const prompt = resolvePrompt(target, page, promptOverride);
   const preset = target === "avatar" ? "square" : "wide";
@@ -117,6 +129,14 @@ export async function POST(request: Request) {
     },
     conversationId: null,
     source: "admin",
+  });
+
+  await recordAudit({
+    userId: user.id,
+    action: "admin.og_image_generate",
+    resourceType: "generated_image",
+    resourceId: row.id,
+    metadata: { target, page: page ?? null },
   });
 
   return NextResponse.json({ image: row }, { status: 201 });

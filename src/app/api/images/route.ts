@@ -3,11 +3,19 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { normalizeAspectInput, presetToSize } from "@/lib/aspect-ratio";
+import { fail } from "@/lib/server/api-response";
 import {
   deleteGeneratedImage,
   generateAndRecord,
   listGeneratedImages,
 } from "@/lib/server/image-service";
+import {
+  checkRateLimit,
+  getClientIp,
+  getRateLimitIdentifier,
+  ratelimits,
+} from "@/lib/server/rate-limit";
+import { validatePublicHttpUrl } from "@/lib/server/safe-fetch";
 import { createClient } from "@/utils/supabase/server";
 
 export const runtime = "nodejs";
@@ -46,6 +54,24 @@ export async function POST(request: Request) {
 
   const { prompt, aspect_ratio, size, image_url, conversation_id, source } =
     parsed.data;
+
+  if (image_url) {
+    const validation = await validatePublicHttpUrl(image_url);
+    if (!validation.ok) {
+      return NextResponse.json(
+        { error: `image_url rejected: ${validation.error}` },
+        { status: 400 },
+      );
+    }
+  }
+
+  try {
+    const id = getRateLimitIdentifier(user.id, getClientIp(request.headers));
+    await checkRateLimit(ratelimits.imageGen, id, "image generation");
+    await checkRateLimit(ratelimits.imageGenDaily, id, "image generation daily");
+  } catch (err) {
+    return fail(err);
+  }
 
   // Resolve to a canonical size: prefer the preset, fall back to the legacy
   // free-form `size`, then to "auto".

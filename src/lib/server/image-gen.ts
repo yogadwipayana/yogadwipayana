@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -101,7 +102,7 @@ export async function generateImage(opts: GenerateImageOptions): Promise<{ url: 
     opts.abortSignal?.removeEventListener("abort", onExternalAbort);
   }
 
-  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`;
+  const filename = `${Date.now()}-${randomUUID()}.png`;
   const outDir = join(process.cwd(), "public", "generated-images");
 
   await mkdir(outDir, { recursive: true });

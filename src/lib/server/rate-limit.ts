@@ -41,7 +41,21 @@ function createRatelimit(
 export const ratelimits = {
   connectCloud: createRatelimit("ratelimit:connect-cloud", 20, "1m"),
   credentials: createRatelimit("ratelimit:credentials", 10, "1m"),
+  chat: createRatelimit("ratelimit:chat", 30, "1m"),
+  ai: createRatelimit("ratelimit:ai", 30, "1m"),
+  imageGen: createRatelimit("ratelimit:image-gen", 10, "1h"),
+  imageGenDaily: createRatelimit("ratelimit:image-gen-daily", 60, "1d"),
+  contact: createRatelimit("ratelimit:contact", 5, "1h"),
+  upload: createRatelimit("ratelimit:upload", 60, "1m"),
+  vpsAction: createRatelimit("ratelimit:vps-action", 30, "1m"),
 };
+
+/** Best-effort client IP extractor for use as a rate-limit identifier. */
+export function getClientIp(headers: Headers): string | undefined {
+  const xff = headers.get("x-forwarded-for");
+  if (xff) return xff.split(",")[0]?.trim() || undefined;
+  return headers.get("x-real-ip") ?? undefined;
+}
 
 const hits = new Map<string, number[]>();
 

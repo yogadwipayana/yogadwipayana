@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { createClient as createServerClient } from "@supabase/supabase-js";
 import { z } from "zod";
 
+import { recordAudit } from "@/lib/server/audit";
 import { createClient } from "@/utils/supabase/server";
 
 export type SettingsActionResult =
@@ -140,6 +141,13 @@ export async function deleteAccount(
   // to this single server-side call — never reuse this client for user data.
   const admin = createServerClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  await recordAudit({
+    userId: user.id,
+    action: "account.delete",
+    resourceType: "auth.users",
+    resourceId: user.id,
   });
 
   const { error } = await admin.auth.admin.deleteUser(user.id);

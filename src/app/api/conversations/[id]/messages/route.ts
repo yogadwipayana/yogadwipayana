@@ -10,7 +10,15 @@ import {
   getMessages,
   updateConversation,
 } from "@/lib/server/chat-service";
+import { fail } from "@/lib/server/api-response";
 import { runChatStream } from "@/lib/server/chat-stream";
+import {
+  checkRateLimit,
+  getClientIp,
+  getRateLimitIdentifier,
+  ratelimits,
+} from "@/lib/server/rate-limit";
+import { validatePublicHttpUrl } from "@/lib/server/safe-fetch";
 import { parseSlash, slashSystemPrompt } from "@/lib/server/slash-commands";
 import {
   buildAttachmentFooter,
@@ -56,6 +64,11 @@ export async function POST(request: Request, { params }: RouteContext) {
   }
 
   try {
+    await checkRateLimit(
+      ratelimits.chat,
+      getRateLimitIdentifier(user.id, getClientIp(request.headers)),
+      "chat send",
+    );
     const conversation = await getConversation(supabase, conversationId, user.id);
     if (!conversation) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -64,6 +77,16 @@ export async function POST(request: Request, { params }: RouteContext) {
     const priorMessages = await getMessages(supabase, conversationId, user.id);
 
     const { content, attachments } = parsed.data;
+
+    for (const att of attachments ?? []) {
+      const validation = await validatePublicHttpUrl(att.url);
+      if (!validation.ok) {
+        return NextResponse.json(
+          { error: `Attachment URL rejected: ${validation.error}` },
+          { status: 400 },
+        );
+      }
+    }
 
     // Build the DB-persisted content: user text + optional attachment footer
     const footer = buildAttachmentFooter((attachments ?? []) as Attachment[]);
@@ -114,8 +137,6 @@ export async function POST(request: Request, { params }: RouteContext) {
       abortSignal: request.signal,
     });
   } catch (err) {
-    console.error("[/api/conversations/[id]/messages] setup failed:", err);
-    const message = err instanceof Error ? err.message : "Internal error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return fail(err);
   }
 }

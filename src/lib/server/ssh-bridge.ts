@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { Client } from "ssh2";
 import type { WebSocket } from "ws";
 
+import { decryptString } from "./crypto.ts";
 import { makeHostVerifier } from "./ssh-host-pin.ts";
 
 // ---------------------------------------------------------------------------
@@ -29,6 +30,18 @@ type ConnectFrame = {
   password?: string;
   privateKey?: string;
   passphrase?: string;
+  cols: number;
+  rows: number;
+};
+
+/**
+ * Credential-free connect frame used by the inline chat terminal.
+ * The bridge fetches saved credentials server-side so nothing sensitive
+ * ever leaves the server to the browser.
+ */
+type ConnectSavedFrame = {
+  type: "connect_saved";
+  instanceId: string;
   cols: number;
   rows: number;
 };
@@ -121,6 +134,43 @@ function sendStatus(ws: WebSocket, msg: StatusMessage): void {
   }
 }
 
+/**
+ * Load and decrypt the saved SSH credential secrets for an instance.
+ * Returns only the secret fields (password / privateKey / passphrase).
+ * Returns null if no credential row exists or on DB error.
+ */
+async function loadSavedSecrets(
+  supabase: SupabaseClient,
+  userId: string,
+  instanceId: string,
+): Promise<{ password?: string; privateKey?: string; passphrase?: string } | null> {
+  const { data, error } = await supabase
+    .from("instance_ssh_credential")
+    .select("auth_method, password_enc, private_key_enc, passphrase_enc")
+    .eq("instance_id", instanceId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error || !data) return null;
+
+  const row = data as {
+    auth_method: "password" | "key";
+    password_enc: string | null;
+    private_key_enc: string | null;
+    passphrase_enc: string | null;
+  };
+
+  try {
+    const result: { password?: string; privateKey?: string; passphrase?: string } = {};
+    if (row.password_enc) result.password = decryptString(row.password_enc);
+    if (row.private_key_enc) result.privateKey = decryptString(row.private_key_enc);
+    if (row.passphrase_enc) result.passphrase = decryptString(row.passphrase_enc);
+    return result;
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // SSH session wiring
 // ---------------------------------------------------------------------------
@@ -134,7 +184,7 @@ export function attachSshSession(
   let sshReady = false;
 
   // ------------------------------------------------------------------
-  // First message must be the connect frame
+  // First message must be a connect frame (manual or saved-creds)
   // ------------------------------------------------------------------
   function onFirstMessage(data: Buffer | string, isBinary: boolean): void {
     if (isBinary) {
@@ -143,17 +193,17 @@ export function attachSshSession(
       return;
     }
 
-    let frame: ConnectFrame;
+    let frame: ConnectFrame | ConnectSavedFrame;
     try {
-      frame = JSON.parse(data.toString()) as ConnectFrame;
+      frame = JSON.parse(data.toString()) as ConnectFrame | ConnectSavedFrame;
     } catch {
       sendStatus(ws, { type: "status", status: "error", message: "Invalid JSON in connect frame" });
       ws.close(1002);
       return;
     }
 
-    if (frame.type !== "connect") {
-      sendStatus(ws, { type: "status", status: "error", message: "Expected connect frame" });
+    if (frame.type !== "connect" && frame.type !== "connect_saved") {
+      sendStatus(ws, { type: "status", status: "error", message: "Expected connect or connect_saved frame" });
       ws.close(1002);
       return;
     }
@@ -161,36 +211,139 @@ export function attachSshSession(
     // Remove first-message listener; subsequent messages handled after connect
     ws.off("message", onFirstMessage);
 
-    handleConnect(frame);
+    if (frame.type === "connect_saved") {
+      handleConnectSaved(frame);
+    } else {
+      handleConnect(frame);
+    }
   }
 
   ws.on("message", onFirstMessage);
 
   // ------------------------------------------------------------------
-  // Handle connect frame
+  // Handle connect_saved frame — fetch credentials from DB server-side
   // ------------------------------------------------------------------
-  async function handleConnect(frame: ConnectFrame): Promise<void> {
-    // Verify ownership and host match
-    const instance = await getInstanceForUser(supabase, userId, frame.instanceId);
+  async function handleConnectSaved(frame: ConnectSavedFrame): Promise<void> {
+    // For real instances verify ownership and resolve the default IP.
+    // Custom instances have no DB row — host comes entirely from host_override.
+    let instanceIp: string | null = null;
+    if (frame.instanceId !== "__custom__") {
+      const instance = await getInstanceForUser(supabase, userId, frame.instanceId);
+      if (!instance || !instance.ip_public) {
+        sendStatus(ws, {
+          type: "status",
+          status: "error",
+          message: "Instance not found or has no public IP",
+        });
+        ws.close(1008);
+        return;
+      }
+      instanceIp = instance.ip_public;
+    }
 
-    if (!instance) {
+    // Fetch saved credentials directly via the authenticated supabase client
+    const { data: credRow, error: credErr } = await supabase
+      .from("instance_ssh_credential")
+      .select("*")
+      .eq("instance_id", frame.instanceId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (credErr || !credRow) {
       sendStatus(ws, {
         type: "status",
         status: "error",
-        message: "Instance not found or access denied",
+        message:
+          "No SSH credentials saved for this instance. Save them in the VPS terminal (/dashboard/vps/terminal) first.",
       });
       ws.close(1008);
       return;
     }
 
-    if (instance.ip_public && instance.ip_public !== frame.host) {
+    const row = credRow as {
+      username: string;
+      port: number;
+      auth_method: "password" | "key";
+      password_enc: string | null;
+      private_key_enc: string | null;
+      passphrase_enc: string | null;
+      host_override: string | null;
+    };
+
+    const resolvedHost = row.host_override ?? instanceIp;
+    if (!resolvedHost) {
       sendStatus(ws, {
         type: "status",
         status: "error",
-        message: "Requested host does not match instance public IP",
+        message: "No host address found for this instance. Please reconnect via the SSH terminal and save credentials.",
       });
       ws.close(1008);
       return;
+    }
+
+    const host = resolvedHost;
+
+    const connectFrame: ConnectFrame = {
+      type: "connect",
+      instanceId: frame.instanceId,
+      host,
+      port: row.port,
+      username: row.username,
+      authMethod: row.auth_method,
+      cols: frame.cols,
+      rows: frame.rows,
+    };
+
+    try {
+      if (row.auth_method === "password" && row.password_enc) {
+        connectFrame.password = decryptString(row.password_enc);
+      } else if (row.auth_method === "key" && row.private_key_enc) {
+        connectFrame.privateKey = decryptString(row.private_key_enc);
+        if (row.passphrase_enc) {
+          connectFrame.passphrase = decryptString(row.passphrase_enc);
+        }
+      }
+    } catch {
+      sendStatus(ws, {
+        type: "status",
+        status: "error",
+        message: "Failed to decrypt saved credentials.",
+      });
+      ws.close(1011);
+      return;
+    }
+
+    handleConnect(connectFrame);
+  }
+
+  // ------------------------------------------------------------------
+  // Handle connect frame
+  // ------------------------------------------------------------------
+  async function handleConnect(frame: ConnectFrame): Promise<void> {
+    // For real instances verify ownership and host match;
+    // custom instances are user-supplied so we trust the saved credentials.
+    if (frame.instanceId !== "__custom__") {
+      const instance = await getInstanceForUser(supabase, userId, frame.instanceId);
+
+      if (!instance) {
+        sendStatus(ws, {
+          type: "status",
+          status: "error",
+          message: "Instance not found or access denied",
+        });
+        ws.close(1008);
+        return;
+      }
+
+      if (instance.ip_public && instance.ip_public !== frame.host) {
+        sendStatus(ws, {
+          type: "status",
+          status: "error",
+          message: "Requested host does not match instance public IP",
+        });
+        ws.close(1008);
+        return;
+      }
     }
 
     sendStatus(ws, { type: "status", status: "connecting" });
@@ -206,26 +359,60 @@ export function attachSshSession(
       username: frame.username,
       readyTimeout: 20_000,
       keepaliveInterval: 10_000,
-      hostVerifier: makeHostVerifier({
-        supabase,
-        instanceId: frame.instanceId,
-        userId,
-        onReject: (reason) => {
-          hostRejected = true;
-          sendStatus(ws, {
-            type: "status",
-            status: "error",
-            message: `SSH host key rejected: ${reason}`,
-          });
-        },
+      // Skip TOFU host-key pinning for custom instances (no instance row in DB)
+      ...(frame.instanceId !== "__custom__" && {
+        hostVerifier: makeHostVerifier({
+          supabase,
+          instanceId: frame.instanceId,
+          userId,
+          onReject: (reason) => {
+            hostRejected = true;
+            sendStatus(ws, {
+              type: "status",
+              status: "error",
+              message: `SSH host key rejected: ${reason}`,
+            });
+          },
+        }),
       }),
     };
 
     if (frame.authMethod === "password") {
-      connectConfig.password = frame.password;
+      if (frame.password) {
+        connectConfig.password = frame.password;
+      } else {
+        // No password in frame — use saved credential.
+        const saved = await loadSavedSecrets(supabase, userId, frame.instanceId);
+        if (!saved?.password) {
+          sendStatus(ws, {
+            type: "status",
+            status: "error",
+            message: "Password is required. No saved credential found for this instance.",
+          });
+          ws.close(1008);
+          return;
+        }
+        connectConfig.password = saved.password;
+      }
     } else {
-      connectConfig.privateKey = Buffer.from(frame.privateKey ?? "");
-      if (frame.passphrase) connectConfig.passphrase = frame.passphrase;
+      if (frame.privateKey) {
+        connectConfig.privateKey = Buffer.from(frame.privateKey);
+        if (frame.passphrase) connectConfig.passphrase = frame.passphrase;
+      } else {
+        // No key in frame — use saved credential.
+        const saved = await loadSavedSecrets(supabase, userId, frame.instanceId);
+        if (!saved?.privateKey) {
+          sendStatus(ws, {
+            type: "status",
+            status: "error",
+            message: "Private key is required. No saved credential found for this instance.",
+          });
+          ws.close(1008);
+          return;
+        }
+        connectConfig.privateKey = Buffer.from(saved.privateKey);
+        if (saved.passphrase) connectConfig.passphrase = saved.passphrase;
+      }
     }
 
     conn.connect(connectConfig);

@@ -89,7 +89,7 @@ export function SshTerminalView({ instances }: { instances: InstanceOption[] }) 
   const [authMethod, setAuthMethod] = useState<AuthMethod>("password");
 
   // form fields
-  const [instanceId, setInstanceId] = useState(instances[0]?.id ?? "");
+  const [instanceId, setInstanceId] = useState(instances[0]?.id ?? "__custom__");
   const [host, setHost] = useState(instances[0]?.ip_public ?? "");
   const [port, setPort] = useState("22");
   const [username, setUsername] = useState("root");
@@ -160,15 +160,22 @@ export function SshTerminalView({ instances }: { instances: InstanceOption[] }) 
 
   function handleInstanceChange(id: string) {
     setInstanceId(id);
-    const inst = instances.find((i) => i.id === id);
-    if (inst) setHost(inst.ip_public ?? inst.ip_private ?? "");
+    if (id === "__custom__") {
+      setHost("");
+    } else {
+      const inst = instances.find((i) => i.id === id);
+      if (inst) setHost(inst.ip_public ?? inst.ip_private ?? "");
+    }
   }
 
   function validate(): string | null {
     if (!username.trim()) return "Username is required.";
     if (!host.trim()) return "Host is required.";
-    if (authMethod === "password" && !password.trim()) return "Password is required.";
-    if (authMethod === "key" && !privateKey.trim()) return "Private key is required.";
+    // Only require a secret when there is no saved credential covering it.
+    if (authMethod === "password" && !password.trim() && !savedCred?.hasPassword)
+      return "Password is required.";
+    if (authMethod === "key" && !privateKey.trim() && !savedCred?.hasPrivateKey)
+      return "Private key is required.";
     const portNum = parseInt(port, 10);
     if (isNaN(portNum) || portNum < 1 || portNum > 65535) return "Port must be 1–65535.";
     return null;
@@ -205,11 +212,19 @@ export function SshTerminalView({ instances }: { instances: InstanceOption[] }) 
     if (!instanceId) return;
     setSaveIndicator("saving");
     try {
+      const instanceDefaultIp =
+        instanceId === "__custom__"
+          ? null
+          : (instances.find((i) => i.id === instanceId)?.ip_public ?? null);
       const body: Record<string, unknown> = {
         username: username.trim(),
         port: parseInt(port, 10),
         authMethod,
-        hostOverride: host.trim() !== (instances.find((i) => i.id === instanceId)?.ip_public ?? "") ? host.trim() : undefined,
+        // for custom instances always persist the host; for real instances only when overridden
+        hostOverride:
+          instanceDefaultIp === null || host.trim() !== instanceDefaultIp
+            ? host.trim()
+            : undefined,
       };
       if (authMethod === "password" && password) body.password = password;
       if (authMethod === "key" && privateKey) body.privateKey = privateKey;
@@ -306,22 +321,27 @@ export function SshTerminalView({ instances }: { instances: InstanceOption[] }) 
             )}
 
             <div className="grid gap-3 sm:grid-cols-2">
-              {instances.length > 0 && (
-                <FieldGroup label="Instance">
-                  <select
-                    value={instanceId}
-                    onChange={(e) => handleInstanceChange(e.target.value)}
-                    disabled={isLocked}
-                    className="w-full rounded-md border border-white/[0.08] bg-[#1c1c1c] px-2.5 py-1.5 text-[13px] text-white focus:border-[#3ecf8e]/40 focus:outline-none disabled:opacity-50"
-                  >
-                    {instances.map((i) => (
-                      <option key={i.id} value={i.id}>
-                        {i.name} {i.ip_public ? `(${i.ip_public})` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </FieldGroup>
-              )}
+              <FieldGroup label="Instance">
+                <select
+                  value={instanceId}
+                  onChange={(e) => handleInstanceChange(e.target.value)}
+                  disabled={isLocked}
+                  className="w-full rounded-md border border-white/[0.08] bg-[#1c1c1c] px-2.5 py-1.5 text-[13px] text-white focus:border-[#3ecf8e]/40 focus:outline-none disabled:opacity-50"
+                >
+                  {instances.length > 0 && (
+                    <optgroup label="Lighthouse Instances">
+                      {instances.map((i) => (
+                        <option key={i.id} value={i.id}>
+                          {i.name} {i.ip_public ? `(${i.ip_public})` : ""}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  <optgroup label="Custom">
+                    <option value="__custom__">Custom instance…</option>
+                  </optgroup>
+                </select>
+              </FieldGroup>
 
               <FieldGroup label="Host / IP">
                 <FormInput

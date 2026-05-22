@@ -13,18 +13,31 @@ import {
   ArrowRight,
   ArrowUp,
   Check,
+  ChevronDown,
   ChevronUp,
+  Clock,
   Copy,
   CreditCard,
+  Download,
+  ExternalLink,
+  Globe,
+  ImagePlus,
   Key,
+  Link2,
   Loader2,
   MessageSquare,
+  MoreHorizontal,
+  Paperclip,
   Pencil,
   Plus,
   RefreshCw,
   RotateCw,
+  Server,
+  Share2,
   Square,
   Sparkles,
+  Terminal,
+  X,
 } from "lucide-react";
 import hljs from "highlight.js/lib/common";
 import ReactMarkdown from "react-markdown";
@@ -34,8 +47,10 @@ import type {
   AiRoute,
   ChatConversationSummary,
   ChatMessage,
+  ChatMode,
+  ToolEvent,
 } from "./data";
-import { AI_MODELS, AI_RECENT_CALLS } from "./data";
+import { AI_MODELS, AI_RECENT_CALLS, CHAT_MODES } from "./data";
 import { deriveConversationTitle } from "@/lib/chat-title";
 import { copyToClipboard } from "@/lib/utils";
 
@@ -306,6 +321,48 @@ function Action({
 /*  Chat AI                                                                   */
 /* -------------------------------------------------------------------------- */
 
+/* -------------------------------------------------------------------------- */
+/*  Attachment types                                                           */
+/* -------------------------------------------------------------------------- */
+
+type AttachmentKind = "image" | "pdf";
+
+type Attachment = {
+  key: string; // unique local key
+  kind: AttachmentKind;
+  name: string;
+  mime: string;
+  size: number;
+  publicUrl: string;
+  uploading: boolean;
+  error?: string;
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Slash command definitions                                                  */
+/* -------------------------------------------------------------------------- */
+
+const SLASH_COMMANDS = [
+  { command: "/summarize", description: "Summarize the conversation or pasted text." },
+  { command: "/translate", description: "/translate <lang> <text> — Translate to another language." },
+  { command: "/explain", description: "Walk through a piece of text or code." },
+  { command: "/diagram", description: "Generate a Mermaid diagram." },
+] as const;
+
+/* -------------------------------------------------------------------------- */
+/*  Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const MAX_ATTACHMENTS = 6;
+const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+const ACCEPTED_MIME = ["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"];
+
 export function ChatView({
   conversation,
   defaultModel,
@@ -318,16 +375,38 @@ export function ChatView({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [model, setModel] = useState(conversation.model || defaultModel || "");
+  const [mode, setMode] = useState<ChatMode>(conversation.mode ?? "chat");
   const [loaded, setLoaded] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   // Tracks whether the user is "pinned" to the bottom. We only auto-scroll on
   // new tokens when this is true, so reading earlier messages mid-stream isn't
   // disrupted by every delta.
   const pinnedToBottomRef = useRef(true);
+
+  // Attachments state
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+
+  // Slash command autocomplete
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashFilter, setSlashFilter] = useState("");
+  const [slashIndex, setSlashIndex] = useState(0);
+
+  // Share dropdown
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareConv, setShareConv] = useState<ChatConversationSummary>(conversation);
+  const [shareCopied, setShareCopied] = useState(false);
+
+  // Keep shareConv in sync when conversation prop changes (e.g. after sidebar update)
+  useEffect(() => {
+    setShareConv(conversation);
+  }, [conversation]);
 
   // Hydrate messages once per mount. The parent shell remounts this view on
   // conversation change via `key={conversation.id}`, so we don't need to reset
@@ -343,12 +422,19 @@ export function ChatView({
           return;
         }
         const data = (await res.json()) as {
-          conversation: { id: string; title: string; model: string; updated_at: string };
+          conversation: {
+            id: string;
+            title: string;
+            model: string;
+            mode: ChatMode;
+            updated_at: string;
+          };
           messages: ChatMessage[];
         };
         if (cancelled) return;
         setMessages(data.messages);
         setModel(data.conversation.model);
+        setMode(data.conversation.mode ?? "chat");
         setLoaded(true);
       } catch {
         if (!cancelled) setError("Failed to load conversation.");
@@ -423,6 +509,33 @@ export function ChatView({
     [conversation.id, model, onConversationUpdated],
   );
 
+  const handleSelectMode = useCallback(
+    async (slug: ChatMode) => {
+      const previous = mode;
+      setMode(slug);
+      try {
+        const res = await fetch(`/api/conversations/${conversation.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: slug }),
+        });
+        if (!res.ok) {
+          setMode((current) => (current === slug ? previous : current));
+          return;
+        }
+        const data = (await res.json()) as { conversation: ChatConversationSummary };
+        setMode((current) => {
+          if (current !== slug) return current;
+          onConversationUpdated?.(data.conversation);
+          return current;
+        });
+      } catch {
+        setMode((current) => (current === slug ? previous : current));
+      }
+    },
+    [conversation.id, mode, onConversationUpdated],
+  );
+
   // Shared streaming consumer for both initial sends and regenerate. Mutates
   // the assistant placeholder message in place.
   const consumeStream = useCallback(
@@ -444,6 +557,8 @@ export function ChatView({
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      // Track current assistant msg id (may be updated by `saved` events)
+      let currentAssistantId = assistantMsgId;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -463,6 +578,13 @@ export function ChatView({
             delta?: string;
             error?: string;
             saved?: { role: "user" | "assistant"; id: string };
+            tool?: {
+              name: string;
+              status: "running" | "done";
+              call_id: string;
+              args?: unknown;
+              result?: unknown;
+            };
           };
           if (parsed.error) throw new Error(parsed.error);
           if (parsed.saved) {
@@ -474,7 +596,7 @@ export function ChatView({
                 if (saved.role === "user" && opts?.localUserId === m.id) {
                   return { ...m, id: saved.id };
                 }
-                if (saved.role === "assistant" && m.id === assistantMsgId) {
+                if (saved.role === "assistant" && m.id === currentAssistantId) {
                   return { ...m, id: saved.id };
                 }
                 return m;
@@ -483,15 +605,40 @@ export function ChatView({
             // Keep the placeholder id in sync for subsequent delta events that
             // still target the original local id.
             if (saved.role === "assistant") {
-              assistantMsgId = saved.id;
+              currentAssistantId = saved.id;
             }
+            continue;
+          }
+          if (parsed.tool) {
+            const toolEvt = parsed.tool;
+            setMessages((prev) => {
+              const next = prev.slice();
+              const last = next[next.length - 1];
+              if (last && last.id === currentAssistantId) {
+                const existing = last.toolEvents ?? [];
+                const idx = existing.findIndex((e) => e.call_id === toolEvt.call_id);
+                const updated: ToolEvent = {
+                  call_id: toolEvt.call_id,
+                  name: toolEvt.name,
+                  status: toolEvt.status,
+                  args: toolEvt.args,
+                  result: toolEvt.result,
+                };
+                const newEvents =
+                  idx === -1
+                    ? [...existing, updated]
+                    : existing.map((e, i) => (i === idx ? updated : e));
+                next[next.length - 1] = { ...last, toolEvents: newEvents };
+              }
+              return next;
+            });
             continue;
           }
           if (parsed.delta) {
             setMessages((prev) => {
               const next = prev.slice();
               const last = next[next.length - 1];
-              if (last && last.id === assistantMsgId) {
+              if (last && last.id === currentAssistantId) {
                 next[next.length - 1] = {
                   ...last,
                   content: last.content + parsed.delta,
@@ -513,6 +660,10 @@ export function ChatView({
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
     if (!trimmed || isStreaming) return;
+    // Block send while any attachment is still uploading
+    if (attachments.some((a) => a.uploading)) return;
+
+    const readyAttachments = attachments.filter((a) => !a.error);
 
     const userMsg: ChatMessage = {
       id: `local-user-${Date.now()}`,
@@ -530,6 +681,8 @@ export function ChatView({
     pinnedToBottomRef.current = true;
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setInput("");
+    setAttachments([]);
+    setSlashOpen(false);
     setIsStreaming(true);
     setError(null);
 
@@ -537,12 +690,25 @@ export function ChatView({
     abortRef.current = ctrl;
 
     try {
+      const body: { content: string; attachments?: { kind: AttachmentKind; url: string; name: string; mime: string; size: number }[] } = {
+        content: trimmed,
+      };
+      if (readyAttachments.length > 0) {
+        body.attachments = readyAttachments.map((a) => ({
+          kind: a.kind,
+          url: a.publicUrl,
+          name: a.name,
+          mime: a.mime,
+          size: a.size,
+        }));
+      }
+
       const res = await fetch(
         `/api/conversations/${conversation.id}/messages`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content: trimmed }),
+          body: JSON.stringify(body),
           signal: ctrl.signal,
         },
       );
@@ -555,6 +721,7 @@ export function ChatView({
           ? deriveConversationTitle(trimmed)
           : conversation.title,
         model,
+        mode,
         updated_at: new Date().toISOString(),
       });
     } catch (err) {
@@ -580,6 +747,7 @@ export function ChatView({
       setIsStreaming(false);
     }
   }, [
+    attachments,
     consumeStream,
     conversation.id,
     conversation.title,
@@ -587,6 +755,7 @@ export function ChatView({
     isStreaming,
     messages.length,
     model,
+    mode,
     onConversationUpdated,
   ]);
 
@@ -628,6 +797,7 @@ export function ChatView({
         id: conversation.id,
         title: conversation.title,
         model,
+        mode,
         updated_at: new Date().toISOString(),
       });
     } catch (err) {
@@ -653,6 +823,7 @@ export function ChatView({
     isStreaming,
     messages,
     model,
+    mode,
     onConversationUpdated,
   ]);
 
@@ -721,6 +892,7 @@ export function ChatView({
           id: conversation.id,
           title: conversation.title,
           model,
+          mode,
           updated_at: new Date().toISOString(),
         });
       } catch (err) {
@@ -747,11 +919,167 @@ export function ChatView({
       isStreaming,
       messages,
       model,
+      mode,
       onConversationUpdated,
     ],
   );
 
+  // Upload a single file: POST /api/upload → presigned URL → PUT to S3
+  const uploadFile = useCallback(async (file: File) => {
+    if (!ACCEPTED_MIME.includes(file.type)) return;
+    if (file.size > MAX_ATTACHMENT_BYTES) return;
+    if (attachments.length >= MAX_ATTACHMENTS) return;
+
+    const key = `att-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const kind: AttachmentKind = file.type === "application/pdf" ? "pdf" : "image";
+
+    const placeholder: Attachment = {
+      key,
+      kind,
+      name: file.name,
+      mime: file.type,
+      size: file.size,
+      publicUrl: "",
+      uploading: true,
+    };
+    setAttachments((prev) => [...prev, placeholder]);
+
+    try {
+      const metaRes = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, contentType: file.type, size: file.size }),
+      });
+      if (!metaRes.ok) throw new Error(`Upload init failed: ${metaRes.status}`);
+      const meta = (await metaRes.json()) as { url: string; method: string; key: string; publicUrl: string };
+
+      await fetch(meta.url, {
+        method: meta.method ?? "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+
+      setAttachments((prev) =>
+        prev.map((a) =>
+          a.key === key ? { ...a, uploading: false, publicUrl: meta.publicUrl } : a,
+        ),
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      setAttachments((prev) =>
+        prev.map((a) => (a.key === key ? { ...a, uploading: false, error: msg } : a)),
+      );
+    }
+  }, [attachments.length]);
+
+  const handleFiles = useCallback(
+    (files: FileList | File[]) => {
+      const arr = Array.from(files);
+      const remaining = MAX_ATTACHMENTS - attachments.length;
+      arr.slice(0, remaining).forEach((f) => void uploadFile(f));
+    },
+    [attachments.length, uploadFile],
+  );
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = e.clipboardData.items;
+      const imageItems: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          const f = item.getAsFile();
+          if (f) imageItems.push(f);
+        }
+      }
+      if (imageItems.length > 0) {
+        e.preventDefault();
+        handleFiles(imageItems);
+      }
+    },
+    [handleFiles],
+  );
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setDragOver(false);
+      if (e.dataTransfer.files.length > 0) {
+        handleFiles(e.dataTransfer.files);
+      }
+    },
+    [handleFiles],
+  );
+
+  // Slash command: detect when input matches ^\s*\/\w*$
+  const checkSlash = useCallback((val: string) => {
+    const match = /^\s*\/(\w*)$/.exec(val);
+    if (match) {
+      const filter = match[1].toLowerCase();
+      setSlashFilter(filter);
+      setSlashIndex(0);
+      setSlashOpen(true);
+    } else {
+      setSlashOpen(false);
+    }
+  }, []);
+
+  const filteredCommands = useMemo(
+    () =>
+      SLASH_COMMANDS.filter((c) =>
+        c.command.slice(1).startsWith(slashFilter),
+      ),
+    [slashFilter],
+  );
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (slashOpen && filteredCommands.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashIndex((i) => (i + 1) % filteredCommands.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashIndex((i) => (i - 1 + filteredCommands.length) % filteredCommands.length);
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const cmd = filteredCommands[slashIndex];
+        if (cmd) {
+          const newVal = cmd.command + " ";
+          setInput(newVal);
+          setSlashOpen(false);
+          const el = textareaRef.current;
+          if (el) {
+            el.style.height = "auto";
+            el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+            // Move cursor to end
+            requestAnimationFrame(() => {
+              el.setSelectionRange(newVal.length, newVal.length);
+              el.focus();
+            });
+          }
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSlashOpen(false);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -760,13 +1088,88 @@ export function ChatView({
 
   // Auto-grow textarea up to ~200px.
   const onInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInput(e.target.value);
+    const val = e.target.value;
+    setInput(val);
+    checkSlash(val);
     const el = textareaRef.current;
     if (el) {
       el.style.height = "auto";
       el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
     }
   };
+
+  // Share handlers
+  const handleToggleShare = useCallback(async () => {
+    const nextPublic = !shareConv.is_public;
+    setShareLoading(true);
+    try {
+      const res = await fetch(`/api/conversations/${conversation.id}/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ make_public: nextPublic }),
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        conversation: ChatConversationSummary;
+        share_url: string | null;
+      };
+      setShareConv(data.conversation);
+      onConversationUpdated?.(data.conversation);
+    } catch {
+      // silently ignore
+    } finally {
+      setShareLoading(false);
+    }
+  }, [conversation.id, shareConv.is_public, onConversationUpdated]);
+
+  const handleExport = useCallback(() => {
+    window.open(`/api/conversations/${conversation.id}/export`, "_blank");
+  }, [conversation.id]);
+
+  // Iterate-on-image: pre-fill the prompt and attach the original image as a
+  // reference. The model's `image_edit` tool picks up the attachment URL when
+  // the message is sent. Switches the conversation to image mode if it isn't
+  // already, so the IMAGE_MODE_SYSTEM_PROMPT applies.
+  const handleIterateImage = useCallback(
+    (imageUrl: string) => {
+      // Resolve relative /generated-images/ paths to absolute so the model can
+      // fetch them — chat-tools rejects non-http(s) URLs.
+      let absoluteUrl = imageUrl;
+      if (imageUrl.startsWith("/")) {
+        if (typeof window !== "undefined") {
+          absoluteUrl = `${window.location.origin}${imageUrl}`;
+        }
+      }
+
+      const filename = imageUrl.split("/").pop() || "image.png";
+      const att: Attachment = {
+        key: `iterate-${Date.now()}`,
+        kind: "image",
+        name: filename,
+        mime: "image/png",
+        size: 0,
+        publicUrl: absoluteUrl,
+        uploading: false,
+      };
+      setAttachments((prev) =>
+        prev.length >= MAX_ATTACHMENTS ? prev : [...prev, att],
+      );
+      setInput("Iterate on this image: ");
+      if (mode !== "image") {
+        void handleSelectMode("image");
+      }
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.style.height = "auto";
+          el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+          el.setSelectionRange(el.value.length, el.value.length);
+        }
+      });
+    },
+    [handleSelectMode, mode],
+  );
 
   const lastAssistantId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -775,11 +1178,14 @@ export function ChatView({
     return null;
   }, [messages]);
 
+  const anyUploading = attachments.some((a) => a.uploading);
+  const canSend = !!input.trim() && !isStreaming && !anyUploading;
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
       <header className="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-4 py-3 sm:px-6 lg:px-8">
-        <div className="mx-auto flex w-full max-w-2xl items-center gap-3 lg:max-w-3xl xl:max-w-4xl">
+        <div className="mx-auto flex w-full max-w-2xl items-center gap-3 lg:max-w-3xl xl:max-w-5xl 2xl:max-w-6xl">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2.5">
               <EditableTitle
@@ -796,12 +1202,113 @@ export function ChatView({
               {messages.length} messages · updated {formatRelative(conversation.updated_at)}
             </p>
           </div>
+          {/* Share + Export buttons */}
+          <div className="relative flex shrink-0 items-center gap-1">
+            {/* Export */}
+            <button
+              type="button"
+              onClick={handleExport}
+              title="Export as Markdown"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.02] text-white/40 transition-colors hover:border-white/[0.14] hover:bg-white/[0.05] hover:text-white/70 sm:h-7 sm:w-7"
+            >
+              <Download className="h-4 w-4 sm:h-3.5 sm:w-3.5" aria-hidden />
+            </button>
+            {/* Share */}
+            <button
+              type="button"
+              onClick={() => setShareOpen((v) => !v)}
+              title="Share conversation"
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-md border transition-colors sm:h-7 sm:w-7 ${
+                shareOpen
+                  ? "border-[#3ecf8e]/30 bg-[#3ecf8e]/[0.08] text-[#3ecf8e]/80"
+                  : "border-white/[0.08] bg-white/[0.02] text-white/40 hover:border-white/[0.14] hover:bg-white/[0.05] hover:text-white/70"
+              }`}
+            >
+              <Share2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" aria-hidden />
+            </button>
+            {shareOpen && (
+              <>
+                <button
+                  type="button"
+                  className="fixed inset-0 z-10"
+                  aria-label="Close share panel"
+                  onClick={() => setShareOpen(false)}
+                />
+                <div className="absolute right-0 top-full z-20 mt-2 w-[calc(100vw-2rem)] max-w-[280px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30">
+                  <div className="border-b border-white/[0.06] px-3 py-2.5">
+                    <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-white/40">
+                      Share
+                    </span>
+                  </div>
+                  <div className="p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[13px] font-medium text-white/80">Public link</p>
+                        <p className="mt-0.5 text-[11px] text-white/35">
+                          Anyone with the link can view this conversation.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleToggleShare}
+                        disabled={shareLoading}
+                        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 transition-colors focus:outline-none disabled:opacity-50 ${
+                          shareConv.is_public
+                            ? "border-[#3ecf8e] bg-[#3ecf8e]"
+                            : "border-white/20 bg-white/[0.06]"
+                        }`}
+                        aria-label={shareConv.is_public ? "Unpublish" : "Publish"}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                            shareConv.is_public ? "translate-x-4" : "translate-x-0"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    {shareConv.is_public && shareConv.share_token ? (
+                      <div className="mt-3">
+                        <div className="flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5">
+                          <Link2 className="h-3 w-3 shrink-0 text-white/30" aria-hidden />
+                          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-white/55">
+                            {typeof window !== "undefined"
+                              ? `${window.location.origin}/chat/${shareConv.share_token}`
+                              : `/chat/${shareConv.share_token}`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const url =
+                                typeof window !== "undefined"
+                                  ? `${window.location.origin}/chat/${shareConv.share_token}`
+                                  : `/chat/${shareConv.share_token}`;
+                              if (await copyToClipboard(url)) {
+                                setShareCopied(true);
+                                setTimeout(() => setShareCopied(false), 1500);
+                              }
+                            }}
+                            className="shrink-0 text-[10px] text-white/40 transition-colors hover:text-white/70"
+                          >
+                            {shareCopied ? (
+                              <Check className="h-3 w-3 text-[#3ecf8e]" aria-hidden />
+                            ) : (
+                              <Copy className="h-3 w-3" aria-hidden />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-2xl flex-col px-4 py-6 sm:px-6 lg:max-w-3xl lg:px-8 xl:max-w-4xl">
+        <div className="mx-auto flex w-full max-w-2xl flex-col px-4 py-6 sm:px-6 lg:max-w-3xl lg:px-8 xl:max-w-5xl 2xl:max-w-6xl">
           {!loaded && messages.length === 0 ? (
             <div className="flex items-center justify-center py-12 text-[12px] text-white/35">
               <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -810,9 +1317,10 @@ export function ChatView({
           ) : null}
 
           {loaded && messages.length === 0 ? (
-            <div className="py-12 text-center text-[13px] text-white/40">
-              Send a message to start this conversation.
-            </div>
+            <ChatWelcomePanel onPrompt={(p) => {
+              setInput(p);
+              textareaRef.current?.focus();
+            }} />
           ) : null}
 
           {messages.map((m, i) => {
@@ -840,6 +1348,11 @@ export function ChatView({
                     ? (next) => handleEditUser(m.id, next)
                     : undefined
                 }
+                onIterateImage={
+                  m.role === "assistant" && !isStreaming
+                    ? handleIterateImage
+                    : undefined
+                }
               />
             );
           })}
@@ -864,44 +1377,178 @@ export function ChatView({
 
       {/* Input */}
       <div className="shrink-0 border-t border-white/[0.06] px-4 py-4 sm:px-6 lg:px-8">
-        <div className="mx-auto w-full max-w-2xl lg:max-w-3xl xl:max-w-4xl">
-          <div className="relative rounded-xl border border-white/[0.08] bg-[#171717] transition-colors focus-within:border-white/[0.16]">
+        <div className="mx-auto w-full max-w-2xl lg:max-w-3xl xl:max-w-5xl 2xl:max-w-6xl">
+          {/* Slash command autocomplete */}
+          {slashOpen && filteredCommands.length > 0 && (
+            <div className="mb-1.5 overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+              <div className="border-b border-white/[0.05] px-3 py-1.5">
+                <span className="text-[10px] uppercase tracking-[0.12em] text-white/30">Commands</span>
+              </div>
+              <ul>
+                {filteredCommands.map((cmd, idx) => (
+                  <li key={cmd.command}>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        const newVal = cmd.command + " ";
+                        setInput(newVal);
+                        setSlashOpen(false);
+                        requestAnimationFrame(() => {
+                          const el = textareaRef.current;
+                          if (el) {
+                            el.style.height = "auto";
+                            el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+                            el.setSelectionRange(newVal.length, newVal.length);
+                            el.focus();
+                          }
+                        });
+                      }}
+                      className={`flex w-full items-start gap-3 px-3 py-2 text-left transition-colors ${
+                        idx === slashIndex
+                          ? "bg-white/[0.05] text-white"
+                          : "text-white/70 hover:bg-white/[0.03]"
+                      }`}
+                    >
+                      <span className="mt-0.5 shrink-0 font-mono text-[12px] text-[#3ecf8e]/80">
+                        {cmd.command}
+                      </span>
+                      <span className="text-[11px] text-white/40">{cmd.description}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Attachment chips */}
+          {attachments.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-2">
+              {attachments.map((att) => (
+                <div
+                  key={att.key}
+                  className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] ${
+                    att.error
+                      ? "border-red-500/30 bg-red-500/[0.06] text-red-300"
+                      : "border-white/[0.08] bg-white/[0.04] text-white/70"
+                  }`}
+                >
+                  {att.uploading ? (
+                    <Loader2 className="h-3 w-3 animate-spin text-white/40" aria-hidden />
+                  ) : att.kind === "image" && att.publicUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={att.publicUrl}
+                      alt=""
+                      className="h-4 w-4 rounded object-cover"
+                    />
+                  ) : (
+                    <Paperclip className="h-3 w-3 text-white/40" aria-hidden />
+                  )}
+                  <span className="max-w-[120px] truncate">
+                    {att.error ? att.error : att.name}
+                  </span>
+                  {!att.uploading && (
+                    <span className="text-white/30">{formatBytes(att.size)}</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setAttachments((prev) => prev.filter((a) => a.key !== att.key))
+                    }
+                    aria-label={`Remove ${att.name}`}
+                    className="ml-0.5 text-white/30 transition-colors hover:text-white/70"
+                  >
+                    <X className="h-3 w-3" aria-hidden />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPTED_MIME.join(",")}
+            multiple
+            className="sr-only"
+            onChange={(e) => {
+              if (e.target.files) handleFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+
+          {/* Textarea container with drag-and-drop */}
+          <div
+            className={`relative rounded-xl border bg-[#171717] transition-colors focus-within:border-white/[0.16] ${
+              dragOver
+                ? "border-[#3ecf8e]/50 bg-[#3ecf8e]/[0.03]"
+                : "border-white/[0.08]"
+            }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            {dragOver && (
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-[#3ecf8e]/50">
+                <span className="text-[13px] text-[#3ecf8e]/70">Drop files here</span>
+              </div>
+            )}
             <textarea
               ref={textareaRef}
               rows={1}
               value={input}
               onChange={onInputChange}
               onKeyDown={onKeyDown}
+              onPaste={handlePaste}
               disabled={isStreaming}
               placeholder="Message Chat AI…"
               className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-14 text-[14px] leading-relaxed text-white placeholder:text-white/25 focus:outline-none disabled:opacity-60"
               style={{ minHeight: "56px", maxHeight: "200px" }}
             />
             <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-3 pb-3">
-              <ModelSelector model={model} onSelect={handleSelectModel} />
+              <div className="flex items-center gap-2">
+                <ModelSelector model={model} onSelect={handleSelectModel} />
+                <ModeSelector mode={mode} onSelect={handleSelectMode} />
+                {/* Paperclip / file picker */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isStreaming || attachments.length >= MAX_ATTACHMENTS}
+                  title="Attach file"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.02] text-white/40 transition-colors hover:border-white/[0.14] hover:bg-white/[0.04] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40 sm:h-6 sm:w-6"
+                >
+                  <Paperclip className="h-3.5 w-3.5 sm:h-3 sm:w-3" aria-hidden />
+                </button>
+              </div>
               {isStreaming ? (
                 <button
                   type="button"
                   onClick={handleStop}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.04] text-white/80 transition-colors hover:border-white/[0.2] hover:bg-white/[0.08]"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.12] bg-white/[0.04] text-white/80 transition-colors hover:border-white/[0.2] hover:bg-white/[0.08] sm:h-8 sm:w-8"
                   aria-label="Stop generating"
                 >
-                  <Square className="h-3 w-3 fill-current" aria-hidden />
+                  <Square className="h-3.5 w-3.5 fill-current sm:h-3 sm:w-3" aria-hidden />
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={handleSend}
-                  disabled={!input.trim()}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[#3ecf8e] text-[#171717] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-white/30"
+                  disabled={!canSend}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[#3ecf8e] text-[#171717] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-white/30 sm:h-8 sm:w-8"
                   aria-label="Send message"
                 >
-                  <ArrowUp className="h-3.5 w-3.5" aria-hidden />
+                  {anyUploading ? (
+                    <Loader2 className="h-4 w-4 animate-spin sm:h-3.5 sm:w-3.5" aria-hidden />
+                  ) : (
+                    <ArrowUp className="h-4 w-4 sm:h-3.5 sm:w-3.5" aria-hidden />
+                  )}
                 </button>
               )}
             </div>
           </div>
-          <p className="mt-2 text-center text-[11px] text-white/20">
+          <p className="mt-2 hidden text-center text-[11px] text-white/20 sm:block">
             <kbd className="rounded border border-white/[0.08] px-1 py-0.5 font-mono text-[10px]">
               Enter
             </kbd>{" "}
@@ -928,6 +1575,102 @@ function formatRelative(iso: string): string {
   if (hr < 24) return `${hr}h ago`;
   const day = Math.floor(hr / 24);
   return `${day}d ago`;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Chat welcome / empty state (shown when messages.length === 0 && loaded)   */
+/* -------------------------------------------------------------------------- */
+
+const TOOL_GROUPS = [
+  {
+    label: "Web & general",
+    icon: Globe,
+    tools: ["web_search", "web_fetch", "get_current_time"],
+    examples: [
+      "What's the latest Next.js version?",
+      "What time is it in Jakarta?",
+    ],
+  },
+  {
+    label: "VPS",
+    icon: Server,
+    tools: [
+      "vps_list",
+      "vps_describe",
+      "vps_action",
+      "vps_firewall_list",
+      "vps_firewall_add",
+      "vps_firewall_remove",
+      "vps_ssh_keys_list",
+      "vps_ssh_bind",
+      "vps_ssh_unbind",
+      "ssh_run",
+    ],
+    examples: ["List my VPS instances"],
+  },
+  {
+    label: "Media",
+    icon: ImagePlus,
+    tools: ["image_generate"],
+    examples: ["Generate a logo of a green panther sitting on a server rack"],
+  },
+] as const;
+
+function ChatWelcomePanel({ onPrompt }: { onPrompt: (p: string) => void }) {
+  return (
+    <div className="py-8 sm:py-12">
+      <div className="mb-6 text-center">
+        <h2 className="text-[18px] font-medium tracking-[-0.01em] text-white">
+          What can I ask?
+        </h2>
+        <p className="mt-1.5 text-[13px] text-white/45">
+          Chat AI can use these tools to help you.
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {TOOL_GROUPS.map((group) => {
+          const Icon = group.icon;
+          return (
+            <div
+              key={group.label}
+              className="rounded-lg border border-white/[0.07] bg-[#171717] p-4"
+            >
+              <div className="mb-3 flex items-center gap-2">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.04] text-[#3ecf8e]/70">
+                  <Icon className="h-3.5 w-3.5" aria-hidden />
+                </span>
+                <span className="text-[12px] font-medium text-white/70">
+                  {group.label}
+                </span>
+              </div>
+              <div className="mb-3 flex flex-wrap gap-1">
+                {group.tools.map((t) => (
+                  <span
+                    key={t}
+                    className="rounded border border-white/[0.06] bg-white/[0.03] px-1.5 py-0.5 font-mono text-[10px] text-white/35"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {group.examples.map((ex) => (
+                  <button
+                    key={ex}
+                    type="button"
+                    onClick={() => onPrompt(ex)}
+                    className="rounded-md border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5 text-left text-[12px] text-white/55 transition-colors hover:border-[#3ecf8e]/20 hover:bg-[#3ecf8e]/[0.04] hover:text-white/80"
+                  >
+                    {ex}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 export function ChatEmptyState({
@@ -968,18 +1711,98 @@ export function ChatEmptyState({
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Message actions menu (⋯)                                                  */
+/* -------------------------------------------------------------------------- */
+
+function MessageActionsMenu({
+  onCopy,
+  copied,
+  onEdit,
+  onRegenerate,
+}: {
+  onCopy: () => void;
+  copied: boolean;
+  onEdit?: () => void;
+  onRegenerate?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Message actions"
+        className="inline-flex h-7 w-7 items-center justify-center rounded border border-white/[0.06] bg-white/[0.02] text-white/40 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white/75 sm:h-6 sm:w-6"
+      >
+        <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
+      </button>
+
+      {open && (
+        <div className="absolute bottom-full right-0 z-30 mb-1.5 min-w-[148px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
+          <button
+            type="button"
+            onClick={() => { setOpen(false); onCopy(); }}
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-white/75 transition-colors hover:bg-white/[0.05] hover:text-white"
+          >
+            {copied ? (
+              <Check className="h-3 w-3 shrink-0 text-[#3ecf8e]" aria-hidden />
+            ) : (
+              <Copy className="h-3 w-3 shrink-0 text-white/40" aria-hidden />
+            )}
+            {copied ? "Copied!" : "Copy"}
+          </button>
+          {onEdit && (
+            <button
+              type="button"
+              onClick={() => { setOpen(false); onEdit(); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-white/75 transition-colors hover:bg-white/[0.05] hover:text-white"
+            >
+              <Pencil className="h-3 w-3 shrink-0 text-white/40" aria-hidden />
+              Edit
+            </button>
+          )}
+          {onRegenerate && (
+            <button
+              type="button"
+              onClick={() => { setOpen(false); onRegenerate(); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-white/75 transition-colors hover:bg-white/[0.05] hover:text-white"
+            >
+              <RefreshCw className="h-3 w-3 shrink-0 text-white/40" aria-hidden />
+              Regenerate
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ChatBubble({
   message,
   prevRole,
   streaming,
   onRegenerate,
   onEdit,
+  onIterateImage,
 }: {
   message: ChatMessage;
   prevRole: ChatMessage["role"] | null;
   streaming?: boolean;
   onRegenerate?: () => void;
   onEdit?: (nextContent: string) => void;
+  onIterateImage?: (url: string) => void;
 }) {
   const isUser = message.role === "user";
   const isFirstInGroup = prevRole !== message.role;
@@ -1076,41 +1899,12 @@ function ChatBubble({
           <div className="whitespace-pre-wrap rounded-2xl rounded-br-md border border-[#3ecf8e]/12 bg-[#3ecf8e]/[0.07] px-4 py-3 text-[14px] leading-relaxed text-white/90">
             {message.content}
           </div>
-          <div className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-            <button
-              type="button"
-              onClick={handleCopy}
-              aria-label="Copy message"
-              title="Copy message"
-              className="inline-flex items-center gap-1 rounded border border-white/[0.06] bg-white/[0.02] px-1.5 py-0.5 text-[10px] text-white/40 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white/75"
-            >
-              {copied ? (
-                <>
-                  <Check className="h-2.5 w-2.5" aria-hidden />
-                  Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="h-2.5 w-2.5" aria-hidden />
-                  Copy
-                </>
-              )}
-            </button>
-            {onEdit ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setDraft(message.content);
-                  setEditing(true);
-                }}
-                aria-label="Edit message"
-                title="Edit and resend"
-                className="inline-flex items-center gap-1 rounded border border-white/[0.06] bg-white/[0.02] px-1.5 py-0.5 text-[10px] text-white/40 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white/75"
-              >
-                <Pencil className="h-2.5 w-2.5" aria-hidden />
-                Edit
-              </button>
-            ) : null}
+          <div className="mt-1.5 flex items-center justify-end">
+            <MessageActionsMenu
+              onCopy={handleCopy}
+              copied={copied}
+              onEdit={onEdit ? () => { setDraft(message.content); setEditing(true); } : undefined}
+            />
           </div>
         </div>
       </div>
@@ -1129,49 +1923,94 @@ function ChatBubble({
         <span className="inline-flex h-6 w-6 shrink-0" aria-hidden />
       )}
       <div className="min-w-0 flex-1 text-[14px] leading-relaxed text-white/80">
-        <AssistantMarkdown content={message.content} />
-        {streaming && message.content === "" ? (
+        {/* Tool call cards — rendered above the markdown body */}
+        {message.toolEvents && message.toolEvents.length > 0 && (
+          <div className="mb-2 flex flex-col gap-1.5">
+            {message.toolEvents.map((evt) => (
+              <ToolCard key={evt.call_id} event={evt} />
+            ))}
+          </div>
+        )}
+        <AssistantMarkdown
+          content={message.content}
+          streaming={streaming}
+          onIterateImage={message.role === "assistant" ? onIterateImage : undefined}
+        />
+        {streaming && message.content === "" && (!message.toolEvents || message.toolEvents.length === 0) ? (
           <span className="inline-flex items-center gap-1.5 text-white/35">
             <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
             Thinking…
           </span>
         ) : null}
         {showActions ? (
-          <div className="mt-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-            <button
-              type="button"
-              onClick={handleCopy}
-              aria-label="Copy reply"
-              title="Copy reply"
-              className="inline-flex items-center gap-1 rounded border border-white/[0.06] bg-white/[0.02] px-1.5 py-0.5 text-[10px] text-white/40 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white/75"
-            >
-              {copied ? (
-                <>
-                  <Check className="h-2.5 w-2.5" aria-hidden />
-                  Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="h-2.5 w-2.5" aria-hidden />
-                  Copy
-                </>
-              )}
-            </button>
-            {onRegenerate ? (
-              <button
-                type="button"
-                onClick={onRegenerate}
-                aria-label="Regenerate reply"
-                title="Regenerate reply"
-                className="inline-flex items-center gap-1 rounded border border-white/[0.06] bg-white/[0.02] px-1.5 py-0.5 text-[10px] text-white/40 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white/75"
-              >
-                <RefreshCw className="h-2.5 w-2.5" aria-hidden />
-                Regenerate
-              </button>
-            ) : null}
+          <div className="mt-1.5 flex items-center">
+            <MessageActionsMenu
+              onCopy={handleCopy}
+              copied={copied}
+              onRegenerate={onRegenerate}
+            />
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Tool call inspector card                                                   */
+/* -------------------------------------------------------------------------- */
+
+function ToolCard({ event }: { event: ToolEvent }) {
+  const [expanded, setExpanded] = useState(false);
+  const isDone = event.status === "done";
+
+  return (
+    <div className="rounded-md border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[12px]">
+      <div className="flex items-center gap-2">
+        {isDone ? (
+          <Check className="h-3 w-3 shrink-0 text-[#3ecf8e]" aria-hidden />
+        ) : (
+          <Loader2 className="h-3 w-3 shrink-0 animate-spin text-white/40" aria-hidden />
+        )}
+        <span className="flex-1 font-mono text-white/60">
+          {isDone ? "" : "Running "}
+          <span className="text-white/80">{event.name}</span>
+          {isDone ? "" : "…"}
+        </span>
+        {isDone && (event.args !== undefined || event.result !== undefined) && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="flex items-center gap-1 text-[10px] text-white/35 transition-colors hover:text-white/65"
+          >
+            {expanded ? "Hide" : "Show details"}
+            <ChevronDown
+              className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`}
+              aria-hidden
+            />
+          </button>
+        )}
+      </div>
+      {expanded && (
+        <div className="mt-2 space-y-2">
+          {event.args !== undefined && (
+            <div>
+              <p className="mb-1 text-[10px] uppercase tracking-[0.1em] text-white/30">Args</p>
+              <pre className="overflow-x-auto rounded border border-white/[0.06] bg-[#0f0f0f] p-2 font-mono text-[11px] leading-relaxed text-white/70">
+                {JSON.stringify(event.args, null, 2)}
+              </pre>
+            </div>
+          )}
+          {event.result !== undefined && (
+            <div>
+              <p className="mb-1 text-[10px] uppercase tracking-[0.1em] text-white/30">Result</p>
+              <pre className="overflow-x-auto rounded border border-white/[0.06] bg-[#0f0f0f] p-2 font-mono text-[11px] leading-relaxed text-white/70">
+                {JSON.stringify(event.result, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1272,14 +2111,14 @@ function ModelSelector({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`group flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[11px] tracking-tight transition-colors ${
+        className={`group flex items-center gap-1.5 rounded-md border px-2 py-1.5 font-mono text-[11px] tracking-tight transition-colors sm:py-1 ${
           open
             ? "border-white/[0.14] bg-white/[0.05] text-white/80"
             : "border-white/[0.08] bg-white/[0.02] text-white/55 hover:border-white/[0.14] hover:bg-white/[0.04] hover:text-white/80"
         }`}
       >
         <Sparkles className="h-3 w-3 text-[#3ecf8e]/70" aria-hidden />
-        <span className="max-w-[140px] truncate">{buttonLabel}</span>
+        <span className="max-w-[120px] truncate sm:max-w-[140px]">{buttonLabel}</span>
         <ChevronUp
           className={`h-3 w-3 text-white/30 transition-transform group-hover:text-white/55 ${
             open ? "rotate-180" : ""
@@ -1299,7 +2138,7 @@ function ModelSelector({
           />
 
           {/* Dropdown panel — opens upward */}
-          <div className="absolute bottom-full left-0 z-20 mb-2 w-[260px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30 backdrop-blur-sm">
+          <div className="absolute bottom-full left-0 z-20 mb-2 w-[calc(100vw-2rem)] max-w-[260px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30 backdrop-blur-sm">
             <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
               <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">
                 Choose model
@@ -1382,126 +2221,309 @@ function ModelSelector({
   );
 }
 
-function AssistantMarkdown({ content }: { content: string }) {
+/* -------------------------------------------------------------------------- */
+/*  Mode selector dropdown                                                    */
+/* -------------------------------------------------------------------------- */
+
+function ModeSelector({
+  mode,
+  onSelect,
+}: {
+  mode: ChatMode;
+  onSelect: (slug: ChatMode) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = CHAT_MODES.find((m) => m.slug === mode) ?? CHAT_MODES[0];
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`group flex items-center gap-1.5 rounded-md border px-2 py-1.5 font-mono text-[11px] tracking-tight transition-colors sm:py-1 ${
+          open
+            ? "border-white/[0.14] bg-white/[0.05] text-white/80"
+            : "border-white/[0.08] bg-white/[0.02] text-white/55 hover:border-white/[0.14] hover:bg-white/[0.04] hover:text-white/80"
+        }`}
+        aria-label="Choose conversation mode"
+      >
+        <ImagePlus
+          className={`h-3 w-3 ${
+            mode === "image" ? "text-[#3ecf8e]/80" : "text-white/40"
+          }`}
+          aria-hidden
+        />
+        <span className="max-w-[80px] truncate sm:max-w-[120px]">{current.name}</span>
+        <ChevronUp
+          className={`h-3 w-3 text-white/30 transition-transform group-hover:text-white/55 ${
+            open ? "rotate-180" : ""
+          }`}
+          aria-hidden
+        />
+      </button>
+
+      {open && (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-10"
+            aria-label="Close mode picker"
+            onClick={() => setOpen(false)}
+          />
+
+          <div className="absolute bottom-full left-0 z-20 mb-2 w-[calc(100vw-2rem)] max-w-[240px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30 backdrop-blur-sm">
+            <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
+              <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">
+                Mode
+              </span>
+              <span className="text-[10px] text-white/25">{CHAT_MODES.length}</span>
+            </div>
+            <ul className="p-1.5">
+              {CHAT_MODES.map((m) => {
+                const selected = mode === m.slug;
+                return (
+                  <li key={m.slug}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSelect(m.slug);
+                        setOpen(false);
+                      }}
+                      className={`group flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
+                        selected
+                          ? "bg-[#3ecf8e]/[0.08] text-white"
+                          : "text-white/70 hover:bg-white/[0.04] hover:text-white"
+                      }`}
+                    >
+                      <span
+                        aria-hidden
+                        className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border ${
+                          selected
+                            ? "border-[#3ecf8e]/35 bg-[#3ecf8e]/[0.1] text-[#3ecf8e]"
+                            : "border-white/[0.08] bg-white/[0.03] text-white/40 group-hover:border-white/[0.14] group-hover:text-white/60"
+                        }`}
+                      >
+                        {m.slug === "image" ? (
+                          <ImagePlus className="h-3 w-3" />
+                        ) : (
+                          <MessageSquare className="h-3 w-3" />
+                        )}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-medium leading-tight">
+                          {m.name}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[10px] text-white/35">
+                          {m.description}
+                        </span>
+                      </div>
+                      {selected && (
+                        <Check
+                          className="h-3.5 w-3.5 shrink-0 text-[#3ecf8e]"
+                          aria-hidden
+                        />
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function AssistantMarkdown({
+  content,
+  streaming,
+  onIterateImage,
+}: {
+  content: string;
+  streaming?: boolean;
+  onIterateImage?: (url: string) => void;
+}) {
+  // While streaming: keep raw content updating immediately (shown as pre),
+  // and debounce the parsed markdown render by 80ms. Switch to markdown-only
+  // once stable (streaming ended or content hasn't changed for 80ms).
+  const [debouncedContent, setDebouncedContent] = useState(content);
+  const [isStable, setIsStable] = useState(!streaming);
+
+  useEffect(() => {
+    if (!streaming) {
+      setDebouncedContent(content);
+      setIsStable(true);
+      return;
+    }
+    setIsStable(false);
+    const id = setTimeout(() => {
+      setDebouncedContent(content);
+      setIsStable(true);
+    }, 80);
+    return () => clearTimeout(id);
+  }, [content, streaming]);
+
+  // Fix dangling unclosed code fence so ReactMarkdown doesn't swallow the rest
+  function closeFences(src: string): string {
+    const count = (src.match(/```/g) ?? []).length;
+    return count % 2 !== 0 ? src + "\n```" : src;
+  }
+
+  const renderContent = isStable ? debouncedContent : closeFences(debouncedContent);
+
   return (
     <div className="markdown">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          // react-markdown v9 dropped the `inline` prop. Fenced code blocks
-          // always carry a `language-*` class (set by the parser) and live
-          // inside a `<pre>`; inline code has no class. We use the class as
-          // the discriminator and override `pre` below to unwrap the wrapper.
-          code({ className, children, ...props }) {
-            const match = /language-(\w+)/.exec(className || "");
-            if (!match) {
+      {streaming && !isStable && content.length > 0 ? (
+        // Show raw text while debounce is pending to avoid flicker
+        <pre className="whitespace-pre-wrap font-sans text-[14px] leading-relaxed text-white/80">
+          {content}
+        </pre>
+      ) : (
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            // react-markdown v9 dropped the `inline` prop. Fenced code blocks
+            // always carry a `language-*` class (set by the parser) and live
+            // inside a `<pre>`; inline code has no class. We use the class as
+            // the discriminator and override `pre` below to unwrap the wrapper.
+            code({ className, children, ...props }) {
+              const match = /language-(\w+)/.exec(className || "");
+              if (!match) {
+                return (
+                  <code
+                    className="mx-0.5 rounded border border-white/[0.08] bg-white/[0.05] px-1.5 py-0.5 font-mono text-[12px] text-[#3ecf8e]/75"
+                    {...props}
+                  >
+                    {children}
+                  </code>
+                );
+              }
+              const lang = match[1] ?? null;
+              const code = String(children).replace(/\n$/, "");
+              return <CodeBubble lang={lang} code={code} />;
+            },
+            pre({ children }) {
+              return <>{children}</>;
+            },
+            a({ children, href, ...props }) {
               return (
-                <code
-                  className="mx-0.5 rounded border border-white/[0.08] bg-white/[0.05] px-1.5 py-0.5 font-mono text-[12px] text-[#3ecf8e]/75"
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-[#3ecf8e] underline decoration-[#3ecf8e]/40 underline-offset-2 hover:decoration-[#3ecf8e]"
                   {...props}
                 >
                   {children}
-                </code>
+                </a>
               );
-            }
-            const lang = match[1] ?? null;
-            const code = String(children).replace(/\n$/, "");
-            return <CodeBubble lang={lang} code={code} />;
-          },
-          pre({ children }) {
-            return <>{children}</>;
-          },
-          a({ children, href, ...props }) {
-            return (
-              <a
-                href={href}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="text-[#3ecf8e] underline decoration-[#3ecf8e]/40 underline-offset-2 hover:decoration-[#3ecf8e]"
-                {...props}
-              >
-                {children}
-              </a>
-            );
-          },
-          img({ src, alt }) {
-            return (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={typeof src === "string" ? src : undefined}
-                alt={alt ?? ""}
-                loading="lazy"
-                className="my-3 max-w-full h-auto rounded-lg border border-white/[0.08]"
-              />
-            );
-          },
-          h1({ children }) {
-            return <h1 className="mt-4 mb-2 text-[18px] font-medium text-white">{children}</h1>;
-          },
-          h2({ children }) {
-            return <h2 className="mt-4 mb-2 text-[16px] font-medium text-white">{children}</h2>;
-          },
-          h3({ children }) {
-            return <h3 className="mt-3 mb-1.5 text-[14px] font-medium text-white">{children}</h3>;
-          },
-          p({ children }) {
-            return <p className="my-2 leading-relaxed">{children}</p>;
-          },
-          ul({ children }) {
-            return <ul className="my-2 ml-5 list-disc space-y-1 marker:text-white/30">{children}</ul>;
-          },
-          ol({ children }) {
-            return <ol className="my-2 ml-5 list-decimal space-y-1 marker:text-white/30">{children}</ol>;
-          },
-          li({ children }) {
-            return <li className="leading-relaxed">{children}</li>;
-          },
-          blockquote({ children }) {
-            return (
-              <blockquote className="my-2 border-l-2 border-white/15 pl-3 text-white/60">
-                {children}
-              </blockquote>
-            );
-          },
-          hr() {
-            return <hr className="my-4 border-white/[0.06]" />;
-          },
-          strong({ children }) {
-            return <strong className="font-semibold text-white">{children}</strong>;
-          },
-          em({ children }) {
-            return <em className="italic">{children}</em>;
-          },
-          table({ children }) {
-            return (
-              <div className="-mx-1 my-3 overflow-x-auto rounded-md border border-white/[0.08] sm:mx-0">
-                <table className="w-full min-w-max border-collapse text-[12px] sm:text-[13px]">
+            },
+            img({ src, alt }) {
+              const url = typeof src === "string" ? src : undefined;
+              const isGenerated = !!url && /\/generated-images\//.test(url);
+              return (
+                <span className="my-3 inline-block max-w-full">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    alt={alt ?? ""}
+                    loading="lazy"
+                    className="block max-w-full h-auto rounded-lg border border-white/[0.08]"
+                  />
+                  {isGenerated && onIterateImage && url ? (
+                    <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onIterateImage(url)}
+                        title="Iterate on this image"
+                        className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.02] px-2 py-0.5 text-[11px] text-white/55 transition-colors hover:border-[#3ecf8e]/30 hover:bg-[#3ecf8e]/[0.06] hover:text-[#3ecf8e]"
+                      >
+                        <Sparkles className="h-3 w-3" aria-hidden />
+                        Iterate
+                      </button>
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="inline-flex items-center gap-1 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-0.5 text-[11px] text-white/40 transition-colors hover:border-white/[0.12] hover:text-white/70"
+                      >
+                        <ExternalLink className="h-3 w-3" aria-hidden />
+                        Open
+                      </a>
+                    </span>
+                  ) : null}
+                </span>
+              );
+            },
+            h1({ children }) {
+              return <h1 className="mt-4 mb-2 text-[18px] font-medium text-white">{children}</h1>;
+            },
+            h2({ children }) {
+              return <h2 className="mt-4 mb-2 text-[16px] font-medium text-white">{children}</h2>;
+            },
+            h3({ children }) {
+              return <h3 className="mt-3 mb-1.5 text-[14px] font-medium text-white">{children}</h3>;
+            },
+            p({ children }) {
+              return <p className="my-2 leading-relaxed">{children}</p>;
+            },
+            ul({ children }) {
+              return <ul className="my-2 ml-5 list-disc space-y-1 marker:text-white/30">{children}</ul>;
+            },
+            ol({ children }) {
+              return <ol className="my-2 ml-5 list-decimal space-y-1 marker:text-white/30">{children}</ol>;
+            },
+            li({ children }) {
+              return <li className="leading-relaxed">{children}</li>;
+            },
+            blockquote({ children }) {
+              return (
+                <blockquote className="my-2 border-l-2 border-white/15 pl-3 text-white/60">
                   {children}
-                </table>
-              </div>
-            );
-          },
-          thead({ children }) {
-            return <thead className="bg-white/[0.03]">{children}</thead>;
-          },
-          th({ children }) {
-            return (
-              <th className="whitespace-nowrap border-b border-white/[0.06] px-2.5 py-1.5 text-left font-medium text-white/70 sm:px-3">
-                {children}
-              </th>
-            );
-          },
-          td({ children }) {
-            return (
-              <td className="whitespace-nowrap border-b border-white/[0.04] px-2.5 py-1.5 align-top sm:px-3">
-                {children}
-              </td>
-            );
-          },
-        }}
-      >
-        {content}
-      </ReactMarkdown>
+                </blockquote>
+              );
+            },
+            hr() {
+              return <hr className="my-4 border-white/[0.06]" />;
+            },
+            strong({ children }) {
+              return <strong className="font-semibold text-white">{children}</strong>;
+            },
+            em({ children }) {
+              return <em className="italic">{children}</em>;
+            },
+            table({ children }) {
+              return (
+                <div className="-mx-1 my-3 overflow-x-auto rounded-md border border-white/[0.08] sm:mx-0">
+                  <table className="w-full min-w-max border-collapse text-[12px] sm:text-[13px]">
+                    {children}
+                  </table>
+                </div>
+              );
+            },
+            thead({ children }) {
+              return <thead className="bg-white/[0.03]">{children}</thead>;
+            },
+            th({ children }) {
+              return (
+                <th className="whitespace-nowrap border-b border-white/[0.06] px-2.5 py-1.5 text-left font-medium text-white/70 sm:px-3">
+                  {children}
+                </th>
+              );
+            },
+            td({ children }) {
+              return (
+                <td className="whitespace-nowrap border-b border-white/[0.04] px-2.5 py-1.5 align-top sm:px-3">
+                  {children}
+                </td>
+              );
+            },
+          }}
+        >
+          {renderContent}
+        </ReactMarkdown>
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { requireUser } from "@/lib/server/auth-session";
 import { fail, ok } from "@/lib/server/api-response";
+import { recordAudit } from "@/lib/server/audit";
 import { performReinstall } from "@/lib/server/dashboard-service";
 
 export const runtime = "nodejs";
@@ -26,6 +27,16 @@ export async function POST(
       blueprintId: payload.blueprintId,
       password: payload.password,
       keyId: payload.keyId,
+    });
+    await recordAudit({
+      userId: user.id,
+      action: "vps.reinstall",
+      resourceType: "instance",
+      resourceId: id,
+      metadata: {
+        blueprint_id: payload.blueprintId,
+        used_key: Boolean(payload.keyId),
+      },
     });
     return ok({ operation });
   } catch (err) {

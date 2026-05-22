@@ -5,6 +5,8 @@ import { createClient } from "@/utils/supabase/server";
 
 export const runtime = "nodejs";
 
+const isProduction = process.env.NODE_ENV === "production";
+
 /**
  * GET /api/search?q=...&limit=20&offset=0
  *
@@ -29,7 +31,9 @@ export async function GET(request: Request) {
   });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[/api/search]", error);
+    const message = isProduction ? "Search failed" : error.message;
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 
   return NextResponse.json({ results: data ?? [] });

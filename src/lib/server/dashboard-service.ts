@@ -452,6 +452,14 @@ export async function performReinstall(input: {
     input.password,
     input.keyId,
   );
+  // Reinstall changes the SSH host key — clear the pinned fingerprint so the
+  // next connect re-pins instead of being rejected.
+  const client = await sb();
+  await client
+    .from("instance")
+    .update({ host_fingerprint_sha256: null })
+    .eq("id", input.instanceId)
+    .eq("user_id", input.userId);
   return { requestId: requestId || null };
 }
 

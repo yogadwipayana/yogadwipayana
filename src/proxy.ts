@@ -41,7 +41,13 @@ export async function proxy(request: NextRequest) {
   if (!user && isProtected) {
     const url = request.nextUrl.clone();
     url.pathname = "/sign-in";
-    url.searchParams.set("next", pathname);
+    const safePathname =
+      pathname.startsWith("/") &&
+      !pathname.startsWith("//") &&
+      !pathname.startsWith("/\\")
+        ? pathname
+        : "/dashboard";
+    url.searchParams.set("next", safePathname);
     return NextResponse.redirect(url);
   }
 

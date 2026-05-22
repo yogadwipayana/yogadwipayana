@@ -36,6 +36,8 @@ export function runChatStream(args: {
   messages: ChatMessage[];
   /** Optional frame emitted before any model output (e.g. saved user id). */
   preface?: SsePreface;
+  /** Optional AbortSignal — aborts the OpenAI stream when the client disconnects. */
+  abortSignal?: AbortSignal;
 }): Response {
   const {
     supabase,
@@ -44,6 +46,7 @@ export function runChatStream(args: {
     model,
     messages: initialMessages,
     preface,
+    abortSignal,
   } = args;
 
   const encoder = new TextEncoder();
@@ -83,24 +86,59 @@ export function runChatStream(args: {
         }
       };
 
+      /** Safely parse JSON; returns the parsed value or the raw string. */
+      const tryParseJson = (raw: string): unknown => {
+        try {
+          return JSON.parse(raw);
+        } catch {
+          return raw;
+        }
+      };
+
       try {
         if (preface) send(preface);
 
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-          const stream = await openai().chat.completions.create({
-            model,
-            temperature: 0.7,
-            stream: true,
-            tools: CHAT_TOOLS,
-            tool_choice: "auto",
-            messages,
-          });
+          // Check abort before each round
+          if (abortSignal?.aborted) {
+            await persistFinal();
+            sendDone();
+            controller.close();
+            return;
+          }
+
+          const stream = await openai().chat.completions.create(
+            {
+              model,
+              temperature: 0.7,
+              stream: true,
+              stream_options: { include_usage: true },
+              tools: CHAT_TOOLS,
+              tool_choice: "auto",
+              messages,
+            },
+            { signal: abortSignal },
+          );
 
           let roundText = "";
           const toolCalls = new Map<number, ToolCallAccumulator>();
           let finishReason: string | null = null;
 
           for await (const chunk of stream) {
+            // Check abort mid-stream
+            if (abortSignal?.aborted) break;
+
+            // Emit usage if present (typically on the final chunk)
+            if (chunk.usage) {
+              send({
+                usage: {
+                  prompt_tokens: chunk.usage.prompt_tokens,
+                  completion_tokens: chunk.usage.completion_tokens,
+                  total_tokens: chunk.usage.total_tokens,
+                },
+              });
+            }
+
             const choice = chunk.choices[0];
             if (!choice) continue;
             const delta = choice.delta;
@@ -124,6 +162,15 @@ export function runChatStream(args: {
             }
 
             if (choice.finish_reason) finishReason = choice.finish_reason;
+          }
+
+          // If aborted mid-stream, persist what we have and close
+          if (abortSignal?.aborted) {
+            finalAssistantText = roundText || finalAssistantText;
+            await persistFinal();
+            sendDone();
+            controller.close();
+            return;
           }
 
           finalAssistantText = roundText;
@@ -153,16 +200,33 @@ export function runChatStream(args: {
           });
 
           for (const call of orderedCalls) {
-            send({ tool: { name: call.name, status: "running" } });
+            send({
+              tool: {
+                name: call.name,
+                status: "running",
+                call_id: call.id,
+                args: tryParseJson(call.arguments || "{}"),
+              },
+            });
             const result = await executeTool(call.name, call.arguments, {
               userId,
+              conversationId,
+              supabase,
+              abortSignal,
             });
             messages.push({
               role: "tool",
               tool_call_id: call.id,
               content: result,
             });
-            send({ tool: { name: call.name, status: "done" } });
+            send({
+              tool: {
+                name: call.name,
+                status: "done",
+                call_id: call.id,
+                result: tryParseJson(result),
+              },
+            });
           }
 
           // Reset the round-local text. We only persist the final round's

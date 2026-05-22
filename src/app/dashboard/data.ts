@@ -334,6 +334,7 @@ export type ChatMessage = {
   role: "user" | "assistant" | "system";
   content: string;
   toolEvents?: ToolEvent[];
+  followUps?: string[];
 };
 
 export type ChatMode = "chat" | "image";

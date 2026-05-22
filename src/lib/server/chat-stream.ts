@@ -10,7 +10,7 @@ import {
 
 type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 
-const MAX_TOOL_ROUNDS = 5;
+const MAX_TOOL_ROUNDS = 50;
 
 type ToolCallAccumulator = {
   id: string;
@@ -111,6 +111,17 @@ export function runChatStream(args: {
         }
       };
 
+      /** Generate and emit follow-up suggestions — best-effort, never throws. */
+      const sendFollowUps = async () => {
+        if (abortSignal?.aborted) return;
+        try {
+          const followUps = await generateFollowUps(messages, model);
+          if (followUps.length > 0) send({ follow_ups: followUps });
+        } catch {
+          // best-effort; never fail the stream
+        }
+      };
+
       try {
         if (preface) send(preface);
 
@@ -193,6 +204,7 @@ export function runChatStream(args: {
 
           if (finishReason !== "tool_calls" || toolCalls.size === 0) {
             await persistFinal();
+            await sendFollowUps();
             sendDone();
             closeStream();
             return;
@@ -285,4 +297,37 @@ export function runChatStream(args: {
       Connection: "keep-alive",
     },
   });
+}
+
+/**
+ * Generate 4 follow-up question suggestions based on the conversation.
+ * Uses the same model but a short, constrained prompt so it resolves quickly.
+ */
+async function generateFollowUps(
+  messages: ChatMessage[],
+  model: string,
+): Promise<string[]> {
+  const completion = await openai().chat.completions.create({
+    model,
+    temperature: 0.7,
+    max_tokens: 256,
+    messages: [
+      ...messages,
+      {
+        role: "user",
+        content:
+          "Suggest 4 concise follow-up questions I might want to ask next, based on our conversation. Return ONLY a raw JSON array of strings — no markdown, no code block, no explanation. Example: [\"Question 1?\", \"Question 2?\", \"Question 3?\", \"Question 4?\"]",
+      },
+    ],
+  });
+  const raw = completion.choices[0]?.message?.content?.trim() ?? "";
+  // Strip accidental markdown fences
+  const clean = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  const parsed: unknown = JSON.parse(clean);
+  if (Array.isArray(parsed)) {
+    return (parsed as unknown[])
+      .filter((q): q is string => typeof q === "string")
+      .slice(0, 5);
+  }
+  return [];
 }

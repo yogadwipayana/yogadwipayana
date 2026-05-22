@@ -455,32 +455,34 @@ export const CHAT_TOOLS: ChatTool[] = [
 
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_TEXT_BYTES = 8_000;
-const USER_AGENT =
-  "Mozilla/5.0 (compatible; YogadwipayanaChat/1.0; +https://yogadwipayana.com)";
-
 type SearchResult = { title: string; url: string; snippet: string };
 
-async function tavilySearch(
+/**
+ * Search via the 9Router unified gateway (`POST /v1/search`).
+ * Reuses OPENAI_BASE_URL and OPENAI_API_KEY — no extra env vars needed.
+ */
+async function nineRouterSearch(
   query: string,
   maxResults: number,
-  apiKey: string,
+  provider: string,
 ): Promise<SearchResult[]> {
-  const res = await safeFetch("https://api.tavily.com/search", {
+  const baseUrl = process.env.OPENAI_BASE_URL?.replace(/\/$/, "");
+  if (!baseUrl) throw new Error("OPENAI_BASE_URL not set");
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  const res = await safeFetch(`${baseUrl}/search`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      api_key: apiKey,
-      query,
-      max_results: maxResults,
-      search_depth: "basic",
-    }),
+    headers: {
+      "Content-Type": "application/json",
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    },
+    body: JSON.stringify({ model: provider, query, max_results: maxResults }),
     timeoutMs: FETCH_TIMEOUT_MS,
   });
-  if (!res.ok) {
-    throw new Error(`Tavily HTTP ${res.status}`);
-  }
+  if (!res.ok) throw new Error(`9Router/${provider} HTTP ${res.status}`);
+
   const json = (await res.json()) as {
-    results?: Array<{ title?: string; url?: string; content?: string }>;
+    results?: Array<{ title?: string; url?: string; snippet?: string }>;
   };
   return (json.results ?? [])
     .filter((r) => r.url)
@@ -488,87 +490,69 @@ async function tavilySearch(
     .map((r) => ({
       title: r.title ?? r.url ?? "",
       url: r.url ?? "",
-      snippet: r.content ?? "",
+      snippet: r.snippet ?? "",
     }));
 }
 
-function decodeHtmlEntities(input: string): string {
-  return input
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
-}
-
-function stripTags(html: string): string {
-  return decodeHtmlEntities(html.replace(/<[^>]+>/g, "")).trim();
-}
-
-function unwrapDdgRedirect(href: string): string {
-  // DDG HTML wraps result links in /l/?uddg=<encoded-url>&...
-  try {
-    const url = new URL(href, "https://duckduckgo.com");
-    const uddg = url.searchParams.get("uddg");
-    if (uddg) return decodeURIComponent(uddg);
-    return url.toString();
-  } catch {
-    return href;
-  }
-}
-
-async function duckDuckGoSearch(
-  query: string,
-  maxResults: number,
-): Promise<SearchResult[]> {
-  const res = await safeFetch(
-    `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
-    {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept: "text/html",
-      },
-      timeoutMs: FETCH_TIMEOUT_MS,
-    },
-  );
-  if (!res.ok) {
-    throw new Error(`DuckDuckGo HTML HTTP ${res.status}`);
-  }
-  const html = await res.text();
-
-  const results: SearchResult[] = [];
-  // Each result block contains an <a class="result__a" href="..."> followed by
-  // an <a class="result__snippet">snippet</a> a few tags later.
-  const blockRe =
-    /<a[^>]*class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/g;
-  let match: RegExpExecArray | null;
-  while ((match = blockRe.exec(html)) !== null) {
-    const url = unwrapDdgRedirect(decodeHtmlEntities(match[1]));
-    if (!/^https?:\/\//i.test(url)) continue;
-    results.push({
-      title: stripTags(match[2]),
-      url,
-      snippet: stripTags(match[3]),
-    });
-    if (results.length >= maxResults) break;
-  }
-  return results;
-}
 
 async function webSearch(
   query: string,
   maxResults: number,
 ): Promise<SearchResult[]> {
-  const tavilyKey = process.env.TAVILY_API_KEY;
-  if (tavilyKey) {
-    return tavilySearch(query, maxResults, tavilyKey);
+  // 9Router chain: tavily → exa → searxng (reuses OPENAI_BASE_URL + OPENAI_API_KEY)
+  if (process.env.OPENAI_BASE_URL) {
+    for (const provider of ["tavily", "exa", "searxng"]) {
+      try {
+        return await nineRouterSearch(query, maxResults, provider);
+      } catch {
+        // try next provider
+      }
+    }
   }
-  return duckDuckGoSearch(query, maxResults);
+  throw new Error("All search providers failed");
 }
 
 type FetchResult = { url: string; title: string; text: string; truncated: boolean };
+
+/**
+ * Fetch a URL via the 9Router unified gateway (`POST /v1/web/fetch`).
+ * Provider order is based on "Best for":
+ *   jina-reader  — fastest plain markdown
+ *   firecrawl    — JS-rendered pages
+ *   exa          — fast text extraction
+ *   tavily       — bulk extract
+ */
+async function nineRouterFetch(url: string, provider: string): Promise<FetchResult> {
+  const baseUrl = process.env.OPENAI_BASE_URL?.replace(/\/$/, "");
+  if (!baseUrl) throw new Error("OPENAI_BASE_URL not set");
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  const res = await safeFetch(`${baseUrl}/web/fetch`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+    },
+    body: JSON.stringify({ model: provider, url, format: "markdown", max_characters: MAX_TEXT_BYTES }),
+    timeoutMs: FETCH_TIMEOUT_MS,
+  });
+  if (!res.ok) throw new Error(`9Router/${provider} HTTP ${res.status}`);
+
+  const json = (await res.json()) as {
+    url?: string;
+    title?: string;
+    content?: { text?: string; length?: number };
+  };
+
+  const text = json.content?.text ?? "";
+  const truncated = (json.content?.length ?? text.length) > MAX_TEXT_BYTES;
+  return {
+    url: json.url ?? url,
+    title: json.title ?? url,
+    text,
+    truncated,
+  };
+}
 
 async function webFetch(rawUrl: string): Promise<FetchResult> {
   let parsed: URL;
@@ -578,38 +562,20 @@ async function webFetch(rawUrl: string): Promise<FetchResult> {
     throw new Error("Invalid URL");
   }
 
-  const res = await safeFetch(parsed.toString(), {
-    headers: {
-      "User-Agent": USER_AGENT,
-      Accept: "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
-    },
-    timeoutMs: FETCH_TIMEOUT_MS,
-  });
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`);
+  const url = parsed.toString();
+
+  // 9Router chain ordered by Best for: jina-reader → firecrawl → exa → tavily
+  if (process.env.OPENAI_BASE_URL) {
+    for (const provider of ["jina-reader", "firecrawl", "exa", "tavily"]) {
+      try {
+        return await nineRouterFetch(url, provider);
+      } catch {
+        // try next provider
+      }
+    }
   }
 
-  const contentType = res.headers.get("content-type") ?? "";
-  const raw = await res.text();
-
-  let title = parsed.toString();
-  let text: string;
-  if (contentType.includes("html") || /^\s*</.test(raw)) {
-    const titleMatch = raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    if (titleMatch) title = stripTags(titleMatch[1]).slice(0, 200) || title;
-    text = raw
-      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
-      .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, " ");
-    text = stripTags(text).replace(/\s+/g, " ").trim();
-  } else {
-    text = raw.replace(/\s+/g, " ").trim();
-  }
-
-  const truncated = text.length > MAX_TEXT_BYTES;
-  if (truncated) text = text.slice(0, MAX_TEXT_BYTES);
-
-  return { url: parsed.toString(), title, text, truncated };
+  throw new Error("All fetch providers failed");
 }
 
 /**

@@ -23,6 +23,7 @@
 /ai
 /.kilo
 /.vscode
+/.devin
 
 # misc
 .DS_Store

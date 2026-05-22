@@ -679,6 +679,7 @@ export function ChatView({
           const parsed = JSON.parse(line) as {
             delta?: string;
             error?: string;
+            follow_ups?: unknown[];
             saved?: { role: "user" | "assistant"; id: string };
             tool?: {
               name: string;
@@ -760,6 +761,19 @@ export function ChatView({
             });
             continue;
           }
+          if (parsed.follow_ups && Array.isArray(parsed.follow_ups)) {
+            const followUps = (parsed.follow_ups as unknown[]).filter(
+              (q): q is string => typeof q === "string",
+            );
+            applyAndPublish((prev) => {
+              const next = prev.slice();
+              const last = next[next.length - 1];
+              if (last && last.id === currentAssistantId) {
+                next[next.length - 1] = { ...last, followUps };
+              }
+              return next;
+            });
+          }
           if (parsed.delta) {
             applyAndPublish((prev) => {
               const next = prev.slice();
@@ -783,13 +797,13 @@ export function ChatView({
     abortRef.current?.abort();
   }, []);
 
-  const handleSend = useCallback(async () => {
-    const trimmed = input.trim();
+  const handleSend = useCallback(async (overrideText?: string) => {
+    const trimmed = (overrideText ?? input).trim();
     if (!trimmed || isStreaming) return;
-    // Block send while any attachment is still uploading
-    if (attachments.some((a) => a.uploading)) return;
+    // Block send while any attachment is still uploading (skip for follow-ups)
+    if (!overrideText && attachments.some((a) => a.uploading)) return;
 
-    const readyAttachments = attachments.filter((a) => !a.error);
+    const readyAttachments = overrideText ? [] : attachments.filter((a) => !a.error);
 
     const userMsg: ChatMessage = {
       id: `local-user-${Date.now()}`,
@@ -806,10 +820,12 @@ export function ChatView({
     // New send always pins to bottom — the user is engaged with the latest turn.
     pinnedToBottomRef.current = true;
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
-    setInput("");
-    _draftCache.delete(conversation.id);
-    setAttachments([]);
-    setSlashOpen(false);
+    if (!overrideText) {
+      setInput("");
+      _draftCache.delete(conversation.id);
+      setAttachments([]);
+      setSlashOpen(false);
+    }
     notifyStreaming(true);
     setError(null);
 
@@ -955,6 +971,11 @@ export function ChatView({
     notifyStreaming,
     onConversationUpdated,
   ]);
+
+  const handleFollowUp = useCallback(
+    (text: string) => { handleSend(text); },
+    [handleSend],
+  );
 
   const handleRename = useCallback(
     async (nextTitle: string) => {
@@ -1517,6 +1538,9 @@ export function ChatView({
                     : undefined
                 }
                 onApproveTerminalCommand={handleApproveTerminalCommand}
+                onFollowUp={
+                  isLastAssistant && !isStreaming ? handleFollowUp : undefined
+                }
               />
             );
           })}
@@ -1721,7 +1745,7 @@ export function ChatView({
               ) : (
                 <button
                   type="button"
-                  onClick={handleSend}
+                  onClick={() => handleSend()}
                   disabled={!canSend}
                   className="inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[#3ecf8e] text-[#171717] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-white/30 sm:h-8 sm:w-8"
                   aria-label="Send message"
@@ -1902,6 +1926,94 @@ export function ChatEmptyState({
 /*  Message actions menu (⋯)                                                  */
 /* -------------------------------------------------------------------------- */
 
+/* -------------------------------------------------------------------------- */
+/*  Sources button                                                             */
+/* -------------------------------------------------------------------------- */
+
+type Source = { title: string; url: string };
+
+function extractSources(events: ToolEvent[]): Source[] {
+  const seen = new Set<string>();
+  const sources: Source[] = [];
+  for (const evt of events) {
+    if (evt.status !== "done" || !evt.result) continue;
+    if (evt.name === "web_search") {
+      const r = evt.result as { results?: Array<{ title?: string; url?: string }> };
+      for (const item of r.results ?? []) {
+        if (item.url && !seen.has(item.url)) {
+          seen.add(item.url);
+          sources.push({ title: item.title ?? item.url, url: item.url });
+        }
+      }
+    }
+    if (evt.name === "web_fetch") {
+      const r = evt.result as { url?: string; title?: string };
+      if (r.url && !seen.has(r.url)) {
+        seen.add(r.url);
+        sources.push({ title: r.title ?? r.url, url: r.url });
+      }
+    }
+  }
+  return sources;
+}
+
+function SourcesButton({ events }: { events: ToolEvent[] }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const sources = useMemo(() => extractSources(events), [events]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  if (sources.length === 0) return null;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-7 items-center gap-1.5 rounded border border-white/[0.06] bg-white/[0.02] px-2 text-[11px] text-white/45 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white/75 sm:h-6"
+      >
+        <Globe className="h-3 w-3 shrink-0" aria-hidden />
+        {sources.length} {sources.length === 1 ? "source" : "sources"}
+      </button>
+
+      {open && (
+        <div className="absolute bottom-full left-0 z-30 mb-1.5 w-72 overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
+          <p className="border-b border-white/[0.06] px-3 py-2 text-[10px] font-medium uppercase tracking-[0.1em] text-white/30">
+            {sources.length} {sources.length === 1 ? "source" : "sources"}
+          </p>
+          <ul className="max-h-64 overflow-y-auto py-1">
+            {sources.map((s, i) => (
+              <li key={i}>
+                <a
+                  href={s.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setOpen(false)}
+                  className="flex items-start gap-2.5 px-3 py-2 transition-colors hover:bg-white/[0.04]"
+                >
+                  <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-white/25" aria-hidden />
+                  <div className="min-w-0">
+                    <p className="truncate text-[12px] text-white/75">{s.title}</p>
+                    <p className="truncate text-[10px] text-white/30">{s.url}</p>
+                  </div>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MessageActionsMenu({
   onCopy,
   copied,
@@ -1991,6 +2103,7 @@ function ChatBubble({
   onEdit,
   onIterateImage,
   onApproveTerminalCommand,
+  onFollowUp,
 }: {
   message: ChatMessage;
   prevRole: ChatMessage["role"] | null;
@@ -1999,6 +2112,7 @@ function ChatBubble({
   onEdit?: (nextContent: string) => void;
   onIterateImage?: (url: string) => void;
   onApproveTerminalCommand?: ApproveTerminalCommand;
+  onFollowUp?: (text: string) => void;
 }) {
   const isUser = message.role === "user";
   const isFirstInGroup = prevRole !== message.role;
@@ -2119,16 +2233,25 @@ function ChatBubble({
         <span className="inline-flex h-6 w-6 shrink-0" aria-hidden />
       )}
       <div className="min-w-0 flex-1 text-[14px] leading-relaxed text-white/80">
-        {/* Tool call cards — rendered above the markdown body */}
+        {/* Tool call cards — individual while streaming, collapsed summary when done */}
         {message.toolEvents && message.toolEvents.length > 0 && (
-          <div className="mb-2 flex flex-col gap-1.5">
-            {message.toolEvents.map((evt) => (
-              <ToolCard
-                key={evt.call_id}
-                event={evt}
+          <div className="mb-2">
+            {streaming ? (
+              <div className="flex flex-col gap-1.5">
+                {message.toolEvents.map((evt) => (
+                  <ToolCard
+                    key={evt.call_id}
+                    event={evt}
+                    onApproveTerminalCommand={onApproveTerminalCommand}
+                  />
+                ))}
+              </div>
+            ) : (
+              <ToolCallSummary
+                events={message.toolEvents}
                 onApproveTerminalCommand={onApproveTerminalCommand}
               />
-            ))}
+            )}
           </div>
         )}
         <AssistantMarkdown
@@ -2143,7 +2266,10 @@ function ChatBubble({
           </span>
         ) : null}
         {showActions ? (
-          <div className="mt-1.5 flex items-center">
+          <div className="mt-1.5 flex items-center gap-2">
+            {message.toolEvents && message.toolEvents.length > 0 && (
+              <SourcesButton events={message.toolEvents} />
+            )}
             <MessageActionsMenu
               onCopy={handleCopy}
               copied={copied}
@@ -2151,7 +2277,80 @@ function ChatBubble({
             />
           </div>
         ) : null}
+        {!streaming && onFollowUp && message.followUps && message.followUps.length > 0 && (
+          <div className="mt-4">
+            <p className="mb-2 text-[12px] font-semibold text-white/50">Follow-ups</p>
+            <ul className="flex flex-col divide-y divide-white/[0.05]">
+              {message.followUps.map((q, i) => (
+                <li key={i}>
+                  <button
+                    type="button"
+                    onClick={() => onFollowUp(q)}
+                    className="flex w-full items-center gap-2.5 py-2 text-left text-[13px] text-[#3ecf8e]/80 transition-colors hover:text-[#3ecf8e]"
+                  >
+                    <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-60" aria-hidden />
+                    {q}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Tool call summary (Perplexity-style "Completed X steps")                  */
+/* -------------------------------------------------------------------------- */
+
+function ToolCallSummary({
+  events,
+  onApproveTerminalCommand,
+}: {
+  events: ToolEvent[];
+  onApproveTerminalCommand?: ApproveTerminalCommand;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Always expand inline for special interactive cards
+  const hasInteractive = events.some(
+    (e) => e.name === "open_terminal" || e.name === "terminal_run",
+  );
+
+  if (hasInteractive) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        {events.map((evt) => (
+          <ToolCard key={evt.call_id} event={evt} onApproveTerminalCommand={onApproveTerminalCommand} />
+        ))}
+      </div>
+    );
+  }
+
+  const count = events.length;
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex items-center gap-1.5 text-[13px] font-medium text-white/50 transition-colors hover:text-white/80"
+      >
+        <span>Completed {count} {count === 1 ? "step" : "steps"}</span>
+        <ArrowRight
+          className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-90" : ""}`}
+          aria-hidden
+        />
+      </button>
+      {expanded && (
+        <div className="mt-2 flex flex-col gap-1.5">
+          {events.map((evt) => (
+            <ToolCard key={evt.call_id} event={evt} onApproveTerminalCommand={onApproveTerminalCommand} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -229,6 +229,7 @@ export function runChatStream(args: {
               conversationId,
               supabase,
               abortSignal,
+              callId: call.id,
             });
             messages.push({
               role: "tool",

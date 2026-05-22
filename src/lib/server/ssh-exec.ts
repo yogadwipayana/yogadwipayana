@@ -42,20 +42,30 @@ export async function sshExec(input: {
     Math.max(1, maxOutputBytes),
   );
 
-  const instance = await getUserInstanceById(userId, instanceId);
-  if (!instance || !instance.ip_public) {
-    throw new Error("Instance not found or has no public IP");
-  }
-
   const credential = await getSshCredential(userId, instanceId, "decrypt");
   if (!credential) {
     throw new Error(
-      "No SSH credentials saved for this instance. Save them in the dashboard SSH terminal page first.",
+      "No SSH credentials saved for this instance. Direct the user to save them at [SSH Terminal](/dashboard/vps/terminal) — render that as a clickable Markdown link, not inline code.",
     );
   }
 
-  const host = credential.hostOverride ?? instance.ip_public;
-  const supabase = createClient(await cookies());
+  let host: string;
+  if (instanceId === "__custom__") {
+    if (!credential.hostOverride) {
+      throw new Error(
+        "Custom instance has no host address saved. Ask the user to reconnect at [SSH Terminal](/dashboard/vps/terminal) and save credentials again.",
+      );
+    }
+    host = credential.hostOverride;
+  } else {
+    const instance = await getUserInstanceById(userId, instanceId);
+    if (!instance || !instance.ip_public) {
+      throw new Error("Instance not found or has no public IP");
+    }
+    host = credential.hostOverride ?? instance.ip_public;
+  }
+
+  const supabase = instanceId !== "__custom__" ? createClient(await cookies()) : null;
 
   return new Promise<SshExecResult>((resolve, reject) => {
     const conn = new Client();
@@ -167,10 +177,9 @@ export async function sshExec(input: {
       port: credential.port,
       username: credential.username,
       readyTimeout: 10_000,
-      hostVerifier: makeHostVerifier({
-        supabase,
-        instanceId,
-        userId,
+      // Skip TOFU host-key pinning for custom instances (no instance row in DB)
+      ...(supabase && {
+        hostVerifier: makeHostVerifier({ supabase, instanceId, userId }),
       }),
     };
 

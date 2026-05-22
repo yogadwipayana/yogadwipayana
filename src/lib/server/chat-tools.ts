@@ -6,6 +6,7 @@ import {
   addFirewallRule,
   bindSshKeyToInstance,
   getInstanceDetail,
+  getUserInstanceById,
   listFirewallRules,
   listSshKeys,
   listUserInstances,
@@ -16,7 +17,9 @@ import {
 import { generateImage } from "@/lib/server/image-gen";
 import { generateAndRecord } from "@/lib/server/image-service";
 import { safeFetch, validatePublicHttpUrl } from "@/lib/server/safe-fetch";
+import { getSshCredential } from "@/lib/server/ssh-credential-service";
 import { sshExec } from "@/lib/server/ssh-exec";
+import { requestApproval } from "@/lib/server/terminal-approval-store";
 
 /**
  * Server-side tools the chat AI can call. Implementations live in this module
@@ -311,7 +314,8 @@ export const CHAT_TOOLS: ChatTool[] = [
         properties: {
           id: {
             type: "string",
-            description: "Internal instance id (the `id` field from `vps_list`).",
+            description:
+              "Internal instance id (the `id` field from `vps_list`), or `\"__custom__\"` to target the custom VPS the user has configured in the SSH terminal.",
           },
           command: {
             type: "string",
@@ -327,6 +331,55 @@ export const CHAT_TOOLS: ChatTool[] = [
           },
         },
         required: ["id", "command"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "open_terminal",
+      description:
+        "Open an interactive SSH terminal session for a VPS instance directly inside the chat. Use this when the user wants to run commands that benefit from real-time output, multi-step operations, or interactive programs (e.g. installing Docker, running a build, watching logs). After calling this, use terminal_run to propose individual commands for the user to approve and execute. Requires saved SSH credentials for the instance (user must have connected via /dashboard/vps/terminal at least once).",
+      parameters: {
+        type: "object",
+        properties: {
+          instance_id: {
+            type: "string",
+            description:
+              "Internal instance id (the `id` field from `vps_list`), or `\"__custom__\"` to open a terminal to the custom VPS the user has configured in the SSH terminal. If omitted and the user has exactly one instance, that instance is used automatically.",
+          },
+        },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "terminal_run",
+      description:
+        "Propose a shell command to run in the open interactive terminal. The user MUST approve the command before it executes — you MUST call open_terminal first. The stream pauses until the user clicks Run or Deny. Use this for each step of a multi-command task (e.g. update, install, configure). Do NOT chain unrelated commands into one call — propose them one at a time so the user can review each step.",
+      parameters: {
+        type: "object",
+        properties: {
+          command: {
+            type: "string",
+            description:
+              "The shell command to propose. Shown to the user for approval before it runs in the terminal.",
+          },
+          reason: {
+            type: "string",
+            description:
+              "Brief one-sentence explanation of why this command is needed. Shown to the user alongside the command.",
+          },
+          instance_id: {
+            type: "string",
+            description:
+              "Internal instance id if multiple terminals are open. Omit to target the most recently opened terminal.",
+          },
+        },
+        required: ["command", "reason"],
         additionalProperties: false,
       },
     },
@@ -573,6 +626,8 @@ export type ToolContext = {
   supabase?: SupabaseClient;
   /** Optional AbortSignal — propagated to slow tools so they can be cancelled. */
   abortSignal?: AbortSignal;
+  /** The tool call id from OpenAI. Required for terminal_run (pending approval key). */
+  callId?: string;
 };
 
 export async function executeTool(
@@ -773,6 +828,77 @@ export async function executeTool(
         timeoutMs,
       });
       return JSON.stringify(result);
+    }
+
+    if (name === "open_terminal") {
+      let instanceId =
+        typeof args.instance_id === "string" ? args.instance_id.trim() : "";
+
+      if (!instanceId) {
+        const instances = await listUserInstances(context.userId);
+        if (instances.length === 0) {
+          return JSON.stringify({ error: "No VPS instances found." });
+        }
+        if (instances.length > 1) {
+          return JSON.stringify({
+            error: "Multiple instances found. Specify instance_id.",
+          });
+        }
+        instanceId = instances[0].id;
+      }
+
+      let instanceName: string;
+      if (instanceId === "__custom__") {
+        instanceName = "Custom Instance";
+      } else {
+        const instance = await getUserInstanceById(context.userId, instanceId);
+        if (!instance) {
+          return JSON.stringify({ error: "Instance not found." });
+        }
+        instanceName = instance.name;
+      }
+
+      const credential = await getSshCredential(context.userId, instanceId, "safe");
+      if (!credential) {
+        return JSON.stringify({
+          error:
+            "No SSH credentials saved for this instance. Direct the user to save them at [SSH Terminal](/dashboard/vps/terminal) — render that as a clickable Markdown link, not inline code.",
+        });
+      }
+
+      return JSON.stringify({
+        ok: true,
+        instance_id: instanceId,
+        instance_name: instanceName,
+        message:
+          "Terminal opened in the chat UI. Use terminal_run to propose commands for the user to approve.",
+      });
+    }
+
+    if (name === "terminal_run") {
+      const command =
+        typeof args.command === "string" ? args.command.trim() : "";
+      const reason =
+        typeof args.reason === "string" ? args.reason.trim() : "";
+      if (!command) return JSON.stringify({ error: "Missing command" });
+      if (!context.callId) {
+        return JSON.stringify({ error: "Internal error: missing callId" });
+      }
+
+      const approved = await requestApproval(
+        context.callId,
+        context.abortSignal,
+      );
+
+      return JSON.stringify({
+        ok: approved,
+        approved,
+        command,
+        reason: reason || undefined,
+        note: approved
+          ? "User approved. The command has been injected into the terminal."
+          : "User denied or the request timed out. Command was not executed.",
+      });
     }
 
     if (name === "image_generate") {

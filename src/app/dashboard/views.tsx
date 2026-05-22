@@ -44,6 +44,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
+import type { InlineSshTerminalHandle } from "./chat/inline-terminal";
+import { InlineSshTerminal } from "./chat/inline-terminal";
 
 import type {
   AiRoute,
@@ -435,6 +437,11 @@ export function ChatView({
   const [slashFilter, setSlashFilter] = useState("");
   const [slashIndex, setSlashIndex] = useState(0);
 
+  // Inline terminal sessions opened by the AI via open_terminal
+  const [terminalSessions, setTerminalSessions] = useState<
+    Map<string, { instanceName: string; ref: React.RefObject<InlineSshTerminalHandle | null> }>
+  >(new Map());
+
   // Share dropdown
   const [shareOpen, setShareOpen] = useState(false);
   const [shareLoading, setShareLoading] = useState(false);
@@ -706,6 +713,30 @@ export function ChatView({
           }
           if (parsed.tool) {
             const toolEvt = parsed.tool;
+
+            // When open_terminal succeeds, register an inline terminal session
+            if (
+              toolEvt.name === "open_terminal" &&
+              toolEvt.status === "done" &&
+              toolEvt.result &&
+              typeof toolEvt.result === "object" &&
+              (toolEvt.result as Record<string, unknown>).ok === true
+            ) {
+              const res = toolEvt.result as {
+                instance_id: string;
+                instance_name: string;
+              };
+              setTerminalSessions((prev) => {
+                if (prev.has(res.instance_id)) return prev;
+                const next = new Map(prev);
+                next.set(res.instance_id, {
+                  instanceName: res.instance_name,
+                  ref: { current: null } as React.RefObject<InlineSshTerminalHandle | null>,
+                });
+                return next;
+              });
+            }
+
             applyAndPublish((prev) => {
               const next = prev.slice();
               const last = next[next.length - 1];
@@ -1276,6 +1307,33 @@ export function ChatView({
     [handleSelectMode, mode],
   );
 
+  // Approve or deny a terminal_run command proposed by the AI.
+  // Resolves the server-side pending approval and injects the command when approved.
+  const handleApproveTerminalCommand = useCallback(
+    async (
+      callId: string,
+      command: string,
+      instanceId: string | undefined,
+      approved: boolean,
+    ) => {
+      // Resolve the server-side blocking promise
+      await fetch(`/api/terminal/approve/${callId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approved }),
+      }).catch(() => {/* best-effort */});
+
+      // Inject command into the terminal when approved
+      if (approved) {
+        const session = instanceId
+          ? terminalSessions.get(instanceId)
+          : [...terminalSessions.values()][0];
+        session?.ref.current?.injectInput(command + "\n");
+      }
+    },
+    [terminalSessions],
+  );
+
   const lastAssistantId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       if (messages[i].role === "assistant") return messages[i].id;
@@ -1458,6 +1516,7 @@ export function ChatView({
                     ? handleIterateImage
                     : undefined
                 }
+                onApproveTerminalCommand={handleApproveTerminalCommand}
               />
             );
           })}
@@ -1479,6 +1538,29 @@ export function ChatView({
           ) : null}
         </div>
       </div>
+
+      {/* Inline terminal panels — shown when AI opens a terminal session */}
+      {terminalSessions.size > 0 && (
+        <div className="shrink-0 border-t border-white/[0.06] px-4 pt-3 pb-0 sm:px-6 lg:px-8">
+          <div className="mx-auto w-full max-w-2xl space-y-2 lg:max-w-3xl xl:max-w-5xl 2xl:max-w-6xl">
+            {[...terminalSessions.entries()].map(([instanceId, session]) => (
+              <InlineSshTerminal
+                key={instanceId}
+                ref={session.ref}
+                instanceId={instanceId}
+                instanceName={session.instanceName}
+                onClose={() =>
+                  setTerminalSessions((prev) => {
+                    const next = new Map(prev);
+                    next.delete(instanceId);
+                    return next;
+                  })
+                }
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Input */}
       <div className="shrink-0 border-t border-white/[0.06] px-4 py-4 sm:px-6 lg:px-8">
@@ -1894,6 +1976,13 @@ function MessageActionsMenu({
   );
 }
 
+type ApproveTerminalCommand = (
+  callId: string,
+  command: string,
+  instanceId: string | undefined,
+  approved: boolean,
+) => void;
+
 function ChatBubble({
   message,
   prevRole,
@@ -1901,6 +1990,7 @@ function ChatBubble({
   onRegenerate,
   onEdit,
   onIterateImage,
+  onApproveTerminalCommand,
 }: {
   message: ChatMessage;
   prevRole: ChatMessage["role"] | null;
@@ -1908,6 +1998,7 @@ function ChatBubble({
   onRegenerate?: () => void;
   onEdit?: (nextContent: string) => void;
   onIterateImage?: (url: string) => void;
+  onApproveTerminalCommand?: ApproveTerminalCommand;
 }) {
   const isUser = message.role === "user";
   const isFirstInGroup = prevRole !== message.role;
@@ -2032,7 +2123,11 @@ function ChatBubble({
         {message.toolEvents && message.toolEvents.length > 0 && (
           <div className="mb-2 flex flex-col gap-1.5">
             {message.toolEvents.map((evt) => (
-              <ToolCard key={evt.call_id} event={evt} />
+              <ToolCard
+                key={evt.call_id}
+                event={evt}
+                onApproveTerminalCommand={onApproveTerminalCommand}
+              />
             ))}
           </div>
         )}
@@ -2065,10 +2160,134 @@ function ChatBubble({
 /*  Tool call inspector card                                                   */
 /* -------------------------------------------------------------------------- */
 
-function ToolCard({ event }: { event: ToolEvent }) {
+function ToolCard({
+  event,
+  onApproveTerminalCommand,
+}: {
+  event: ToolEvent;
+  onApproveTerminalCommand?: ApproveTerminalCommand;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const [approving, setApproving] = useState(false);
   const isDone = event.status === "done";
 
+  // ── open_terminal card ────────────────────────────────────────────────────
+  if (event.name === "open_terminal") {
+    const result = isDone
+      ? (event.result as Record<string, unknown> | undefined)
+      : undefined;
+    const ok = result?.ok === true;
+    const instanceName =
+      typeof result?.instance_name === "string" ? result.instance_name : null;
+    const errMsg =
+      typeof result?.error === "string" ? result.error : null;
+
+    return (
+      <div className="rounded-md border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[12px]">
+        <div className="flex items-center gap-2">
+          {!isDone ? (
+            <Loader2 className="h-3 w-3 shrink-0 animate-spin text-white/40" aria-hidden />
+          ) : ok ? (
+            <Terminal className="h-3 w-3 shrink-0 text-[#3ecf8e]" aria-hidden />
+          ) : (
+            <X className="h-3 w-3 shrink-0 text-red-400" aria-hidden />
+          )}
+          <span className="flex-1 font-mono text-white/60">
+            {!isDone
+              ? "Opening terminal…"
+              : ok
+                ? `Terminal open${instanceName ? ` · ${instanceName}` : ""}`
+                : `Terminal failed${errMsg ? ` · ${errMsg}` : ""}`}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  // ── terminal_run card ─────────────────────────────────────────────────────
+  if (event.name === "terminal_run") {
+    const args = event.args as
+      | { command?: string; reason?: string; instance_id?: string }
+      | undefined;
+    const result = isDone
+      ? (event.result as Record<string, unknown> | undefined)
+      : undefined;
+    const command = args?.command ?? "";
+    const reason = args?.reason ?? "";
+    const instanceId = args?.instance_id as string | undefined;
+    const wasApproved = result?.approved === true;
+
+    // Running — show approval UI
+    if (!isDone) {
+      return (
+        <div className="rounded-md border border-[#3ecf8e]/20 bg-[#3ecf8e]/[0.04] px-3 py-2.5 text-[12px]">
+          <div className="flex items-center gap-2">
+            <Terminal className="h-3.5 w-3.5 shrink-0 text-[#3ecf8e]/70" aria-hidden />
+            <span className="font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-[#3ecf8e]/70">
+              Run command?
+            </span>
+          </div>
+          {reason && (
+            <p className="mt-1.5 text-[12px] text-white/50">{reason}</p>
+          )}
+          <pre className="mt-2 overflow-x-auto rounded border border-white/[0.08] bg-[#0a0a0a] px-3 py-2 font-mono text-[12px] leading-relaxed text-white/85">
+            {command}
+          </pre>
+          <div className="mt-2.5 flex items-center gap-2">
+            <button
+              type="button"
+              disabled={approving}
+              onClick={async () => {
+                setApproving(true);
+                await onApproveTerminalCommand?.(event.call_id, command, instanceId, true);
+              }}
+              className="inline-flex h-7 items-center gap-1.5 rounded-md bg-[#3ecf8e] px-3 text-[12px] font-medium text-[#171717] transition-colors hover:bg-[#24b47e] disabled:opacity-50"
+            >
+              {approving ? (
+                <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+              ) : (
+                <Terminal className="h-3 w-3" aria-hidden />
+              )}
+              Run
+            </button>
+            <button
+              type="button"
+              disabled={approving}
+              onClick={async () => {
+                setApproving(true);
+                await onApproveTerminalCommand?.(event.call_id, command, instanceId, false);
+              }}
+              className="inline-flex h-7 items-center rounded-md border border-white/[0.08] px-3 text-[12px] text-white/55 transition-colors hover:border-red-500/30 hover:bg-red-500/[0.06] hover:text-red-400 disabled:opacity-50"
+            >
+              Deny
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Done — show outcome
+    return (
+      <div className="rounded-md border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[12px]">
+        <div className="flex items-center gap-2">
+          {wasApproved ? (
+            <Check className="h-3 w-3 shrink-0 text-[#3ecf8e]" aria-hidden />
+          ) : (
+            <X className="h-3 w-3 shrink-0 text-white/30" aria-hidden />
+          )}
+          <span className="font-mono text-white/60">
+            {wasApproved ? "Command approved" : "Command denied"}
+            {command ? ` · ` : ""}
+          </span>
+          {command && (
+            <code className="truncate font-mono text-white/50">{command}</code>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── default tool card (all other tools) ───────────────────────────────────
   return (
     <div className="rounded-md border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[12px]">
       <div className="flex items-center gap-2">
@@ -2512,12 +2731,22 @@ function AssistantMarkdown({
               return <>{children}</>;
             },
             a({ children, href, ...props }) {
+              const linkClass =
+                "text-[#3ecf8e] underline decoration-[#3ecf8e]/40 underline-offset-2 hover:decoration-[#3ecf8e]";
+              // Internal relative paths → Next.js Link (SPA navigation, no reload)
+              if (href && href.startsWith("/")) {
+                return (
+                  <Link href={href} className={linkClass}>
+                    {children}
+                  </Link>
+                );
+              }
               return (
                 <a
                   href={href}
                   target="_blank"
                   rel="noreferrer noopener"
-                  className="text-[#3ecf8e] underline decoration-[#3ecf8e]/40 underline-offset-2 hover:decoration-[#3ecf8e]"
+                  className={linkClass}
                   {...props}
                 >
                   {children}

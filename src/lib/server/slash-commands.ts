@@ -81,10 +81,10 @@ export function slashSystemPrompt(p: NonNullable<SlashParse>): string {
 
     case "diagram":
       return (
-        "The user typed `/diagram`. Produce a Mermaid diagram inside a ```mermaid code block " +
-        "that represents the supplied subject. Pick the right diagram type " +
-        "(flowchart, sequence, classDiagram, erDiagram). " +
-        "Add a 1-sentence caption above the code block."
+        "The user typed `/diagram`. You MUST output a Mermaid diagram as plain text — do NOT call `image_generate` or any other tool. " +
+        "Produce a valid Mermaid diagram inside a ```mermaid code block that represents the supplied subject. " +
+        "Pick the most appropriate diagram type (flowchart, sequenceDiagram, classDiagram, erDiagram, stateDiagram-v2, gantt). " +
+        "Add a 1-sentence caption above the code block. Output only the caption and the code block — no other prose."
       );
   }
 }

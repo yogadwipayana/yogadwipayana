@@ -43,6 +43,8 @@ import hljs from "highlight.js/lib/common";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
+
 import type {
   AiRoute,
   ChatConversationSummary,
@@ -69,6 +71,40 @@ const CHAT_MODELS = AI_MODELS.map((m) => ({
 }));
 
 const HIGHLIGHT_CACHE = new Map<string, string>();
+
+// ─── Live stream cache ────────────────────────────────────────────────────────
+// Module-level state that persists across ChatView remounts. When the user
+// navigates away mid-generation and comes back, the new ChatView subscribes
+// here instead of loading from DB (which has no assistant message yet).
+
+type LiveListener = (msgs: ChatMessage[] | null) => void; // null = stream ended
+const _liveCache = new Map<string, ChatMessage[]>();
+const _liveListeners = new Map<string, Set<LiveListener>>();
+
+function _publishLive(id: string, msgs: ChatMessage[]): void {
+  _liveCache.set(id, msgs);
+  _liveListeners.get(id)?.forEach((fn) => fn(msgs));
+}
+
+function _endLiveStream(id: string): void {
+  _liveCache.delete(id);
+  const fns = _liveListeners.get(id);
+  _liveListeners.delete(id);
+  fns?.forEach((fn) => fn(null));
+}
+
+function _subscribeLive(id: string, fn: LiveListener): () => void {
+  if (!_liveListeners.has(id)) _liveListeners.set(id, new Set());
+  _liveListeners.get(id)!.add(fn);
+  return () => _liveListeners.get(id)?.delete(fn);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── Draft input cache ────────────────────────────────────────────────────────
+// Persists unsent message text across ChatView remounts (e.g. navigating away
+// and back). Keyed by conversation ID. Cleared when the message is sent.
+const _draftCache = new Map<string, string>();
+// ─────────────────────────────────────────────────────────────────────────────
 
 function highlightCode(code: string, lang: string | null): string {
   const key = `${lang ?? ""}::${code}`;
@@ -375,7 +411,7 @@ export function ChatView({
   onStreamingChange?: (conversationId: string, streaming: boolean) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(() => _draftCache.get(conversation.id) ?? "");
   const [model, setModel] = useState(conversation.model || defaultModel || "");
   const [mode, setMode] = useState<ChatMode>(conversation.mode ?? "chat");
   const [loaded, setLoaded] = useState(false);
@@ -415,6 +451,39 @@ export function ChatView({
   // local state inside the effect.
   useEffect(() => {
     let cancelled = false;
+
+    // If generation is still in-flight for this conversation (user navigated
+    // away and back), re-attach to the live stream cache so tool call
+    // indicators and partial text stay visible.
+    const liveMsgs = _liveCache.get(conversation.id);
+    if (liveMsgs !== undefined) {
+      setMessages(liveMsgs);
+      setIsStreaming(true);
+      setLoaded(true);
+
+      const unsub = _subscribeLive(conversation.id, (msgs) => {
+        if (cancelled) return;
+        if (msgs === null) {
+          // Stream finished — load from DB to get the persisted assistant message.
+          setIsStreaming(false);
+          fetch(`/api/conversations/${conversation.id}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+              if (cancelled || !data) return;
+              const d = data as { messages: ChatMessage[] };
+              setMessages(d.messages);
+            })
+            .catch(() => {/* ignore; messages already show the final state */});
+        } else {
+          setMessages(msgs);
+        }
+      });
+
+      return () => {
+        cancelled = true;
+        unsub();
+      };
+    }
 
     (async () => {
       try {
@@ -475,12 +544,17 @@ export function ChatView({
   // complete and persist to DB even when the user navigates to another
   // conversation or tool. The Stop button still works via handleStop().
 
-  // Wrapper that keeps local isStreaming in sync and also notifies the parent
-  // shell so the sub-sidebar can show a spinner on background conversations.
+  // Wrapper that keeps local isStreaming in sync, notifies the parent shell
+  // (sub-sidebar spinner), and manages the module-level live stream cache.
   const notifyStreaming = useCallback(
     (value: boolean) => {
       setIsStreaming(value);
       onStreamingChange?.(conversation.id, value);
+      if (!value) {
+        // Signal subscribers (re-mounted ChatViews) that the stream ended, then
+        // clear the cache so the next mount loads fresh data from DB.
+        _endLiveStream(conversation.id);
+      }
     },
     [conversation.id, onStreamingChange],
   );
@@ -569,6 +643,18 @@ export function ChatView({
       // Track current assistant msg id (may be updated by `saved` events)
       let currentAssistantId = assistantMsgId;
 
+      // Helper: apply an updater, capture the result, and publish to live cache.
+      // Functional updaters run synchronously, so `captured` is set before we
+      // call _publishLive.
+      const applyAndPublish = (updater: (prev: ChatMessage[]) => ChatMessage[]) => {
+        let captured: ChatMessage[] = [];
+        setMessages((prev) => {
+          captured = updater(prev);
+          return captured;
+        });
+        _publishLive(conversation.id, captured);
+      };
+
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -600,7 +686,7 @@ export function ChatView({
             const saved = parsed.saved;
             // Reconcile local IDs with persisted DB IDs so user-message edits
             // and other id-bound actions hit the right row.
-            setMessages((prev) =>
+            applyAndPublish((prev) =>
               prev.map((m) => {
                 if (saved.role === "user" && opts?.localUserId === m.id) {
                   return { ...m, id: saved.id };
@@ -620,7 +706,7 @@ export function ChatView({
           }
           if (parsed.tool) {
             const toolEvt = parsed.tool;
-            setMessages((prev) => {
+            applyAndPublish((prev) => {
               const next = prev.slice();
               const last = next[next.length - 1];
               if (last && last.id === currentAssistantId) {
@@ -644,7 +730,7 @@ export function ChatView({
             continue;
           }
           if (parsed.delta) {
-            setMessages((prev) => {
+            applyAndPublish((prev) => {
               const next = prev.slice();
               const last = next[next.length - 1];
               if (last && last.id === currentAssistantId) {
@@ -659,7 +745,7 @@ export function ChatView({
         }
       }
     },
-    [],
+    [conversation.id],
   );
 
   const handleStop = useCallback(() => {
@@ -690,6 +776,7 @@ export function ChatView({
     pinnedToBottomRef.current = true;
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setInput("");
+    _draftCache.delete(conversation.id);
     setAttachments([]);
     setSlashOpen(false);
     notifyStreaming(true);
@@ -1102,6 +1189,12 @@ export function ChatView({
   const onInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setInput(val);
+    // Persist draft so it survives navigation away and back.
+    if (val) {
+      _draftCache.set(conversation.id, val);
+    } else {
+      _draftCache.delete(conversation.id);
+    }
     checkSlash(val);
     const el = textareaRef.current;
     if (el) {
@@ -2540,6 +2633,10 @@ function AssistantMarkdown({
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Code bubble                                                                */
+/* -------------------------------------------------------------------------- */
+
 function CodeBubble({ lang, code }: { lang: string | null; code: string }) {
   const isSingleLine = !code.includes("\n") && code.trim().length <= 80;
   const [copied, setCopied] = useState(false);
@@ -2550,6 +2647,10 @@ function CodeBubble({ lang, code }: { lang: string | null; code: string }) {
       setTimeout(() => setCopied(false), 1500);
     }
   };
+
+  if (lang === "mermaid") {
+    return <MermaidDiagram code={code} />;
+  }
 
   if (isSingleLine) {
     return (

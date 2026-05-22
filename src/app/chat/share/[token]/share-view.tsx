@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import type { MessageRow } from "@/lib/server/chat-service";
+import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
 
 type Props = {
   title: string;
@@ -82,7 +83,12 @@ function Prose({ content }: { content: string }) {
           </a>
         ),
         code: ({ children, className }) => {
-          const isBlock = className?.includes("language-");
+          const langMatch = /language-(\w+)/.exec(className || "");
+          const lang = langMatch?.[1] ?? null;
+          if (lang === "mermaid") {
+            return <MermaidDiagram code={String(children).replace(/\n$/, "")} />;
+          }
+          const isBlock = !!langMatch;
           return isBlock ? (
             <code className="block overflow-x-auto rounded-md bg-white/[0.06] px-3 py-2 font-mono text-xs text-white/80">
               {children}

@@ -195,6 +195,10 @@ export function attachSshSession(
 
     sendStatus(ws, { type: "status", status: "connecting" });
 
+    // Track whether the host verifier already sent an error so the generic
+    // ssh2 "Host denied" error event does not overwrite the specific reason.
+    let hostRejected = false;
+
     // Build ssh2 connect config
     const connectConfig: Parameters<Client["connect"]>[0] = {
       host: frame.host,
@@ -207,6 +211,7 @@ export function attachSshSession(
         instanceId: frame.instanceId,
         userId,
         onReject: (reason) => {
+          hostRejected = true;
           sendStatus(ws, {
             type: "status",
             status: "error",
@@ -310,11 +315,13 @@ export function attachSshSession(
     });
 
     conn.on("error", (err) => {
-      sendStatus(ws, {
-        type: "status",
-        status: "error",
-        message: `SSH error: ${err.message}`,
-      });
+      if (!hostRejected) {
+        sendStatus(ws, {
+          type: "status",
+          status: "error",
+          message: `SSH error: ${err.message}`,
+        });
+      }
       ws.close(1011);
     });
 

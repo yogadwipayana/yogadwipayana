@@ -3036,7 +3036,7 @@ function ModelSelector({
           />
 
           {/* Dropdown panel — opens upward */}
-          <div className="absolute bottom-full left-0 z-20 mb-2 w-[calc(100vw-2rem)] max-w-[260px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30 backdrop-blur-sm">
+          <div className="absolute bottom-full right-0 z-20 mb-2 w-[calc(100vw-2rem)] max-w-[260px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30 backdrop-blur-sm">
             <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
               <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">
                 Choose model

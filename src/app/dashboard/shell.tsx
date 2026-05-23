@@ -77,6 +77,8 @@ type SubSection = {
   searchable?: boolean;
   /** Called with the new ordered ids when the user reorders draggable items. */
   onReorder?: (orderedIds: string[]) => void;
+  /** When true, the section grows to fill available space and scrolls internally. */
+  scrollable?: boolean;
 };
 
 function truncatePrompt(prompt: string, max = 45): string {
@@ -174,6 +176,7 @@ function buildSections(
     {
       title: "Conversations",
       searchable: true,
+      scrollable: true,
       items: chatConversations.map((c) => ({
         id: c.id,
         label: c.title,
@@ -1082,7 +1085,7 @@ function SubSidebarBody({
   return (
     <nav
       aria-label="Sub navigation"
-      className="flex-1 overflow-y-auto p-2"
+      className="flex flex-1 flex-col overflow-hidden"
     >
       {sections.map((section) => (
         <SubSidebarSection
@@ -1152,8 +1155,10 @@ function SubSidebarSection({
     handleDragEnd();
   };
 
+  const scrollable = section.scrollable;
+
   return (
-    <div className="mb-3 last:mb-0">
+    <div className={`px-2 ${scrollable ? "flex shrink flex-col pb-1 pt-2" : "shrink-0 border-t border-white/[0.06] px-0 py-2"}`}>
       <h3 className="mb-1 px-2.5 text-[10px] font-medium uppercase tracking-[0.12em] text-white/35">
         {section.title}
       </h3>
@@ -1162,7 +1167,7 @@ function SubSidebarSection({
           {searching && section.searchable ? "No matches." : "No items yet."}
         </p>
       ) : (
-        <ul className="flex flex-col gap-px">
+        <ul className={`flex flex-col gap-px ${scrollable ? "max-h-[280px] overflow-y-auto" : ""}`}>
           {section.items.map((item) => {
             const draggable = reorderable && item.draggable !== false;
             const isDragging = draggingId === item.id;

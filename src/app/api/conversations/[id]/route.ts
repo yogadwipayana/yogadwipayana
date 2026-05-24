@@ -8,6 +8,7 @@ import {
   getMessages,
   updateConversation,
 } from "@/lib/server/chat-service";
+import { listGeneratedImages } from "@/lib/server/image-service";
 import { createClient } from "@/utils/supabase/server";
 
 export const runtime = "nodejs";
@@ -34,8 +35,20 @@ export async function GET(_request: Request, { params }: RouteContext) {
   if (!conversation) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const messages = await getMessages(supabase, id, user.id);
-  return NextResponse.json({ conversation, messages });
+  const [rawMessages, images] = await Promise.all([
+    getMessages(supabase, id, user.id),
+    listGeneratedImages(supabase, user.id, { conversationId: id }),
+  ]);
+  // Rename snake_case DB columns to camelCase for the frontend ChatMessage type.
+  const messages = rawMessages.map((m) => ({
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    created_at: m.created_at,
+    ...(m.tool_events?.length ? { toolEvents: m.tool_events } : {}),
+    ...(m.follow_ups?.length ? { followUps: m.follow_ups } : {}),
+  }));
+  return NextResponse.json({ conversation, messages, images });
 }
 
 export async function PATCH(request: Request, { params }: RouteContext) {

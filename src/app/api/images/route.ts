@@ -1,3 +1,6 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -28,8 +31,10 @@ const PostBody = z.object({
     .optional(),
   /** Free-form size, accepted for backwards compatibility. */
   size: z.string().min(1).max(20).optional(),
-  /** Reference image URL for edit / image-to-image workflows. */
-  image_url: z.string().url().optional(),
+  /** Single reference image — legacy / chat usage. */
+  image_url: z.string().min(1).max(2048).optional(),
+  /** Multiple reference images from the workspace (up to 4). */
+  image_urls: z.array(z.string().min(1).max(2048)).max(4).optional(),
   conversation_id: z.string().uuid().optional(),
   source: z.enum(["chat", "workspace", "admin"]).optional(),
 });
@@ -52,17 +57,39 @@ export async function POST(request: Request) {
     );
   }
 
-  const { prompt, aspect_ratio, size, image_url, conversation_id, source } =
+  const { prompt, aspect_ratio, size, image_url, image_urls, conversation_id, source } =
     parsed.data;
 
-  if (image_url) {
-    const validation = await validatePublicHttpUrl(image_url);
-    if (!validation.ok) {
-      return NextResponse.json(
-        { error: `image_url rejected: ${validation.error}` },
-        { status: 400 },
-      );
+  // Merge image_url (legacy/chat) and image_urls (workspace) into one list,
+  // then resolve each: local paths -> base64 data URL, remote URLs -> SSRF-checked.
+  async function resolveOne(raw: string): Promise<string | { error: string }> {
+    if (raw.startsWith("/generated-images/")) {
+      const safeName = raw.replace(/\.\./g, "").replace(/^\/+/, "");
+      const filePath = join(process.cwd(), "public", safeName);
+      try {
+        const buf = await readFile(filePath);
+        return `data:image/png;base64,${buf.toString("base64")}`;
+      } catch {
+        return { error: "Reference image not found" };
+      }
     }
+    const validation = await validatePublicHttpUrl(raw);
+    if (!validation.ok) return { error: `image_url rejected: ${validation.error}` };
+    return raw;
+  }
+
+  const rawUrls = [
+    ...(image_url ? [image_url] : []),
+    ...(image_urls ?? []),
+  ].slice(0, 4);
+
+  const resolvedImages: string[] = [];
+  for (const raw of rawUrls) {
+    const result = await resolveOne(raw);
+    if (typeof result !== "string") {
+      return NextResponse.json({ error: result.error }, { status: 400 });
+    }
+    resolvedImages.push(result);
   }
 
   try {
@@ -91,7 +118,9 @@ export async function POST(request: Request) {
       options: {
         prompt,
         size: resolvedSize,
-        image: image_url,
+        // Single image kept for API compat; multi-image uses images[]
+        image: resolvedImages[0],
+        images: resolvedImages.length > 1 ? resolvedImages : undefined,
         abortSignal: request.signal,
       },
     });

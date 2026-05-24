@@ -10,8 +10,10 @@ import {
   useState,
   useTransition,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertTriangle,
+  CheckCircle2,
   ExternalLink,
   HelpCircle,
   Home,
@@ -26,9 +28,11 @@ import {
   Settings,
   Trash2,
   X,
+  XCircle,
 } from "lucide-react";
 import type { ChatConversationSummary, ToolId } from "./data";
 import type { GeneratedImageRow } from "@/lib/server/image-service";
+import type { AspectRatioPreset } from "@/lib/aspect-ratio";
 import { ImageWorkspace } from "./image/workspace";
 
 import { SETTINGS_TOOL, TOOLS } from "./data";
@@ -81,6 +85,20 @@ type SubSection = {
   scrollable?: boolean;
 };
 
+type PendingImage = {
+  id: string;
+  prompt: string;
+  aspect: AspectRatioPreset;
+  imageUrls?: string[];
+  createdAt: string; // ISO — used to compute elapsed time in the workspace
+};
+
+type AppToast = {
+  id: string;
+  type: "success" | "error";
+  message: string;
+};
+
 function truncatePrompt(prompt: string, max = 45): string {
   return prompt.length > max ? prompt.slice(0, max) + "…" : prompt;
 }
@@ -90,6 +108,7 @@ function buildSections(
   chatConversations: ChatConversationSummary[],
   vpsInstances: readonly ApiVpsInstance[],
   images: GeneratedImageRow[],
+  pendingImages: PendingImage[],
   onDeleteConversation?: (id: string) => void,
   onRenameConversation?: (id: string, title: string) => void,
   onReorderVps?: (orderedIds: string[]) => void,
@@ -165,10 +184,18 @@ function buildSections(
       {
         title: "Generations",
         searchable: true,
-        items: images.map((img) => ({
-          id: img.id,
-          label: truncatePrompt(img.prompt),
-        })),
+        items: [
+          // Pending (in-flight) generations appear at the top with a spinner
+          ...pendingImages.map((p) => ({
+            id: p.id,
+            label: truncatePrompt(p.prompt),
+            streaming: true,
+          })),
+          ...images.map((img) => ({
+            id: img.id,
+            label: truncatePrompt(img.prompt),
+          })),
+        ],
       },
     ];
   }
@@ -252,6 +279,19 @@ export function DashboardShell({
     setLastImagesProp(initialImagesProp);
     setImages(initialImagesProp ?? []);
   }
+
+  // Pending (in-flight) image generations — optimistic entries added immediately
+  // when Generate is clicked, replaced by real rows on success.
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const pendingAbortRef = useRef(new Map<string, AbortController>());
+
+  // Toast notifications
+  const [toasts, setToasts] = useState<AppToast[]>([]);
+  const addToast = useCallback((t: Omit<AppToast, "id">) => {
+    const id = crypto.randomUUID();
+    setToasts((prev) => [...prev, { ...t, id }]);
+    setTimeout(() => setToasts((prev) => prev.filter((x) => x.id !== id)), 4500);
+  }, []);
 
   const [vpsInstancesState, setVpsInstancesState] = useState<readonly ApiVpsInstance[]>(
     instances ?? NO_INSTANCES,
@@ -398,6 +438,13 @@ export function DashboardShell({
     return images.filter((img) => img.prompt.toLowerCase().includes(q));
   }, [images, imageSearch, toolId]);
 
+  const filteredPendingImages = useMemo(() => {
+    if (toolId !== "image") return pendingImages;
+    const q = imageSearch.trim().toLowerCase();
+    if (!q) return pendingImages;
+    return pendingImages.filter((p) => p.prompt.toLowerCase().includes(q));
+  }, [pendingImages, imageSearch, toolId]);
+
   const sections = useMemo(
     () =>
       buildSections(
@@ -405,6 +452,7 @@ export function DashboardShell({
         filteredChatConversations,
         vpsInstances,
         filteredImages,
+        filteredPendingImages,
         toolId === "chat" ? handleDeleteConversation : undefined,
         toolId === "chat" ? handleRenameConversation : undefined,
         toolId === "vps" ? handleReorderVps : undefined,
@@ -415,6 +463,7 @@ export function DashboardShell({
       filteredChatConversations,
       vpsInstances,
       filteredImages,
+      filteredPendingImages,
       handleDeleteConversation,
       handleRenameConversation,
       handleReorderVps,
@@ -452,13 +501,96 @@ export function DashboardShell({
     [],
   );
 
-  const handleImageAdded = useCallback((img: GeneratedImageRow) => {
-    setImages((prev) => [img, ...prev]);
-    setActiveItems((prev) => ({ ...prev, image: img.id }));
-  }, []);
-
   const handleNewGeneration = useCallback(() => {
     setActiveItems((prev) => ({ ...prev, image: "" }));
+  }, []);
+
+  const handleStartGeneration = useCallback(
+    async ({
+      prompt,
+      aspect,
+      imageUrls,
+    }: {
+      prompt: string;
+      aspect: AspectRatioPreset;
+      imageUrls?: string[];
+    }) => {
+      const tempId = crypto.randomUUID();
+      const pending: PendingImage = {
+        id: tempId,
+        prompt,
+        aspect,
+        imageUrls,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Add optimistic entry to sidebar immediately and navigate to it
+      setPendingImages((prev) => [pending, ...prev]);
+      setActiveItems((prev) => ({ ...prev, image: tempId }));
+
+      const ctrl = new AbortController();
+      pendingAbortRef.current.set(tempId, ctrl);
+
+      try {
+        const res = await fetch("/api/images", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt,
+            aspect_ratio: aspect,
+            image_urls: imageUrls,
+            source: "workspace",
+          }),
+          signal: ctrl.signal,
+        });
+
+        if (!res.ok) {
+          const json = (await res.json().catch(() => ({}))) as {
+            error?: string | { message?: string; code?: string };
+          };
+          const errMsg =
+            typeof json.error === "string"
+              ? json.error
+              : typeof json.error?.message === "string"
+                ? json.error.message
+                : `HTTP ${res.status}`;
+          throw new Error(errMsg);
+        }
+
+        const data = (await res.json()) as { image: GeneratedImageRow };
+
+        // Replace pending entry with the real generated image
+        setPendingImages((prev) => prev.filter((p) => p.id !== tempId));
+        setImages((prev) => [data.image, ...prev]);
+        // Navigate to the real image only if still viewing this pending item
+        setActiveItems((prev) => ({
+          ...prev,
+          image: prev.image === tempId ? data.image.id : prev.image,
+        }));
+        addToast({ type: "success", message: "Image generated successfully" });
+      } catch (err) {
+        // Always clean up the pending entry, even on cancel (AbortError)
+        setPendingImages((prev) => prev.filter((p) => p.id !== tempId));
+        setActiveItems((prev) => ({
+          ...prev,
+          image: prev.image === tempId ? "" : prev.image,
+        }));
+        if (!(err instanceof Error && err.name === "AbortError")) {
+          addToast({
+            type: "error",
+            message: err instanceof Error ? err.message : "Generation failed",
+          });
+        }
+      } finally {
+        pendingAbortRef.current.delete(tempId);
+      }
+    },
+    [addToast],
+  );
+
+  const handleCancelPending = useCallback((tempId: string) => {
+    pendingAbortRef.current.get(tempId)?.abort();
+    // Cleanup is handled in handleStartGeneration's catch block
   }, []);
 
   const onCreate =
@@ -524,7 +656,9 @@ export function DashboardShell({
               onDeleteConversation: handleDeleteConversation,
               vpsInstances,
               images,
-              onImageAdded: handleImageAdded,
+              pendingImages,
+              onGenerate: handleStartGeneration,
+              onCancelPending: handleCancelPending,
             })}
         </main>
       </div>
@@ -572,7 +706,50 @@ export function DashboardShell({
           }
         />
       ) : null}
+
+      <ToastContainer toasts={toasts} />
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Toast (portal — rendered into document.body to escape overflow/stacking) */
+/* -------------------------------------------------------------------------- */
+
+function ToastContainer({ toasts }: { toasts: AppToast[] }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return null;
+
+  return createPortal(
+    <div
+      aria-live="polite"
+      aria-atomic="false"
+      className="pointer-events-none fixed bottom-5 right-5 z-[9999] flex flex-col gap-2"
+      style={{ maxWidth: "calc(100vw - 2.5rem)" }}
+    >
+      {toasts.map((toast) => (
+        <div
+          key={toast.id}
+          role="status"
+          className={`pointer-events-auto flex min-w-[260px] items-start gap-3 rounded-xl border px-4 py-3 text-[13px] font-medium shadow-2xl ${
+            toast.type === "success"
+              ? "border-[#3ecf8e]/40 bg-[#0f1f18] text-[#3ecf8e]"
+              : "border-red-500/40 bg-[#1f0f0f] text-red-300"
+          }`}
+        >
+          <span className="mt-px shrink-0">
+            {toast.type === "success" ? (
+              <CheckCircle2 className="h-4 w-4" aria-hidden />
+            ) : (
+              <XCircle className="h-4 w-4" aria-hidden />
+            )}
+          </span>
+          <span className="leading-snug">{toast.message}</span>
+        </div>
+      ))}
+    </div>,
+    document.body,
   );
 }
 
@@ -592,7 +769,9 @@ function renderMain({
   onDeleteConversation,
   vpsInstances,
   images,
-  onImageAdded,
+  pendingImages,
+  onGenerate,
+  onCancelPending,
 }: {
   activeTool: ToolId;
   activeItemId: string;
@@ -605,7 +784,9 @@ function renderMain({
   onDeleteConversation?: (id: string) => void;
   vpsInstances: readonly ApiVpsInstance[];
   images: GeneratedImageRow[];
-  onImageAdded: (img: GeneratedImageRow) => void;
+  pendingImages: PendingImage[];
+  onGenerate: (args: { prompt: string; aspect: AspectRatioPreset; imageUrls?: string[] }) => void;
+  onCancelPending: (tempId: string) => void;
 }): React.ReactNode {
   if (activeItemId === "chat:gallery" && activeTool === "chat") {
     return <GalleryView />;
@@ -625,12 +806,18 @@ function renderMain({
   }
 
   if (activeTool === "image") {
+    const pendingItem = pendingImages.find((p) => p.id === activeItemId);
+    const isPending = Boolean(pendingItem);
     return (
       <ImageWorkspace
         key={activeItemId || "new"}
         initialImages={images}
-        selectedImageId={activeItemId || undefined}
-        onImageAdded={onImageAdded}
+        selectedImageId={!isPending ? (activeItemId || undefined) : undefined}
+        isPending={isPending}
+        pendingPrompt={pendingItem?.prompt}
+        pendingCreatedAt={pendingItem?.createdAt}
+        onGenerate={onGenerate}
+        onCancelPending={isPending ? () => onCancelPending(activeItemId) : undefined}
       />
     );
   }

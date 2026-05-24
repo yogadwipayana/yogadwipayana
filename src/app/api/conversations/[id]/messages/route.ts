@@ -1,3 +1,5 @@
+import { access } from "node:fs/promises";
+import { join } from "node:path";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -27,6 +29,40 @@ import {
 } from "@/lib/server/vision";
 import { createClient } from "@/utils/supabase/server";
 
+/**
+ * Returns the local filesystem path if the URL points to one of our own
+ * /uploads/ files, or null otherwise.
+ * Rejects any path that contains traversal segments.
+ */
+function getOwnUploadPath(rawUrl: string): string | null {
+  try {
+    const { pathname } = new URL(rawUrl);
+    if (!/^\/uploads\/[^/]+$/.test(pathname)) return null;
+    return join(process.cwd(), "public", pathname);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Like validatePublicHttpUrl but short-circuits for our own uploaded files:
+ * instead of an SSRF check, it simply verifies the file exists on disk.
+ */
+async function validateAttachmentUrl(
+  rawUrl: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const localPath = getOwnUploadPath(rawUrl);
+  if (localPath) {
+    try {
+      await access(localPath);
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Uploaded file not found on server" };
+    }
+  }
+  return validatePublicHttpUrl(rawUrl);
+}
+
 export const runtime = "nodejs";
 
 const AttachmentSchema = z.object({
@@ -37,10 +73,14 @@ const AttachmentSchema = z.object({
   size: z.number().int().positive().max(50 * 1024 * 1024),
 });
 
-const Body = z.object({
-  content: z.string().min(1).max(20_000),
-  attachments: z.array(AttachmentSchema).max(6).optional(),
-});
+const Body = z
+  .object({
+    content: z.string().min(0).max(20_000),
+    attachments: z.array(AttachmentSchema).max(6).optional(),
+  })
+  .refine((d) => d.content.trim().length > 0 || (d.attachments?.length ?? 0) > 0, {
+    message: "Either content or at least one attachment is required",
+  });
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -79,7 +119,7 @@ export async function POST(request: Request, { params }: RouteContext) {
     const { content, attachments } = parsed.data;
 
     for (const att of attachments ?? []) {
-      const validation = await validatePublicHttpUrl(att.url);
+      const validation = await validateAttachmentUrl(att.url);
       if (!validation.ok) {
         return NextResponse.json(
           { error: `Attachment URL rejected: ${validation.error}` },

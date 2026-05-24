@@ -18,6 +18,14 @@ type ToolCallAccumulator = {
   arguments: string;
 };
 
+type PersistedToolEvent = {
+  call_id: string;
+  name: string;
+  status: "done";
+  args?: unknown;
+  result?: unknown;
+};
+
 type SsePreface = Record<string, unknown>;
 
 /**
@@ -52,6 +60,9 @@ export function runChatStream(args: {
   const encoder = new TextEncoder();
   const messages: ChatMessage[] = [...initialMessages];
   let finalAssistantText = "";
+  // Accumulate all tool call results across every round so they can be
+  // persisted alongside the final assistant message.
+  const allToolEvents: PersistedToolEvent[] = [];
 
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -80,7 +91,7 @@ export function runChatStream(args: {
         }
       };
 
-      const persistFinal = async () => {
+      const persistFinal = async (followUps?: string[]) => {
         if (finalAssistantText.length > 0) {
           try {
             const saved = await appendMessage(supabase, {
@@ -88,6 +99,8 @@ export function runChatStream(args: {
               userId,
               role: "assistant",
               content: finalAssistantText,
+              toolEvents: allToolEvents.length > 0 ? allToolEvents : undefined,
+              followUps: followUps?.length ? followUps : undefined,
             });
             send({ saved: { role: "assistant", id: saved.id } });
           } catch {
@@ -111,15 +124,20 @@ export function runChatStream(args: {
         }
       };
 
-      /** Generate and emit follow-up suggestions — best-effort, never throws. */
-      const sendFollowUps = async () => {
-        if (abortSignal?.aborted) return;
-        try {
-          const followUps = await generateFollowUps(messages, model);
-          if (followUps.length > 0) send({ follow_ups: followUps });
-        } catch {
-          // best-effort; never fail the stream
+      /** Generate follow-up suggestions, persist with final message, and emit. */
+      const persistAndSendFollowUps = async () => {
+        if (abortSignal?.aborted) {
+          await persistFinal();
+          return;
         }
+        let followUps: string[] = [];
+        try {
+          followUps = await generateFollowUps(messages, model);
+        } catch {
+          // best-effort
+        }
+        await persistFinal(followUps.length > 0 ? followUps : undefined);
+        if (followUps.length > 0) send({ follow_ups: followUps });
       };
 
       try {
@@ -203,8 +221,7 @@ export function runChatStream(args: {
           finalAssistantText = roundText;
 
           if (finishReason !== "tool_calls" || toolCalls.size === 0) {
-            await persistFinal();
-            await sendFollowUps();
+            await persistAndSendFollowUps();
             sendDone();
             closeStream();
             return;
@@ -228,12 +245,13 @@ export function runChatStream(args: {
           });
 
           for (const call of orderedCalls) {
+            const parsedArgs = tryParseJson(call.arguments || "{}");
             send({
               tool: {
                 name: call.name,
                 status: "running",
                 call_id: call.id,
-                args: tryParseJson(call.arguments || "{}"),
+                args: parsedArgs,
               },
             });
             const result = await executeTool(call.name, call.arguments, {
@@ -243,6 +261,7 @@ export function runChatStream(args: {
               abortSignal,
               callId: call.id,
             });
+            const parsedResult = tryParseJson(result);
             messages.push({
               role: "tool",
               tool_call_id: call.id,
@@ -253,8 +272,17 @@ export function runChatStream(args: {
                 name: call.name,
                 status: "done",
                 call_id: call.id,
-                result: tryParseJson(result),
+                result: parsedResult,
               },
+            });
+            // Record the completed tool call so it can be persisted with the
+            // final assistant message and restored on conversation reload.
+            allToolEvents.push({
+              call_id: call.id,
+              name: call.name,
+              status: "done",
+              args: parsedArgs,
+              result: parsedResult,
             });
           }
 
@@ -268,7 +296,7 @@ export function runChatStream(args: {
           "(Stopped after reaching the tool-call limit. Ask me to continue if you need more.)";
         send({ delta: note });
         finalAssistantText = note;
-        await persistFinal();
+        await persistFinal();  // no follow-ups at budget limit
         sendDone();
         closeStream();
       } catch (err) {
@@ -279,6 +307,7 @@ export function runChatStream(args: {
               userId,
               role: "assistant",
               content: finalAssistantText,
+              toolEvents: allToolEvents.length > 0 ? allToolEvents : undefined,
             });
             send({ saved: { role: "assistant", id: saved.id } });
           } catch {}

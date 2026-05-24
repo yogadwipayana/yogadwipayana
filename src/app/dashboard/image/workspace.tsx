@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Loader2,
   Paperclip,
+  Plus,
   Sparkles,
   Square,
   X,
@@ -15,6 +16,14 @@ import {
   type AspectRatioPreset,
 } from "@/lib/aspect-ratio";
 import type { GeneratedImageRow } from "@/lib/server/image-service";
+
+export type GenerateArgs = {
+  prompt: string;
+  aspect: AspectRatioPreset;
+  imageUrls?: string[]; // up to 4 reference images
+};
+
+const MAX_REFS = 4;
 
 const ACCEPTED_IMAGE_MIME = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const MAX_REF_BYTES = 50 * 1024 * 1024;
@@ -32,32 +41,46 @@ function formatRelative(iso: string): string {
 export function ImageWorkspace({
   initialImages,
   selectedImageId,
-  onImageAdded,
+  isPending = false,
+  pendingPrompt,
+  pendingCreatedAt,
+  onGenerate,
+  onCancelPending,
 }: {
   initialImages: GeneratedImageRow[];
   /** When set, the workspace pre-selects this image on mount. */
   selectedImageId?: string;
-  /** Called after a new image is successfully generated. */
-  onImageAdded?: (img: GeneratedImageRow) => void;
+  /** True when the currently active item is an in-flight generation. */
+  isPending?: boolean;
+  /** The prompt that was submitted for the pending generation. */
+  pendingPrompt?: string;
+  /** ISO timestamp of when the pending generation started. */
+  pendingCreatedAt?: string;
+  /** Called when the user clicks Generate — shell owns the actual fetch. */
+  onGenerate: (args: GenerateArgs) => void;
+  /** Called when the user cancels an in-flight generation. */
+  onCancelPending?: () => void;
 }) {
   const initialSelected = selectedImageId
     ? (initialImages.find((i) => i.id === selectedImageId) ?? initialImages[0] ?? null)
     : null;
   const [prompt, setPrompt] = useState(initialSelected?.prompt ?? "");
   const [aspect, setAspect] = useState<AspectRatioPreset>("square");
-  const [referenceUrl, setReferenceUrl] = useState<string | null>(null);
-  const [refUrlInput, setRefUrlInput] = useState("");
-  const [showUrlInput, setShowUrlInput] = useState(false);
+  // Multiple reference images (up to MAX_REFS). Pre-populated with the viewed
+  // image so editing a generation carries the style forward automatically.
+  const [referenceUrls, setReferenceUrls] = useState<string[]>(
+    initialSelected?.url ? [initialSelected.url] : [],
+  );
+  const [addUrlInput, setAddUrlInput] = useState("");
+  const [showAddInput, setShowAddInput] = useState(false);
   const [refUploading, setRefUploading] = useState(false);
   const [refError, setRefError] = useState<string | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [error, setError] = useState<string | null>(null);
   const [current, setCurrent] = useState<GeneratedImageRow | null>(initialSelected);
   const [images, setImages] = useState<GeneratedImageRow[]>(initialImages);
 
-  const abortRef = useRef<AbortController | null>(null);
-  const elapsedRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Elapsed seconds for the pending-generation overlay
+  const [elapsed, setElapsed] = useState(0);
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -69,79 +92,37 @@ export function ImageWorkspace({
     el.style.height = `${el.scrollHeight}px`;
   }, [prompt]);
 
-  // Tick elapsed seconds while generating. Reset happens in handleGenerate
-  // before setIsGenerating(true) so we never call setState inside the effect.
+  // Tick elapsed seconds while this item is pending
   useEffect(() => {
-    if (!isGenerating) {
-      if (elapsedRef.current) {
-        clearInterval(elapsedRef.current);
-        elapsedRef.current = null;
-      }
+    if (!isPending) {
+      setElapsed(0);
       return;
     }
-    elapsedRef.current = setInterval(() => {
-      setElapsed((s) => s + 1);
+    const startMs = pendingCreatedAt ? new Date(pendingCreatedAt).getTime() : Date.now();
+    // Initialise immediately so there's no 1-second gap on mount
+    setElapsed(Math.floor((Date.now() - startMs) / 1000));
+    const id = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startMs) / 1000));
     }, 1000);
-    return () => {
-      if (elapsedRef.current) {
-        clearInterval(elapsedRef.current);
-        elapsedRef.current = null;
-      }
-    };
-  }, [isGenerating]);
+    return () => clearInterval(id);
+  }, [isPending, pendingCreatedAt]);
 
-  const handleGenerate = useCallback(async () => {
+  const handleGenerate = useCallback(() => {
     const trimmed = prompt.trim();
-    if (!trimmed || isGenerating) return;
-
-    setError(null);
-    setElapsed(0);
-    setIsGenerating(true);
-
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-
-    try {
-      const res = await fetch("/api/images", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: trimmed,
-          aspect_ratio: aspect,
-          image_url: referenceUrl ?? undefined,
-          source: "workspace",
-        }),
-        signal: ctrl.signal,
-      });
-
-      if (!res.ok) {
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(json.error ?? `HTTP ${res.status}`);
-      }
-
-      const data = (await res.json()) as { image: GeneratedImageRow };
-      setImages((prev) => [data.image, ...prev]);
-      setCurrent(data.image);
-      setPrompt("");
-      onImageAdded?.(data.image);
-    } catch (err) {
-      if (err instanceof Error && err.name === "AbortError") return;
-      setError(err instanceof Error ? err.message : "Generation failed.");
-    } finally {
-      setIsGenerating(false);
-      abortRef.current = null;
-    }
-  }, [prompt, aspect, referenceUrl, isGenerating]);
-
-  const handleCancel = useCallback(() => {
-    abortRef.current?.abort();
-  }, []);
+    if (!trimmed || isPending) return;
+    onGenerate({
+      prompt: trimmed,
+      aspect,
+      imageUrls: referenceUrls.length > 0 ? referenceUrls : undefined,
+    });
+    setPrompt("");
+  }, [prompt, isPending, aspect, referenceUrls, onGenerate]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault();
-        void handleGenerate();
+        handleGenerate();
       }
     },
     [handleGenerate],
@@ -150,13 +131,24 @@ export function ImageWorkspace({
   const handleSelectHistory = useCallback((img: GeneratedImageRow) => {
     setCurrent(img);
     setPrompt(img.prompt);
+    // Replace references with the selected image so further edits stay on-style
+    setReferenceUrls([img.url]);
   }, []);
 
   const handleIterate = useCallback((img: GeneratedImageRow) => {
-    setReferenceUrl(img.url);
-    setRefUrlInput(img.url);
+    setReferenceUrls([img.url]);
     setPrompt("");
     textareaRef.current?.focus();
+  }, []);
+
+  const addReference = useCallback((url: string) => {
+    setReferenceUrls((prev) =>
+      prev.includes(url) || prev.length >= MAX_REFS ? prev : [...prev, url],
+    );
+  }, []);
+
+  const removeReference = useCallback((url: string) => {
+    setReferenceUrls((prev) => prev.filter((u) => u !== url));
   }, []);
 
   const handleUploadRef = useCallback(async (file: File) => {
@@ -173,54 +165,33 @@ export function ImageWorkspace({
     setRefUploading(true);
 
     try {
-      const metaRes = await fetch("/api/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: file.name,
-          contentType: file.type,
-          size: file.size,
-        }),
-      });
-      if (!metaRes.ok) throw new Error(`Upload init failed: ${metaRes.status}`);
-      const meta = (await metaRes.json()) as {
-        url: string;
-        method: string;
-        publicUrl: string;
-      };
-
-      await fetch(meta.url, {
-        method: meta.method ?? "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
-
-      setReferenceUrl(meta.publicUrl);
-      setRefUrlInput(meta.publicUrl);
-      setShowUrlInput(false);
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(json.error ?? `Upload failed: ${res.status}`);
+      }
+      const { publicUrl } = (await res.json()) as { publicUrl: string };
+      addReference(publicUrl);
+      setShowAddInput(false);
     } catch (err) {
       setRefError(err instanceof Error ? err.message : "Upload failed.");
     } finally {
       setRefUploading(false);
     }
-  }, []);
+  }, [addReference]);
 
-  const handleRefUrlCommit = useCallback(() => {
-    const trimmed = refUrlInput.trim();
+  const handleAddUrlCommit = useCallback(() => {
+    const trimmed = addUrlInput.trim();
     if (!trimmed) return;
-    setReferenceUrl(trimmed);
-    setShowUrlInput(false);
+    addReference(trimmed);
+    setAddUrlInput("");
+    setShowAddInput(false);
     setRefError(null);
-  }, [refUrlInput]);
+  }, [addUrlInput, addReference]);
 
-  const clearReference = useCallback(() => {
-    setReferenceUrl(null);
-    setRefUrlInput("");
-    setRefError(null);
-    setShowUrlInput(false);
-  }, []);
-
-  const canGenerate = prompt.trim().length > 0 && !isGenerating;
+  const canGenerate = prompt.trim().length > 0 && !isPending;
 
   return (
     <div className="flex min-h-full flex-col gap-6 p-4 sm:p-6">
@@ -228,7 +199,7 @@ export function ImageWorkspace({
       <div className="flex flex-col gap-6 md:flex-row md:items-start">
         {/* Canvas */}
         <div className="relative flex-1">
-          <div className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#171717]">
+          <div className="relative flex h-[360px] w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#171717] sm:h-[440px] md:h-[min(560px,calc(100svh-12rem))]">
             {current ? (
               <Image
                 src={current.url}
@@ -245,7 +216,7 @@ export function ImageWorkspace({
               </div>
             )}
 
-            {isGenerating && (
+            {isPending && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#171717]/80 backdrop-blur-sm">
                 <Loader2 className="h-8 w-8 animate-spin text-[#3ecf8e]" aria-hidden />
                 <p className="text-[13px] tabular-nums text-white/60">
@@ -255,16 +226,23 @@ export function ImageWorkspace({
             )}
           </div>
 
-          {current && !isGenerating && (
+          {(current ?? pendingPrompt) && !isPending && (
             <p className="mt-2 line-clamp-2 text-[12px] text-white/35">
-              {current.prompt}
+              {current?.prompt ?? pendingPrompt}
+            </p>
+          )}
+          {isPending && pendingPrompt && (
+            <p className="mt-2 line-clamp-2 text-[12px] text-white/35">
+              {pendingPrompt}
             </p>
           )}
         </div>
 
-        {/* Controls */}
-        <div className="flex w-full flex-col gap-4 md:w-[320px] md:shrink-0">
-          <div className="rounded-xl border border-white/[0.08] bg-[#171717] p-4">
+        {/* Controls — same height as canvas on desktop, scrollable body, pinned Generate */}
+        <div className="flex w-full flex-col md:w-[320px] md:shrink-0 md:h-[min(560px,calc(100svh-12rem))]">
+          <div className="flex h-full flex-col rounded-xl border border-white/[0.08] bg-[#171717]">
+            {/* Scrollable content area */}
+            <div className="flex-1 overflow-y-auto p-4">
             {/* Prompt */}
             <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.1em] text-white/40">
               Prompt
@@ -302,33 +280,45 @@ export function ImageWorkspace({
               ))}
             </div>
 
-            {/* Reference image */}
-            <label className="mb-2 mt-4 block text-[11px] font-medium uppercase tracking-[0.1em] text-white/40">
-              Reference image
-              <span className="ml-1 normal-case tracking-normal text-white/25">(optional)</span>
-            </label>
-
-            {referenceUrl ? (
-              <div className="flex items-center gap-2 rounded-md border border-white/[0.08] bg-white/[0.03] p-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={referenceUrl}
-                  alt="Reference"
-                  className="h-10 w-10 shrink-0 rounded object-cover"
-                />
-                <span className="min-w-0 flex-1 truncate text-[12px] text-white/50">
-                  {referenceUrl.split("/").pop()}
+            {/* Reference images (up to 4) */}
+            <div className="mb-2 mt-4 flex items-center justify-between">
+              <label className="text-[11px] font-medium uppercase tracking-[0.1em] text-white/40">
+                Reference images
+                <span className="ml-1 normal-case tracking-normal text-white/25">(optional)</span>
+              </label>
+              {referenceUrls.length > 0 && (
+                <span className="text-[11px] text-white/30">
+                  {referenceUrls.length}/{MAX_REFS}
                 </span>
-                <button
-                  type="button"
-                  onClick={clearReference}
-                  aria-label="Remove reference image"
-                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-white/35 transition-colors hover:bg-white/[0.06] hover:text-white"
-                >
-                  <X className="h-3.5 w-3.5" aria-hidden />
-                </button>
+              )}
+            </div>
+
+            {/* Thumbnail grid */}
+            {referenceUrls.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {referenceUrls.map((url) => (
+                  <div key={url} className="group relative h-14 w-14 shrink-0">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={url}
+                      alt="Reference"
+                      className="h-full w-full rounded-md object-cover border border-white/[0.08]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeReference(url)}
+                      aria-label="Remove reference"
+                      className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-[#2a2a2a] border border-white/[0.12] text-white/60 hover:text-white group-hover:flex"
+                    >
+                      <X className="h-3 w-3" aria-hidden />
+                    </button>
+                  </div>
+                ))}
               </div>
-            ) : (
+            )}
+
+            {/* Add reference controls */}
+            {referenceUrls.length < MAX_REFS && (
               <div className="flex flex-col gap-2">
                 <div className="flex gap-2">
                   <button
@@ -346,31 +336,33 @@ export function ImageWorkspace({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setShowUrlInput((v) => !v)}
+                    onClick={() => setShowAddInput((v) => !v)}
                     className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-3 text-[12px] text-white/60 transition-colors hover:border-white/[0.16] hover:text-white"
                   >
-                    Paste URL
+                    {referenceUrls.length > 0 ? (
+                      <><Plus className="h-3.5 w-3.5" aria-hidden />Add</>
+                    ) : (
+                      "Paste URL"
+                    )}
                   </button>
                 </div>
 
-                {showUrlInput && (
+                {showAddInput && (
                   <div className="flex gap-2">
                     <input
                       type="url"
-                      value={refUrlInput}
-                      onChange={(e) => setRefUrlInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") handleRefUrlCommit();
-                      }}
+                      value={addUrlInput}
+                      onChange={(e) => setAddUrlInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleAddUrlCommit(); }}
                       placeholder="https://…"
                       className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[12px] text-white placeholder:text-white/25 outline-none transition-colors focus:border-white/[0.18]"
                     />
                     <button
                       type="button"
-                      onClick={handleRefUrlCommit}
+                      onClick={handleAddUrlCommit}
                       className="inline-flex h-8 items-center rounded-md border border-white/[0.08] bg-white/[0.03] px-3 text-[12px] text-white/60 transition-colors hover:border-white/[0.16] hover:text-white"
                     >
-                      Set
+                      Add
                     </button>
                   </div>
                 )}
@@ -380,20 +372,14 @@ export function ImageWorkspace({
             {refError && (
               <p className="mt-1.5 text-[12px] text-red-400">{refError}</p>
             )}
+            </div>{/* end scrollable area */}
 
-            {/* Error */}
-            {error && (
-              <div className="mt-4 rounded-md border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-[12px] text-red-300/85">
-                {error}
-              </div>
-            )}
-
-            {/* Generate / Cancel */}
-            <div className="mt-4">
-              {isGenerating ? (
+            {/* Generate / Cancel — pinned to the bottom of the card */}
+            <div className="shrink-0 border-t border-white/[0.06] px-4 pb-4 pt-3">
+              {isPending ? (
                 <button
                   type="button"
-                  onClick={handleCancel}
+                  onClick={onCancelPending}
                   className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md border border-white/[0.1] bg-white/[0.04] text-[13px] font-medium text-white/70 transition-colors hover:border-white/20 hover:bg-white/[0.07] hover:text-white"
                 >
                   <Square className="h-3.5 w-3.5" aria-hidden />
@@ -402,7 +388,7 @@ export function ImageWorkspace({
               ) : (
                 <button
                   type="button"
-                  onClick={() => void handleGenerate()}
+                  onClick={handleGenerate}
                   disabled={!canGenerate}
                   className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md bg-[#3ecf8e] text-[13px] font-medium text-[#171717] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:opacity-40"
                 >

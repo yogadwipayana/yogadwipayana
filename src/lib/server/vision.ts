@@ -1,6 +1,41 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type OpenAI from "openai";
 
 import { extractPdfText } from "@/lib/server/pdf-parse";
+
+/**
+ * If the URL points to one of our own /uploads/ files, return the absolute
+ * filesystem path so we can read it directly. Otherwise return null.
+ */
+function getLocalUploadPath(url: string): string | null {
+  try {
+    const { pathname } = new URL(url);
+    if (!/^\/uploads\/[^/]+$/.test(pathname)) return null;
+    return join(process.cwd(), "public", pathname);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve an image attachment to a URL suitable for the model:
+ * - Own uploads → base64 data URL (works on localhost and in prod without
+ *   requiring the model to make an outbound HTTP request)
+ * - External URLs → pass through as-is
+ */
+async function resolveImageUrl(att: Attachment): Promise<string> {
+  const localPath = getLocalUploadPath(att.url);
+  if (localPath) {
+    try {
+      const buffer = await readFile(localPath);
+      return `data:${att.mime};base64,${buffer.toString("base64")}`;
+    } catch {
+      // Fall back to the original URL if file read fails
+    }
+  }
+  return att.url;
+}
 
 type ContentPart = OpenAI.Chat.Completions.ChatCompletionContentPart;
 
@@ -49,9 +84,10 @@ export async function buildUserContentWithAttachments(args: {
 
   for (const att of attachments) {
     if (att.kind === "image") {
+      const imageUrl = await resolveImageUrl(att);
       parts.push({
         type: "image_url",
-        image_url: { url: att.url },
+        image_url: { url: imageUrl },
       });
     } else {
       // PDF — extract text server-side

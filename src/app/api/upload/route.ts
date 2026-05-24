@@ -1,8 +1,9 @@
+import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import { extname, join } from "node:path";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { z } from "zod";
 
-import { createPresignedUploadUrl, publicUrl } from "@/lib/s3";
 import { fail } from "@/lib/server/api-response";
 import {
   checkRateLimit,
@@ -14,12 +15,6 @@ import { createClient } from "@/utils/supabase/server";
 
 export const runtime = "nodejs";
 
-const BodySchema = z.object({
-  filename: z.string().min(1).max(255),
-  contentType: z.string().min(1).max(127),
-  size: z.number().int().positive().max(50 * 1024 * 1024), // 50 MB
-});
-
 const ALLOWED_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -28,12 +23,12 @@ const ALLOWED_TYPES = new Set([
   "application/pdf",
 ]);
 
+const MAX_BYTES = 50 * 1024 * 1024; // 50 MB
+
 /**
- * POST /api/upload
- * Body: { filename, contentType, size }
- * Returns a presigned PUT URL the client uses to upload directly to S3.
- *
- * Auth: only authenticated users. Bytes never touch our server.
+ * POST /api/upload  (multipart/form-data, field: "file")
+ * Saves the file to public/uploads/ and returns its public URL.
+ * No external storage required — mirrors how generated images are stored.
  */
 export async function POST(request: Request) {
   try {
@@ -51,36 +46,33 @@ export async function POST(request: Request) {
       "/api/upload",
     );
 
-    const json = await request.json().catch(() => null);
-    const parsed = BodySchema.safeParse(json);
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid payload", issues: parsed.error.flatten() },
-        { status: 400 },
-      );
+    const formData = await request.formData().catch(() => null);
+    const file = formData?.get("file");
+    if (!(file instanceof File)) {
+      return NextResponse.json({ error: "Missing file field" }, { status: 400 });
     }
 
-    const { filename, contentType, size } = parsed.data;
-    if (!ALLOWED_TYPES.has(contentType)) {
+    if (!ALLOWED_TYPES.has(file.type)) {
       return NextResponse.json(
-        { error: `Unsupported contentType: ${contentType}` },
+        { error: `Unsupported file type: ${file.type}` },
         { status: 415 },
       );
     }
+    if (file.size > MAX_BYTES) {
+      return NextResponse.json(
+        { error: "File too large (max 50 MB)" },
+        { status: 413 },
+      );
+    }
 
-    const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const key = `u/${user.id}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+    const ext = extname(file.name) || (file.type === "application/pdf" ? ".pdf" : ".png");
+    const filename = `${Date.now()}-${randomUUID()}${ext}`;
+    const outDir = join(process.cwd(), "public", "uploads");
 
-    const url = await createPresignedUploadUrl({ key, contentType });
+    await mkdir(outDir, { recursive: true });
+    await writeFile(join(outDir, filename), Buffer.from(await file.arrayBuffer()));
 
-    return NextResponse.json({
-      url,
-      method: "PUT",
-      key,
-      publicUrl: publicUrl(key),
-      expiresIn: 60,
-      size,
-    });
+    return NextResponse.json({ publicUrl: `/uploads/${filename}` });
   } catch (err) {
     return fail(err);
   }

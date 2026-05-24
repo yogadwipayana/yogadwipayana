@@ -24,6 +24,10 @@ export type MessageRow = {
   role: "user" | "assistant" | "system";
   content: string;
   created_at: string;
+  /** Tool call results for the assistant turn (null for user/system rows). */
+  tool_events?: Array<{ call_id: string; name: string; status: "done"; args?: unknown; result?: unknown }> | null;
+  /** Follow-up question suggestions generated after the assistant turn. */
+  follow_ups?: string[] | null;
 };
 
 export type ConversationSummary = Pick<
@@ -114,6 +118,8 @@ export async function appendMessage(
     userId: string;
     role: MessageRow["role"];
     content: string;
+    toolEvents?: MessageRow["tool_events"];
+    followUps?: string[] | null;
   },
 ): Promise<MessageRow> {
   const owner = await getConversation(supabase, args.conversationId, args.userId);
@@ -126,6 +132,8 @@ export async function appendMessage(
       conversation_id: args.conversationId,
       role: args.role,
       content: args.content,
+      ...(args.toolEvents?.length ? { tool_events: args.toolEvents } : {}),
+      ...(args.followUps?.length ? { follow_ups: args.followUps } : {}),
     })
     .select("*")
     .single<MessageRow>();

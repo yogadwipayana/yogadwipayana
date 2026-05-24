@@ -158,10 +158,40 @@ function ImageCard({
   const handleCopy = async (e: React.MouseEvent) => {
     e.preventDefault();
     try {
-      await navigator.clipboard.writeText(image.url);
+      // Fetch the image as a blob and write it as an actual image to the
+      // clipboard so the user can paste it directly into other apps.
+      const res = await fetch(image.url);
+      const blob = await res.blob();
+      const mimeType = blob.type || "image/png";
+      // ClipboardItem only accepts png in most browsers; convert if needed.
+      const pngBlob: Blob = mimeType === "image/png"
+        ? blob
+        : await new Promise((resolve, reject) => {
+            const img = new window.Image();
+            img.crossOrigin = "anonymous";
+            img.onload = () => {
+              const canvas = document.createElement("canvas");
+              canvas.width = img.naturalWidth;
+              canvas.height = img.naturalHeight;
+              canvas.getContext("2d")!.drawImage(img, 0, 0);
+              canvas.toBlob((b) => b ? resolve(b) : reject(new Error("toBlob failed")), "image/png");
+            };
+            img.onerror = reject;
+            img.src = URL.createObjectURL(blob);
+          });
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": pngBlob }),
+      ]);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch {}
+    } catch {
+      // Fallback: copy the URL as text if clipboard image API is unavailable
+      try {
+        await navigator.clipboard.writeText(image.url);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      } catch {}
+    }
   };
 
   const handleDelete = (e: React.MouseEvent) => {
@@ -186,8 +216,8 @@ function ImageCard({
           <button
             type="button"
             onClick={handleCopy}
-            title="Copy URL"
-            aria-label="Copy image URL"
+            title="Copy image"
+            aria-label="Copy image to clipboard"
             className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/[0.12] bg-[#171717]/80 text-white/70 transition-colors hover:border-white/[0.2] hover:text-white"
           >
             {copied ? (

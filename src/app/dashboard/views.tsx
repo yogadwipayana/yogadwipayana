@@ -59,7 +59,7 @@ import type {
 } from "./data";
 import { AI_MODELS, AI_RECENT_CALLS, CHAT_MODES } from "./data";
 import { deriveConversationTitle } from "@/lib/chat-title";
-import { copyToClipboard } from "@/lib/utils";
+import { copyToClipboard, stripMarkdown } from "@/lib/utils";
 
 export { VpsView } from "./vps-view";
 
@@ -428,10 +428,20 @@ export function ChatView({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Always holds the latest model/mode values so async callbacks can check
+  // for stale selections without reading state inside an updater function.
+  const latestModelRef = useRef(model);
+  latestModelRef.current = model;
+  const latestModeRef = useRef(mode);
+  latestModeRef.current = mode;
   // Tracks whether the user is "pinned" to the bottom. We only auto-scroll on
   // new tokens when this is true, so reading earlier messages mid-stream isn't
   // disrupted by every delta.
   const pinnedToBottomRef = useRef(true);
+
+  // Images persisted in the DB for this conversation (loaded once on mount).
+  // Supplemented at runtime by any new images streamed in the current session.
+  const [loadedImages, setLoadedImages] = useState<Array<{ url: string; prompt: string }>>([]);
 
   // Attachments state
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -521,11 +531,19 @@ export function ChatView({
             updated_at: string;
           };
           messages: ChatMessage[];
+          images?: Array<{ url: string; prompt: string }>;
         };
         if (cancelled) return;
-        setMessages(data.messages);
-        setModel(data.conversation.model);
+        // Only populate messages if none have been added yet (e.g. the user
+        // sent the first message while this fetch was still in flight — we
+        // must not clobber those streaming messages with the empty DB result).
+        setMessages((prev) => (prev.length === 0 ? data.messages : prev));
+        setModel(data.conversation.model || defaultModel || "");
         setMode(data.conversation.mode ?? "chat");
+        // Restore persisted images (oldest first so the tab matches conversation order)
+        if (data.images && data.images.length > 0) {
+          setLoadedImages([...data.images].reverse());
+        }
         setLoaded(true);
       } catch {
         if (!cancelled) setError("Failed to load conversation.");
@@ -599,12 +617,11 @@ export function ChatView({
         const data = (await res.json()) as { conversation: ChatConversationSummary };
         // Likewise, ignore stale success: another selection may already be in
         // flight and we don't want to surface this conversation summary in the
-        // sidebar with the wrong model.
-        setModel((current) => {
-          if (current !== slug) return current;
+        // sidebar with the wrong model. Read via ref to avoid calling a side
+        // effect (parent state update) inside a state updater function.
+        if (latestModelRef.current === slug) {
           onConversationUpdated?.(data.conversation);
-          return current;
-        });
+        }
       } catch {
         setModel((current) => (current === slug ? previous : current));
       }
@@ -627,11 +644,11 @@ export function ChatView({
           return;
         }
         const data = (await res.json()) as { conversation: ChatConversationSummary };
-        setMode((current) => {
-          if (current !== slug) return current;
+        // Check via ref (not inside a state updater) to avoid calling a parent
+        // state setter during render — same pattern as handleSelectModel.
+        if (latestModeRef.current === slug) {
           onConversationUpdated?.(data.conversation);
-          return current;
-        });
+        }
       } catch {
         setMode((current) => (current === slug ? previous : current));
       }
@@ -812,16 +829,32 @@ export function ChatView({
 
   const handleSend = useCallback(async (overrideText?: string) => {
     const trimmed = (overrideText ?? input).trim();
-    if (!trimmed || isStreaming) return;
+    const hasAttachments = !overrideText && attachments.some((a) => !a.error);
+    if ((!trimmed && !hasAttachments) || isStreaming) return;
     // Block send while any attachment is still uploading (skip for follow-ups)
     if (!overrideText && attachments.some((a) => a.uploading)) return;
 
     const readyAttachments = overrideText ? [] : attachments.filter((a) => !a.error);
 
+    // Mirror the footer that the server appends so the optimistic bubble looks
+    // identical to the persisted message (images visible immediately).
+    const localFooter = readyAttachments
+      .map((a) =>
+        a.kind === "image"
+          ? `![${a.name}](${a.publicUrl})`
+          : `[📎 ${a.name}](${a.publicUrl})`,
+      )
+      .join("\n");
+    const localContent = localFooter
+      ? trimmed
+        ? `${trimmed}\n\n${localFooter}`
+        : localFooter
+      : trimmed;
+
     const userMsg: ChatMessage = {
       id: `local-user-${Date.now()}`,
       role: "user",
-      content: trimmed,
+      content: localContent,
     };
     const assistantMsg: ChatMessage = {
       id: `local-assistant-${Date.now()}`,
@@ -832,7 +865,15 @@ export function ChatView({
 
     // New send always pins to bottom — the user is engaged with the latest turn.
     pinnedToBottomRef.current = true;
-    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+    // Seed live cache before the first SSE event so navigation-then-return
+    // can always re-attach even if the first delta takes a long time (e.g.
+    // slow tool calls like ssh_run).
+    let seedMsgs: ChatMessage[] = [];
+    setMessages((prev) => {
+      seedMsgs = [...prev, userMsg, assistantMsg];
+      return seedMsgs;
+    });
+    _publishLive(conversation.id, seedMsgs);
     if (!overrideText) {
       setInput("");
       _draftCache.delete(conversation.id);
@@ -882,9 +923,17 @@ export function ChatView({
       });
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
-        // User stopped the stream — keep whatever streamed in. Server-side the
-        // partial reply is persisted by the route's stream-error handler when
-        // the connection drops, so there's nothing to clean up here.
+        // User stopped the stream — keep whatever streamed in. Still bubble
+        // the conversation to the top since a user message was persisted.
+        onConversationUpdated?.({
+          id: conversation.id,
+          title: isFirstMessage
+            ? deriveConversationTitle(trimmed)
+            : conversation.title,
+          model,
+          mode,
+          updated_at: new Date().toISOString(),
+        });
         return;
       }
       const message =
@@ -933,7 +982,9 @@ export function ChatView({
     };
 
     pinnedToBottomRef.current = true;
-    setMessages([...next, assistantMsg]);
+    const regenSeedMsgs = [...next, assistantMsg];
+    setMessages(regenSeedMsgs);
+    _publishLive(conversation.id, regenSeedMsgs);
     notifyStreaming(true);
     setError(null);
 
@@ -958,7 +1009,16 @@ export function ChatView({
         updated_at: new Date().toISOString(),
       });
     } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") return;
+      if (err instanceof DOMException && err.name === "AbortError") {
+        onConversationUpdated?.({
+          id: conversation.id,
+          title: conversation.title,
+          model,
+          mode,
+          updated_at: new Date().toISOString(),
+        });
+        return;
+      }
       const message =
         err instanceof Error ? err.message : "Something went wrong.";
       setError(message);
@@ -1033,7 +1093,9 @@ export function ChatView({
 
       const truncated = messages.slice(0, idx);
       pinnedToBottomRef.current = true;
-      setMessages([...truncated, editedUser, assistantMsg]);
+      const editSeedMsgs = [...truncated, editedUser, assistantMsg];
+      setMessages(editSeedMsgs);
+      _publishLive(conversation.id, editSeedMsgs);
       notifyStreaming(true);
       setError(null);
 
@@ -1059,7 +1121,16 @@ export function ChatView({
           updated_at: new Date().toISOString(),
         });
       } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (err instanceof DOMException && err.name === "AbortError") {
+          onConversationUpdated?.({
+            id: conversation.id,
+            title: conversation.title,
+            model,
+            mode,
+            updated_at: new Date().toISOString(),
+          });
+          return;
+        }
         const message =
           err instanceof Error ? err.message : "Something went wrong.";
         setError(message);
@@ -1088,7 +1159,7 @@ export function ChatView({
     ],
   );
 
-  // Upload a single file: POST /api/upload → presigned URL → PUT to S3
+  // Upload a single file: POST /api/upload (multipart) → saved to public/uploads/
   const uploadFile = useCallback(async (file: File) => {
     if (!ACCEPTED_MIME.includes(file.type)) return;
     if (file.size > MAX_ATTACHMENT_BYTES) return;
@@ -1109,23 +1180,23 @@ export function ChatView({
     setAttachments((prev) => [...prev, placeholder]);
 
     try {
-      const metaRes = await fetch("/api/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name, contentType: file.type, size: file.size }),
-      });
-      if (!metaRes.ok) throw new Error(`Upload init failed: ${metaRes.status}`);
-      const meta = (await metaRes.json()) as { url: string; method: string; key: string; publicUrl: string };
-
-      await fetch(meta.url, {
-        method: meta.method ?? "PUT",
-        headers: { "Content-Type": file.type },
-        body: file,
-      });
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(json.error ?? `Upload failed: ${res.status}`);
+      }
+      const { publicUrl: rawUrl } = (await res.json()) as { publicUrl: string };
+      // Convert relative path to absolute URL so Zod's .url() validation passes
+      const publicUrl =
+        rawUrl.startsWith("/") && typeof window !== "undefined"
+          ? `${window.location.origin}${rawUrl}`
+          : rawUrl;
 
       setAttachments((prev) =>
         prev.map((a) =>
-          a.key === key ? { ...a, uploading: false, publicUrl: meta.publicUrl } : a,
+          a.key === key ? { ...a, uploading: false, publicUrl } : a,
         ),
       );
     } catch (err) {
@@ -1413,10 +1484,23 @@ export function ChatView({
     [messages],
   );
 
-  // Collect all generated images from every message in the conversation
+  // Collect all generated images for this conversation.
+  // loadedImages comes from the DB on mount; streaming tool events add new ones
+  // in real-time during the current session without a page reload.
   const allImages = useMemo((): Array<{ url: string; prompt: string }> => {
     const seen = new Set<string>();
     const imgs: Array<{ url: string; prompt: string }> = [];
+
+    // Persisted images first (oldest → newest, already reversed on load)
+    for (const img of loadedImages) {
+      if (img.url && !seen.has(img.url)) {
+        seen.add(img.url);
+        imgs.push(img);
+      }
+    }
+
+    // Append any images that came in via SSE during the current session
+    // (not yet in the DB snapshot we loaded on mount)
     for (const msg of messages) {
       for (const evt of msg.toolEvents ?? []) {
         if (evt.status !== "done" || !evt.result) continue;
@@ -1429,11 +1513,13 @@ export function ChatView({
         }
       }
     }
+
     return imgs;
-  }, [messages]);
+  }, [loadedImages, messages]);
 
   const anyUploading = attachments.some((a) => a.uploading);
-  const canSend = !!input.trim() && !isStreaming && !anyUploading;
+  const hasReadyAttachment = attachments.some((a) => !a.uploading && !a.error);
+  const canSend = (!!input.trim() || hasReadyAttachment) && !isStreaming && !anyUploading;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -1851,7 +1937,7 @@ export function ChatView({
               onKeyDown={onKeyDown}
               onPaste={handlePaste}
               disabled={isStreaming}
-              placeholder="Ask a follow-up"
+              placeholder={messages.length === 0 ? "Ask anything..." : "Ask a follow-up"}
               className="block w-full resize-none bg-transparent px-4 pt-4 pb-2 text-[14px] leading-relaxed text-white placeholder:text-white/30 focus:outline-none disabled:opacity-60"
               style={{ minHeight: "52px", maxHeight: "200px" }}
             />
@@ -2480,7 +2566,7 @@ function ChatBubble({
   }, [editing]);
 
   const handleCopy = useCallback(async () => {
-    if (await copyToClipboard(message.content)) {
+    if (await copyToClipboard(stripMarkdown(message.content))) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     }
@@ -2551,11 +2637,44 @@ function ChatBubble({
       );
     }
 
+    // Parse inline markdown images out of user message content so attachments
+    // are shown as real <img> elements rather than raw markdown syntax.
+    const userParts: Array<{ type: "text"; value: string } | { type: "image"; alt: string; url: string }> = [];
+    {
+      const imgRe = /!\[([^\]]*)\]\(([^)]+)\)/g;
+      let last = 0;
+      let m: RegExpExecArray | null;
+      const raw = message.content;
+      while ((m = imgRe.exec(raw)) !== null) {
+        const text = raw.slice(last, m.index).replace(/^\n+|\n+$/g, "");
+        if (text) userParts.push({ type: "text", value: text });
+        userParts.push({ type: "image", alt: m[1], url: m[2] });
+        last = imgRe.lastIndex;
+      }
+      const tail = raw.slice(last).replace(/^\n+|\n+$/g, "");
+      if (tail) userParts.push({ type: "text", value: tail });
+    }
+
     return (
       <div className={`group flex justify-end ${isFirstInGroup ? "mt-5" : "mt-1"}`}>
         <div className="flex max-w-[80%] flex-col items-end">
-          <div className="whitespace-pre-wrap rounded-2xl rounded-br-md border border-[#3ecf8e]/12 bg-[#3ecf8e]/[0.07] px-4 py-3 text-[14px] leading-relaxed text-white/90">
-            {message.content}
+          <div className="rounded-2xl rounded-br-md border border-[#3ecf8e]/12 bg-[#3ecf8e]/[0.07] px-4 py-3 text-[14px] leading-relaxed text-white/90">
+            {userParts.length === 0 && (
+              <span className="whitespace-pre-wrap">{message.content}</span>
+            )}
+            {userParts.map((part, i) =>
+              part.type === "text" ? (
+                <p key={i} className="whitespace-pre-wrap m-0">{part.value}</p>
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={i}
+                  src={part.url}
+                  alt={part.alt}
+                  className="mt-2 max-h-64 max-w-full rounded-lg object-contain first:mt-0"
+                />
+              )
+            )}
           </div>
           <div className="mt-1.5 flex items-center justify-end">
             <MessageActionsMenu
@@ -3009,7 +3128,7 @@ function ModelSelector({
   // When the conversation's model isn't in the catalogue (e.g. it was created
   // when the env-default pointed at a different slug), don't snap to the first
   // option — show the raw slug so the UI mirrors the database.
-  const buttonLabel = known?.slug ?? model ?? "default";
+  const buttonLabel = known?.name ?? model ?? "Model";
 
   return (
     <div className="relative">
@@ -3018,7 +3137,7 @@ function ModelSelector({
         onClick={() => setOpen((v) => !v)}
         className="group flex items-center gap-1 text-[12px] text-white/50 transition-colors hover:text-white/80"
       >
-        <span className="max-w-[120px] truncate sm:max-w-[140px]">Model</span>
+        <span className="max-w-[120px] truncate sm:max-w-[140px]">{buttonLabel}</span>
         <ChevronDown
           className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`}
           aria-hidden
@@ -3148,7 +3267,7 @@ function ModeSelector({
         {mode === "image" ? (
           <ImagePlus className="h-3 w-3 text-[#3ecf8e]/80" aria-hidden />
         ) : (
-          <Globe className="h-3 w-3 text-white/40" aria-hidden />
+          <MessageSquare className="h-3 w-3 text-white/40" aria-hidden />
         )}
         <span className="max-w-[80px] truncate sm:max-w-[120px]">{current.name}</span>
         <ChevronUp

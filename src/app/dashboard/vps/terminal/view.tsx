@@ -405,13 +405,13 @@ export function SshTerminalView({ instances }: { instances: InstanceOption[] }) 
 
             {authMethod === "password" ? (
               <FieldGroup label="Password">
-                <textarea
+                <input
+                  type="password"
                   value={password}
-                  onChange={(e) => { markEdited(); setPassword(e.target.value); }}
-                  rows={2}
+                  onChange={(e) => { markEdited(); setPassword(e.target.value.replace(/\s/g, "")); }}
                   disabled={isLocked}
                   placeholder={passwordPlaceholder}
-                  className="w-full resize-none rounded-md border border-white/[0.08] bg-[#1c1c1c] px-3 py-2 font-mono text-[12px] text-white placeholder:text-white/20 focus:border-[#3ecf8e]/40 focus:outline-none disabled:opacity-50"
+                  className="w-full rounded-md border border-white/[0.08] bg-[#1c1c1c] px-3 py-2 font-mono text-[12px] text-white placeholder:text-white/20 focus:border-[#3ecf8e]/40 focus:outline-none disabled:opacity-50"
                 />
               </FieldGroup>
             ) : (

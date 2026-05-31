@@ -17,13 +17,26 @@ import {
 } from "@/lib/aspect-ratio";
 import type { GeneratedImageRow } from "@/lib/server/image-service";
 
+export type Quality = "auto" | "hd";
+
 export type GenerateArgs = {
   prompt: string;
+  negativePrompt?: string;
   aspect: AspectRatioPreset;
+  quality: Quality;
   imageUrls?: string[]; // up to 4 reference images
 };
 
 const MAX_REFS = 4;
+
+// Visual proportional box dimensions (max 28px on longest side)
+const ASPECT_VISUALS: Record<string, { w: number; h: number; ratio: string }> = {
+  square:    { w: 26, h: 26, ratio: "1:1"  },
+  portrait:  { w: 20, h: 26, ratio: "3:4"  },
+  landscape: { w: 26, h: 20, ratio: "4:3"  },
+  wide:      { w: 28, h: 16, ratio: "16:9" },
+  tall:      { w: 16, h: 28, ratio: "9:16" },
+};
 
 const ACCEPTED_IMAGE_MIME = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const MAX_REF_BYTES = 50 * 1024 * 1024;
@@ -65,7 +78,10 @@ export function ImageWorkspace({
     ? (initialImages.find((i) => i.id === selectedImageId) ?? initialImages[0] ?? null)
     : null;
   const [prompt, setPrompt] = useState(initialSelected?.prompt ?? "");
+  const [negativePrompt, setNegativePrompt] = useState("");
+  const [showNegative, setShowNegative] = useState(false);
   const [aspect, setAspect] = useState<AspectRatioPreset>("square");
+  const [quality, setQuality] = useState<Quality>("auto");
   // Multiple reference images (up to MAX_REFS). Pre-populated with the viewed
   // image so editing a generation carries the style forward automatically.
   const [referenceUrls, setReferenceUrls] = useState<string[]>(
@@ -112,11 +128,13 @@ export function ImageWorkspace({
     if (!trimmed || isPending) return;
     onGenerate({
       prompt: trimmed,
+      negativePrompt: negativePrompt.trim() || undefined,
       aspect,
+      quality,
       imageUrls: referenceUrls.length > 0 ? referenceUrls : undefined,
     });
     setPrompt("");
-  }, [prompt, isPending, aspect, referenceUrls, onGenerate]);
+  }, [prompt, negativePrompt, isPending, aspect, quality, referenceUrls, onGenerate]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -241,160 +259,210 @@ export function ImageWorkspace({
         {/* Controls — same height as canvas on desktop, scrollable body, pinned Generate */}
         <div className="flex w-full flex-col md:w-[320px] md:shrink-0 md:h-[min(560px,calc(100svh-12rem))]">
           <div className="flex h-full flex-col rounded-xl border border-white/[0.08] bg-[#171717]">
-            {/* Scrollable content area */}
-            <div className="flex-1 overflow-y-auto p-4">
-            {/* Prompt */}
-            <label className="mb-1.5 block text-[11px] font-medium uppercase tracking-[0.1em] text-white/40">
-              Prompt
-            </label>
-            <textarea
-              ref={textareaRef}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Describe the image you want to generate…"
-              rows={3}
-              className="w-full resize-none rounded-md border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-[13px] text-white placeholder:text-white/25 outline-none transition-colors focus:border-white/[0.18] focus:bg-white/[0.05]"
-              style={{ minHeight: "80px" }}
-            />
 
-            {/* Aspect ratio */}
-            <label className="mb-2 mt-4 block text-[11px] font-medium uppercase tracking-[0.1em] text-white/40">
-              Aspect ratio
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {ASPECT_RATIO_OPTIONS.filter((o) => o.preset !== "auto").map((opt) => (
-                <button
-                  key={opt.preset}
-                  type="button"
-                  onClick={() => setAspect(opt.preset)}
-                  title={opt.description}
-                  className={`rounded-full border px-3 py-1 text-[12px] font-medium transition-colors ${
-                    aspect === opt.preset
-                      ? "border-[#3ecf8e]/50 bg-[#3ecf8e]/15 text-[#3ecf8e]"
-                      : "border-white/[0.08] bg-white/[0.03] text-white/55 hover:border-white/[0.16] hover:text-white"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+            {/* ── Scrollable body ── */}
+            <div className="flex-1 space-y-5 overflow-y-auto p-4">
 
-            {/* Reference images (up to 4) */}
-            <div className="mb-2 mt-4 flex items-center justify-between">
-              <label className="text-[11px] font-medium uppercase tracking-[0.1em] text-white/40">
-                Reference images
-                <span className="ml-1 normal-case tracking-normal text-white/25">(optional)</span>
-              </label>
-              {referenceUrls.length > 0 && (
-                <span className="text-[11px] text-white/30">
-                  {referenceUrls.length}/{MAX_REFS}
-                </span>
-              )}
-            </div>
-
-            {/* Thumbnail grid */}
-            {referenceUrls.length > 0 && (
-              <div className="mb-2 flex flex-wrap gap-1.5">
-                {referenceUrls.map((url) => (
-                  <div key={url} className="group relative h-14 w-14 shrink-0">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={url}
-                      alt="Reference"
-                      className="h-full w-full rounded-md object-cover border border-white/[0.08]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeReference(url)}
-                      aria-label="Remove reference"
-                      className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full bg-[#2a2a2a] border border-white/[0.12] text-white/60 hover:text-white group-hover:flex"
-                    >
-                      <X className="h-3 w-3" aria-hidden />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Add reference controls */}
-            {referenceUrls.length < MAX_REFS && (
-              <div className="flex flex-col gap-2">
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={refUploading}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-3 text-[12px] text-white/60 transition-colors hover:border-white/[0.16] hover:text-white disabled:opacity-50"
-                  >
-                    {refUploading ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                    ) : (
-                      <Paperclip className="h-3.5 w-3.5" aria-hidden />
-                    )}
-                    {refUploading ? "Uploading…" : "Upload"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowAddInput((v) => !v)}
-                    className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-3 text-[12px] text-white/60 transition-colors hover:border-white/[0.16] hover:text-white"
-                  >
-                    {referenceUrls.length > 0 ? (
-                      <><Plus className="h-3.5 w-3.5" aria-hidden />Add</>
-                    ) : (
-                      "Paste URL"
-                    )}
-                  </button>
+              {/* Prompt */}
+              <div>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/35">Prompt</span>
+                  <span className={`text-[10px] tabular-nums ${prompt.length > 3800 ? "text-amber-400" : "text-white/20"}`}>
+                    {prompt.length}/4000
+                  </span>
                 </div>
-
-                {showAddInput && (
-                  <div className="flex gap-2">
-                    <input
-                      type="url"
-                      value={addUrlInput}
-                      onChange={(e) => setAddUrlInput(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") handleAddUrlCommit(); }}
-                      placeholder="https://…"
-                      className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-3 py-1.5 text-[12px] text-white placeholder:text-white/25 outline-none transition-colors focus:border-white/[0.18]"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddUrlCommit}
-                      className="inline-flex h-8 items-center rounded-md border border-white/[0.08] bg-white/[0.03] px-3 text-[12px] text-white/60 transition-colors hover:border-white/[0.16] hover:text-white"
-                    >
-                      Add
-                    </button>
-                  </div>
+                <textarea
+                  ref={textareaRef}
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Describe the image…"
+                  rows={3}
+                  className="w-full resize-none rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2.5 text-[13px] leading-relaxed text-white placeholder:text-white/20 outline-none transition-colors focus:border-white/[0.16] focus:bg-white/[0.05]"
+                  style={{ minHeight: "80px" }}
+                />
+                {/* Negative prompt toggle */}
+                <button
+                  type="button"
+                  onClick={() => setShowNegative((v) => !v)}
+                  className="mt-1.5 flex items-center gap-1 text-[11px] text-white/30 transition-colors hover:text-white/60"
+                >
+                  <Plus className={`h-3 w-3 transition-transform ${showNegative ? "rotate-45" : ""}`} aria-hidden />
+                  {showNegative ? "Remove negative prompt" : "Add negative prompt"}
+                </button>
+                {showNegative && (
+                  <textarea
+                    value={negativePrompt}
+                    onChange={(e) => setNegativePrompt(e.target.value)}
+                    placeholder="Things to avoid…"
+                    rows={2}
+                    className="mt-1.5 w-full resize-none rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[12px] leading-relaxed text-white/70 placeholder:text-white/20 outline-none transition-colors focus:border-white/[0.14]"
+                  />
                 )}
               </div>
-            )}
 
-            {refError && (
-              <p className="mt-1.5 text-[12px] text-red-400">{refError}</p>
-            )}
-            </div>{/* end scrollable area */}
+              {/* Aspect ratio — visual proportional boxes */}
+              <div>
+                <span className="mb-2.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-white/35">
+                  Aspect ratio
+                </span>
+                <div className="flex items-end gap-1.5">
+                  {ASPECT_RATIO_OPTIONS.filter((o) => o.preset !== "auto").map((opt) => {
+                    const vis = ASPECT_VISUALS[opt.preset];
+                    const active = aspect === opt.preset;
+                    return (
+                      <button
+                        key={opt.preset}
+                        type="button"
+                        onClick={() => setAspect(opt.preset)}
+                        title={opt.description}
+                        className={`group flex flex-1 flex-col items-center gap-1.5 rounded-lg border py-2 transition-colors ${
+                          active
+                            ? "border-[#3ecf8e]/40 bg-[#3ecf8e]/10"
+                            : "border-white/[0.07] bg-white/[0.02] hover:border-white/[0.14] hover:bg-white/[0.04]"
+                        }`}
+                      >
+                        <div className="flex items-center justify-center" style={{ width: 28, height: 28 }}>
+                          <div
+                            className={`rounded-sm border transition-colors ${
+                              active ? "border-[#3ecf8e]/70 bg-[#3ecf8e]/10" : "border-white/25 group-hover:border-white/40"
+                            }`}
+                            style={{ width: vis?.w ?? 24, height: vis?.h ?? 24 }}
+                          />
+                        </div>
+                        <span className={`text-[10px] font-medium tabular-nums ${active ? "text-[#3ecf8e]" : "text-white/40 group-hover:text-white/70"}`}>
+                          {vis?.ratio ?? opt.label}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-            {/* Generate / Cancel — pinned to the bottom of the card */}
+              {/* Quality */}
+              <div>
+                <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.12em] text-white/35">
+                  Quality
+                </span>
+                <div className="flex gap-1.5">
+                  {(["auto", "hd"] as Quality[]).map((q) => (
+                    <button
+                      key={q}
+                      type="button"
+                      onClick={() => setQuality(q)}
+                      className={`flex-1 rounded-lg border py-1.5 text-[12px] font-medium transition-colors ${
+                        quality === q
+                          ? "border-[#3ecf8e]/40 bg-[#3ecf8e]/10 text-[#3ecf8e]"
+                          : "border-white/[0.07] bg-white/[0.02] text-white/40 hover:border-white/[0.14] hover:text-white/70"
+                      }`}
+                    >
+                      {q === "auto" ? "Auto" : "HD"}
+                    </button>
+                  ))}
+                </div>
+                {quality === "hd" && (
+                  <p className="mt-1.5 text-[11px] text-white/30">Higher detail, may take longer</p>
+                )}
+              </div>
+
+              {/* Reference images */}
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/35">
+                    References
+                    <span className="ml-1 normal-case text-white/20">(optional)</span>
+                  </span>
+                  {referenceUrls.length > 0 && (
+                    <span className="text-[10px] text-white/25">{referenceUrls.length}/{MAX_REFS}</span>
+                  )}
+                </div>
+
+                {referenceUrls.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {referenceUrls.map((url) => (
+                      <div key={url} className="group relative h-14 w-14 shrink-0">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt="Reference" className="h-full w-full rounded-lg object-cover border border-white/[0.08]" />
+                        <button
+                          type="button"
+                          onClick={() => removeReference(url)}
+                          aria-label="Remove reference"
+                          className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full border border-white/[0.12] bg-[#1c1c1c] text-white/50 transition-colors hover:text-white group-hover:flex"
+                        >
+                          <X className="h-3 w-3" aria-hidden />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {referenceUrls.length < MAX_REFS && (
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={refUploading}
+                        className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-white/[0.07] bg-white/[0.02] text-[12px] text-white/50 transition-colors hover:border-white/[0.14] hover:text-white/80 disabled:opacity-40"
+                      >
+                        {refUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
+                        {refUploading ? "Uploading…" : "Upload"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowAddInput((v) => !v)}
+                        className="inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg border border-white/[0.07] bg-white/[0.02] text-[12px] text-white/50 transition-colors hover:border-white/[0.14] hover:text-white/80"
+                      >
+                        {referenceUrls.length > 0 ? <><Plus className="h-3.5 w-3.5" />Add</> : "Paste URL"}
+                      </button>
+                    </div>
+                    {showAddInput && (
+                      <div className="flex gap-1.5">
+                        <input
+                          type="url"
+                          value={addUrlInput}
+                          onChange={(e) => setAddUrlInput(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleAddUrlCommit(); }}
+                          placeholder="https://…"
+                          className="min-w-0 flex-1 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-1.5 text-[12px] text-white placeholder:text-white/20 outline-none transition-colors focus:border-white/[0.14]"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddUrlCommit}
+                          className="inline-flex h-8 items-center rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 text-[12px] text-white/50 transition-colors hover:border-white/[0.14] hover:text-white/80"
+                        >
+                          Add
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {refError && <p className="mt-1.5 text-[11px] text-red-400">{refError}</p>}
+              </div>
+
+            </div>{/* end scrollable body */}
+
+            {/* ── Generate / Cancel — pinned bottom ── */}
             <div className="shrink-0 border-t border-white/[0.06] px-4 pb-4 pt-3">
               {isPending ? (
                 <button
                   type="button"
                   onClick={onCancelPending}
-                  className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md border border-white/[0.1] bg-white/[0.04] text-[13px] font-medium text-white/70 transition-colors hover:border-white/20 hover:bg-white/[0.07] hover:text-white"
+                  className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-white/[0.1] bg-white/[0.03] text-[13px] font-medium text-white/60 transition-colors hover:border-white/[0.18] hover:text-white"
                 >
                   <Square className="h-3.5 w-3.5" aria-hidden />
-                  Cancel
+                  Cancel generation
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={handleGenerate}
                   disabled={!canGenerate}
-                  className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-md bg-[#3ecf8e] text-[13px] font-medium text-[#171717] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-[#3ecf8e] text-[13px] font-semibold text-[#0d1f16] transition-colors hover:bg-[#2fc47f] disabled:cursor-not-allowed disabled:opacity-35"
                 >
                   <Sparkles className="h-3.5 w-3.5" aria-hidden />
                   Generate
-                  <span className="ml-1 hidden text-[11px] font-normal opacity-60 sm:inline">⌘↵</span>
+                  <kbd className="ml-1 hidden rounded border border-[#0d1f16]/20 bg-[#0d1f16]/10 px-1 py-px font-mono text-[10px] sm:inline">⌘↵</kbd>
                 </button>
               )}
             </div>

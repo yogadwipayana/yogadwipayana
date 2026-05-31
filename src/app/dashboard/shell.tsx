@@ -33,6 +33,7 @@ import {
 import type { ChatConversationSummary, ToolId } from "./data";
 import type { GeneratedImageRow } from "@/lib/server/image-service";
 import type { AspectRatioPreset } from "@/lib/aspect-ratio";
+import type { Quality } from "./image/workspace";
 import { ImageWorkspace } from "./image/workspace";
 
 import { SETTINGS_TOOL, TOOLS } from "./data";
@@ -88,7 +89,9 @@ type SubSection = {
 type PendingImage = {
   id: string;
   prompt: string;
+  negativePrompt?: string;
   aspect: AspectRatioPreset;
+  quality: Quality;
   imageUrls?: string[];
   createdAt: string; // ISO — used to compute elapsed time in the workspace
 };

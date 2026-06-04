@@ -76,8 +76,8 @@ function Hero() {
         className="pointer-events-none absolute -top-40 left-1/2 -z-0 h-[420px] w-[720px] -translate-x-1/2 rounded-full bg-[#3ecf8e]/10 blur-[120px]"
       />
 
-      <div className="relative mx-auto grid w-full max-w-6xl grid-cols-1 items-start gap-12 px-6 pt-20 pb-24 sm:px-8 sm:pt-28 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,440px)] lg:gap-16 lg:pt-32 lg:pb-32">
-        <div className="flex flex-col gap-8">
+      <div className="relative mx-auto grid w-full max-w-6xl grid-cols-1 items-start gap-10 px-6 pt-14 pb-16 sm:px-8 sm:pt-18 sm:pb-20 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,440px)] lg:gap-14 lg:pt-20 lg:pb-24">
+        <div className="flex flex-col gap-6">
           <div className="flex items-center gap-3">
             <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-white/35">
               01 — Hello
@@ -263,8 +263,8 @@ function currentSession() {
 function ToolsPreview() {
   return (
     <section className="border-t border-white/[0.08] bg-[#171717]">
-      <div className="mx-auto w-full max-w-6xl px-6 py-20 sm:px-8 sm:py-24">
-        <div className="mb-12 flex flex-col items-start justify-between gap-5 sm:flex-row sm:items-end">
+      <div className="mx-auto w-full max-w-6xl px-6 py-12 sm:px-8 sm:py-16">
+        <div className="mb-8 flex flex-col items-start justify-between gap-5 sm:mb-10 sm:flex-row sm:items-end">
           <div>
             <span className="text-xs uppercase tracking-[0.12em] text-[#3ecf8e]">
               Tools
@@ -338,7 +338,7 @@ function Philosophy() {
 
   return (
     <section className="border-t border-white/[0.08]">
-      <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-10 px-6 py-20 sm:px-8 sm:py-24 lg:grid-cols-[1fr_1fr] lg:gap-16">
+      <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-8 px-6 py-12 sm:px-8 sm:py-16 lg:grid-cols-[1fr_1fr] lg:gap-12">
         <div>
           <span className="text-xs uppercase tracking-[0.12em] text-[#3ecf8e]">
             Philosophy

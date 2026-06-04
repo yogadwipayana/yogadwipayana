@@ -116,9 +116,10 @@ function buildSections(
   onRenameConversation?: (id: string, title: string) => void,
   onReorderVps?: (orderedIds: string[]) => void,
   streamingConversationIds?: Set<string>,
+  showAdminNav = false,
 ): SubSection[] {
   if (toolId === "settings") {
-    return [
+    const sections: SubSection[] = [
       {
         title: "Account",
         items: [
@@ -137,13 +138,18 @@ function buildSections(
           { id: "settings:danger", label: "Delete account", href: "/dashboard/settings/danger" },
         ],
       },
-      {
+    ];
+
+    if (showAdminNav) {
+      sections.push({
         title: "Admin",
         items: [
           { id: "admin:og", label: "OG Images", href: "/dashboard/admin/og" },
         ],
-      },
-    ];
+      });
+    }
+
+    return sections;
   }
   if (toolId === "vps") {
     return [
@@ -254,6 +260,7 @@ export function DashboardShell({
   instances,
   initialImages: initialImagesProp,
   initialActiveId,
+  showAdminNav = false,
 }: {
   toolId: ToolId;
   children?: React.ReactNode;
@@ -265,6 +272,8 @@ export function DashboardShell({
   initialImages?: GeneratedImageRow[];
   /** Pre-selected sub-sidebar item id (e.g. from `?instance=<id>`). */
   initialActiveId?: string;
+  /** Shows owner-only admin navigation entries in the settings sidebar. */
+  showAdminNav?: boolean;
 }) {
   const [chatConversations, setChatConversations] = useState<
     ChatConversationSummary[]
@@ -460,6 +469,7 @@ export function DashboardShell({
         toolId === "chat" ? handleRenameConversation : undefined,
         toolId === "vps" ? handleReorderVps : undefined,
         toolId === "chat" ? streamingConversationIds : undefined,
+        showAdminNav,
       ),
     [
       toolId,
@@ -471,6 +481,7 @@ export function DashboardShell({
       handleRenameConversation,
       handleReorderVps,
       streamingConversationIds,
+      showAdminNav,
     ],
   );
 

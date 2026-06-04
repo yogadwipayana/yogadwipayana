@@ -1,0 +1,10 @@
+(node:20288) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+⨯ Another next dev server is already running.
+
+- Local:        http://localhost:3000
+- PID:          24928
+- Dir:          C:\Users\YOGA\Documents\yogadwipayana
+- Log:          .next\dev\logs\next-development.log
+
+Run taskkill /PID 24928 /F to stop it.

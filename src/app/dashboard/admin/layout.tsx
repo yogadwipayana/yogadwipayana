@@ -1,23 +1,12 @@
-"use client";
+import { canUseAdminTools } from "../settings/admin-access";
+import { SettingsShellClient } from "../settings/shell-client";
 
-import { usePathname } from "next/navigation";
-import { DashboardShell } from "../shell";
-
-const PATH_TO_ITEM_ID: Record<string, string> = {
-  "/dashboard/admin/og": "admin:og",
-};
-
-export default function AdminLayout({
+export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const pathname = usePathname();
-  const initialActiveId = PATH_TO_ITEM_ID[pathname] ?? "admin:og";
+  const showAdminNav = await canUseAdminTools();
 
-  return (
-    <DashboardShell toolId="settings" initialActiveId={initialActiveId}>
-      {children}
-    </DashboardShell>
-  );
+  return <SettingsShellClient showAdminNav={showAdminNav}>{children}</SettingsShellClient>;
 }

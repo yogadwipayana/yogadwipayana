@@ -55,14 +55,14 @@ function Intro() {
         className="pointer-events-none absolute -top-40 left-1/2 -z-0 h-[420px] w-[720px] -translate-x-1/2 rounded-full bg-[#3ecf8e]/10 blur-[120px]"
       />
 
-      <div className="relative mx-auto grid w-full max-w-6xl grid-cols-1 items-start gap-8 px-6 pt-14 pb-14 sm:px-8 sm:pt-16 sm:pb-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,520px)] lg:gap-12 lg:pt-20 lg:pb-20">
-        <div className="flex flex-col gap-5">
+      <div className="relative mx-auto grid w-full max-w-6xl grid-cols-1 items-start gap-7 px-6 pt-8 pb-10 sm:px-8 sm:pt-10 sm:pb-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,520px)] lg:gap-10 lg:pt-12 lg:pb-14">
+        <div className="flex flex-col gap-4">
           <span className="inline-flex w-fit items-center gap-2 rounded-full border border-white/15 bg-white/[0.04] px-3 py-1 font-mono text-[11px] text-white/70">
             <MapPin className="h-3 w-3 text-[#3ecf8e]" aria-hidden />
             ~/about · bali · indonesia
           </span>
 
-          <h1 className="text-[40px] font-medium leading-[1.02] tracking-[-0.035em] text-white sm:text-[56px] md:text-[64px] lg:text-[72px]">
+          <h1 className="text-[38px] font-medium leading-[1.02] tracking-[-0.035em] text-white sm:text-[52px] md:text-[60px] lg:text-[64px]">
             Hi, I&rsquo;m <span className="text-[#3ecf8e]">Yoga</span>.
             <br />
             I build tools that
@@ -74,11 +74,6 @@ function Intro() {
             Deep in vibe-coding mode — building AI-powered developer tools at
             ludicrous speed out of Bali. After 3+ years shipping modern web,
             this feels like a breath of fresh air.
-          </p>
-
-          <p className="max-w-xl text-[15px] leading-[1.65] text-white/50">
-            This site is both the portfolio and the hub where I actually run
-            those tools. Less a résumé, more a working surface.
           </p>
 
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -218,8 +213,8 @@ function Now() {
 
   return (
     <section className="border-b border-white/[0.08] bg-[#171717]">
-      <div className="mx-auto w-full max-w-6xl px-6 py-14 sm:px-8 sm:py-16">
-        <div className="mb-8 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
+      <div className="mx-auto w-full max-w-6xl px-6 py-10 sm:px-8 sm:py-12">
+        <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:mb-8 sm:flex-row sm:items-end">
           <div>
             <span className="font-mono text-xs uppercase tracking-[0.12em] text-[#3ecf8e]">
               /now
@@ -305,8 +300,8 @@ function Projects() {
 
   return (
     <section className="border-b border-white/[0.08]">
-      <div className="mx-auto w-full max-w-6xl px-6 py-14 sm:px-8 sm:py-16">
-        <div className="mb-8">
+      <div className="mx-auto w-full max-w-6xl px-6 py-10 sm:px-8 sm:py-12">
+        <div className="mb-6 sm:mb-8">
           <span className="text-xs uppercase tracking-[0.12em] text-[#3ecf8e]">
             Selected work
           </span>
@@ -412,7 +407,7 @@ function Principles() {
 
   return (
     <section className="border-b border-white/[0.08] bg-[#171717]">
-      <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-8 px-6 py-14 sm:px-8 sm:py-16 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)] lg:gap-12">
+      <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-7 px-6 py-10 sm:px-8 sm:py-12 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.4fr)] lg:gap-10">
         <div>
           <span className="text-xs uppercase tracking-[0.12em] text-[#3ecf8e]">
             Principles
@@ -467,8 +462,8 @@ function Stack() {
 
   return (
     <section className="border-b border-white/[0.08]">
-      <div className="mx-auto w-full max-w-6xl px-6 py-14 sm:px-8 sm:py-16">
-        <div className="mb-8 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
+      <div className="mx-auto w-full max-w-6xl px-6 py-10 sm:px-8 sm:py-12">
+        <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:mb-8 sm:flex-row sm:items-end">
           <div>
             <span className="text-xs uppercase tracking-[0.12em] text-[#3ecf8e]">
               Stack
@@ -522,8 +517,8 @@ function Stack() {
 function Connect() {
   return (
     <section>
-      <div className="mx-auto w-full max-w-6xl px-6 py-14 sm:px-8 sm:py-16">
-        <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-[#171717] px-6 py-10 sm:px-10 sm:py-12">
+      <div className="mx-auto w-full max-w-6xl px-6 py-10 sm:px-8 sm:py-12">
+        <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-[#171717] px-6 py-8 sm:px-10 sm:py-10">
           <div
             aria-hidden
             className="pointer-events-none absolute -top-24 right-0 h-[280px] w-[480px] rounded-full bg-[#3ecf8e]/10 blur-[120px]"

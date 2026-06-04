@@ -17,7 +17,7 @@ export default function SignUpPage() {
     <div className="flex flex-1 flex-col bg-[#1c1c1c] text-white selection:bg-[#3ecf8e]/30 selection:text-white">
       <Navbar />
 
-      <main className="relative flex flex-1 items-center justify-center overflow-hidden px-6 py-16 sm:py-20">
+      <main className="relative flex flex-1 items-center justify-center overflow-hidden px-6 py-10 sm:py-12">
         <BackgroundGlow />
         <AuthCard />
       </main>
@@ -45,21 +45,8 @@ function BackgroundGlow() {
 function AuthCard() {
   return (
     <section className="relative z-10 w-full max-w-[440px]">
-      <div className="mb-6 flex justify-center">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 text-[14px] font-medium tracking-[-0.01em] text-white/80 transition-colors hover:text-white"
-        >
-          <span
-            aria-hidden
-            className="inline-block h-2 w-2 rounded-full bg-[#3ecf8e] shadow-[0_0_12px_#3ecf8e]"
-          />
-          yoga
-        </Link>
-      </div>
-
-      <div className="rounded-2xl border border-white/[0.08] bg-[#171717] p-6 shadow-[0_16px_48px_rgba(0,0,0,0.45)] sm:p-8">
-        <div className="mb-6 text-center">
+      <div className="rounded-2xl border border-white/[0.08] bg-[#171717] p-5 shadow-[0_16px_48px_rgba(0,0,0,0.45)] sm:p-6">
+        <div className="mb-5 text-center">
           <h1 className="text-[28px] font-medium leading-tight tracking-[-0.02em] sm:text-[32px]">
             Create your account
           </h1>
@@ -74,7 +61,7 @@ function AuthCard() {
             disabled
             aria-disabled="true"
             title="Coming soon"
-            className="inline-flex h-12 w-full cursor-not-allowed items-center justify-center gap-2.5 rounded-md border border-white/15 bg-white/[0.03] px-4 text-[14px] font-medium text-white opacity-70 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
+            className="inline-flex h-11 w-full cursor-not-allowed items-center justify-center gap-2.5 rounded-md border border-white/15 bg-white/[0.03] px-4 text-[14px] font-medium text-white opacity-70 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
           >
             <GoogleIcon className="h-5 w-5" />
             Continue with Google
@@ -86,7 +73,7 @@ function AuthCard() {
             disabled
             aria-disabled="true"
             title="Coming soon"
-            className="inline-flex h-12 w-full cursor-not-allowed items-center justify-center gap-2.5 rounded-md border border-white/15 bg-white/[0.03] px-4 text-[14px] font-medium text-white opacity-70 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
+            className="inline-flex h-11 w-full cursor-not-allowed items-center justify-center gap-2.5 rounded-md border border-white/15 bg-white/[0.03] px-4 text-[14px] font-medium text-white opacity-70 transition-colors hover:border-white/25 hover:bg-white/[0.06]"
           >
             <GithubIcon className="h-5 w-5" />
             Continue with GitHub
@@ -94,7 +81,7 @@ function AuthCard() {
           </button>
         </div>
 
-        <div className="my-5 flex items-center gap-3 text-[11px] uppercase tracking-[0.12em] text-white/40">
+        <div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-[0.12em] text-white/40">
           <span className="h-px flex-1 bg-white/[0.08]" />
           or with email
           <span className="h-px flex-1 bg-white/[0.08]" />
@@ -102,7 +89,7 @@ function AuthCard() {
 
         <EmailPasswordSignUpForm />
 
-        <div className="mt-6 border-t border-white/[0.06] pt-5 text-center text-[13px] text-white/55">
+        <div className="mt-5 border-t border-white/[0.06] pt-4 text-center text-[13px] text-white/55">
           Already have an account?{" "}
           <Link
             href="/sign-in"

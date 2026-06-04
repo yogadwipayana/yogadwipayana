@@ -33,7 +33,7 @@ import {
 import type { ChatConversationSummary, ToolId } from "./data";
 import type { GeneratedImageRow } from "@/lib/server/image-service";
 import type { AspectRatioPreset } from "@/lib/aspect-ratio";
-import type { Quality } from "./image/workspace";
+import type { GenerateArgs, Quality } from "./image/workspace";
 import { ImageWorkspace } from "./image/workspace";
 
 import { SETTINGS_TOOL, TOOLS } from "./data";
@@ -522,18 +522,18 @@ export function DashboardShell({
   const handleStartGeneration = useCallback(
     async ({
       prompt,
+      negativePrompt,
       aspect,
+      quality,
       imageUrls,
-    }: {
-      prompt: string;
-      aspect: AspectRatioPreset;
-      imageUrls?: string[];
-    }) => {
+    }: GenerateArgs) => {
       const tempId = crypto.randomUUID();
       const pending: PendingImage = {
         id: tempId,
         prompt,
+        negativePrompt,
         aspect,
+        quality,
         imageUrls,
         createdAt: new Date().toISOString(),
       };
@@ -552,6 +552,7 @@ export function DashboardShell({
           body: JSON.stringify({
             prompt,
             aspect_ratio: aspect,
+            quality,
             image_urls: imageUrls,
             source: "workspace",
           }),
@@ -799,7 +800,7 @@ function renderMain({
   vpsInstances: readonly ApiVpsInstance[];
   images: GeneratedImageRow[];
   pendingImages: PendingImage[];
-  onGenerate: (args: { prompt: string; aspect: AspectRatioPreset; imageUrls?: string[] }) => void;
+  onGenerate: (args: GenerateArgs) => void;
   onCancelPending: (tempId: string) => void;
 }): React.ReactNode {
   if (activeItemId === "chat:gallery" && activeTool === "chat") {

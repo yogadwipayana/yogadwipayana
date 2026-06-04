@@ -1720,7 +1720,9 @@ export function ChatView({
                           <button
                             type="button"
                             onClick={async () => {
-                              const url = buildPublicShareUrl(shareConv.share_token);
+                              const token = shareConv.share_token;
+                              if (!token) return;
+                              const url = buildPublicShareUrl(token);
                               if (await copyToClipboard(url)) {
                                 setShareCopied(true);
                                 setTimeout(() => setShareCopied(false), 1500);

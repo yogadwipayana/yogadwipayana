@@ -21,6 +21,7 @@ import { join } from "node:path";
 export type GenerateImageOptions = {
   prompt: string;
   size?: string;
+  quality?: "auto" | "hd";
   /** Single reference image URL for image-to-image workflows. */
   image?: string;
   /** Multiple reference images (style + subject, etc.). Most providers cap at 4. */
@@ -60,7 +61,7 @@ export async function generateImage(opts: GenerateImageOptions): Promise<{ url: 
     prompt: opts.prompt,
     n: 1,
     size: opts.size ?? "auto",
-    quality: "auto",
+    quality: opts.quality ?? "auto",
     background: "auto",
     image_detail: "high",
     output_format: "png",

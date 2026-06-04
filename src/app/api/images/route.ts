@@ -35,6 +35,7 @@ const PostBody = z.object({
   image_url: z.string().min(1).max(2048).optional(),
   /** Multiple reference images from the workspace (up to 4). */
   image_urls: z.array(z.string().min(1).max(2048)).max(4).optional(),
+  quality: z.enum(["auto", "hd"]).optional(),
   conversation_id: z.string().uuid().optional(),
   source: z.enum(["chat", "workspace", "admin"]).optional(),
 });
@@ -57,7 +58,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const { prompt, aspect_ratio, size, image_url, image_urls, conversation_id, source } =
+  const { prompt, aspect_ratio, size, image_url, image_urls, quality, conversation_id, source } =
     parsed.data;
 
   // Merge image_url (legacy/chat) and image_urls (workspace) into one list,
@@ -118,6 +119,7 @@ export async function POST(request: Request) {
       options: {
         prompt,
         size: resolvedSize,
+        quality: quality ?? "auto",
         // Single image kept for API compat; multi-image uses images[]
         image: resolvedImages[0],
         images: resolvedImages.length > 1 ? resolvedImages : undefined,

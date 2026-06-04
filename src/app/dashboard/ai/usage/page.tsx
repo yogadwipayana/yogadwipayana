@@ -31,13 +31,6 @@ function maskKey(raw: string | null): string {
   return `sk-...${tail}`;
 }
 
-function statusColor(s: string | null): string {
-  if (s === "200") return "text-[#3ecf8e]";
-  if (s === "429") return "text-amber-300";
-  if (s == null) return "text-white/40";
-  return "text-red-400";
-}
-
 /* -------------------------------------------------------------------------- */
 /*  Meter card                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -64,7 +57,7 @@ function MeterCard({
 /*  Page                                                                       */
 /* -------------------------------------------------------------------------- */
 
-const PAGE_SIZE = 8;
+const PAGE_SIZE = 10;
 
 export default async function AiUsagePage({
   searchParams,
@@ -207,13 +200,12 @@ export default async function AiUsagePage({
 
           <div className="space-y-px overflow-hidden rounded-lg border border-white/[0.08]">
             {/* Header row */}
-            <div className="grid grid-cols-[1fr_auto] gap-2 border-b border-white/[0.06] bg-[#171717] px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.1em] text-white/25 sm:grid-cols-[1.6fr_0.8fr_1fr_1fr_0.8fr_0.5fr]">
+            <div className="hidden gap-2 border-b border-white/[0.06] bg-[#171717] px-4 py-2.5 text-[10px] font-medium uppercase tracking-[0.1em] text-white/25 sm:grid sm:grid-cols-[1.6fr_0.8fr_1fr_1fr_0.8fr]">
               <span>Model</span>
-              <span className="hidden sm:block">Key</span>
-              <span className="hidden sm:block text-right">Input</span>
-              <span className="hidden sm:block text-right">Output</span>
-              <span className="hidden sm:block text-right">Cost</span>
-              <span className="text-right">Status</span>
+              <span>Key</span>
+              <span className="text-right">Input</span>
+              <span className="text-right">Output</span>
+              <span className="text-right">Cost</span>
             </div>
 
             {rawLogs.length === 0 ? (
@@ -224,7 +216,7 @@ export default async function AiUsagePage({
               rawLogs.map((log) => (
                 <div
                   key={log.id}
-                  className="grid grid-cols-[1fr_auto] items-center gap-2 border-b border-white/[0.04] bg-[#171717] px-4 py-3 last:border-0 transition-colors hover:bg-white/[0.02] sm:grid-cols-[1.6fr_0.8fr_1fr_1fr_0.8fr_0.5fr]"
+                  className="grid grid-cols-1 items-center gap-2 border-b border-white/[0.04] bg-[#171717] px-4 py-3 last:border-0 transition-colors hover:bg-white/[0.02] sm:grid-cols-[1.6fr_0.8fr_1fr_1fr_0.8fr]"
                 >
                   {/* Model + provider */}
                   <div className="min-w-0">
@@ -256,13 +248,6 @@ export default async function AiUsagePage({
                   {/* Cost */}
                   <span className="hidden whitespace-nowrap text-right text-[12px] font-medium text-white sm:block">
                     {formatCost(log.cost ?? 0)}
-                  </span>
-
-                  {/* Status */}
-                  <span
-                    className={`whitespace-nowrap text-right font-mono text-[12px] font-medium ${statusColor(log.status ?? null)}`}
-                  >
-                    {log.status ?? "—"}
                   </span>
                 </div>
               ))

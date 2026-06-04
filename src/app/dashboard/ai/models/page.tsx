@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Search } from "lucide-react";
+import { Check, Copy, Search } from "lucide-react";
 
 import { AI_MODELS } from "../../data";
 
@@ -28,6 +28,16 @@ function providerColor(provider: string) {
 
 export default function AiModelsPage() {
   const [query, setQuery] = useState("");
+  const [copied, setCopied] = useState<"url" | "example" | null>(null);
+
+  const baseUrl = "https://ai.yogathedev.com/v1";
+
+  function copy(text: string, key: "url" | "example") {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied((prev) => (prev === key ? null : prev)), 1500);
+    });
+  }
 
   const filtered = AI_MODELS.filter(
     (m) =>
@@ -138,6 +148,57 @@ export default function AiModelsPage() {
             No models match &ldquo;{query}&rdquo;
           </div>
         )}
+
+        {/* API connection info */}
+        <div className="rounded-lg border border-white/[0.08] bg-[#171717]">
+          <div className="border-b border-white/[0.05] px-5 py-3.5">
+            <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-white/30">API Connection</p>
+          </div>
+          <div className="space-y-4 px-5 py-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.1em] text-white/35">Base URL</p>
+              <div className="mt-1.5 flex items-center gap-2">
+                <code className="flex-1 truncate rounded-md border border-white/[0.08] bg-[#1c1c1c] px-3 py-2 font-mono text-[12px] text-[#3ecf8e]">
+                  {baseUrl}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => copy(baseUrl, "url")}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/[0.08] text-white/50 transition-colors hover:bg-white/[0.04] hover:text-white"
+                  aria-label="Copy base URL"
+                >
+                  {copied === "url" ? <Check className="h-3.5 w-3.5 text-[#3ecf8e]" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-white/40">
+                OpenAI-compatible endpoint. Point any OpenAI SDK at this URL using your API key from the Keys page.
+              </p>
+            </div>
+
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.1em] text-white/35">Quick example</p>
+              <div className="mt-1.5 flex items-start gap-2">
+                <pre className="flex-1 overflow-x-auto rounded-md border border-white/[0.08] bg-[#1c1c1c] px-3 py-2.5 font-mono text-[11px] leading-relaxed text-white/70">
+{`curl ${baseUrl}/chat/completions \\
+  -H "Authorization: Bearer YOUR_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"claude-sonnet-4.6","messages":[{"role":"user","content":"Hi"}]}'`}
+                </pre>
+                <button
+                  type="button"
+                  onClick={() => copy(
+                    `curl ${baseUrl}/chat/completions \\\n  -H "Authorization: Bearer YOUR_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"claude-sonnet-4.6","messages":[{"role":"user","content":"Hi"}]}'`,
+                    "example",
+                  )}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/[0.08] text-white/50 transition-colors hover:bg-white/[0.04] hover:text-white"
+                  aria-label="Copy example"
+                >
+                  {copied === "example" ? <Check className="h-3.5 w-3.5 text-[#3ecf8e]" /> : <Copy className="h-3.5 w-3.5" />}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

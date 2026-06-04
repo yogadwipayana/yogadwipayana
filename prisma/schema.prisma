@@ -1,0 +1,77 @@
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../src/generated/ai-client"
+  binaryTargets = ["native", "windows", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("AI_DATABASE_URL")
+  directUrl = env("AI_DIRECT_URL")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model apiKeys {
+  id        String  @id
+  key       String  @unique
+  name      String?
+  owner     String?
+  machineId String?
+  isActive  Int?    @default(1)
+  createdAt String
+
+  @@index([key], map: "idx_ak_key")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model enabledModels {
+  providerAlias String
+  modelId       String
+  createdAt     String
+
+  @@id([providerAlias, modelId])
+  @@index([providerAlias], map: "idx_em_provider")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model enabledProviders {
+  providerAlias String @id
+  createdAt     String
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model ownerUsers {
+  email     String @id
+  budgetUsd Float  @default(0)
+  isActive  Int?   @default(1)
+  createdAt String
+  updatedAt String
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model usageDaily {
+  dateKey String @id
+  data    String
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model usageHistory {
+  id               Int     @id @default(autoincrement())
+  timestamp        String
+  provider         String?
+  model            String?
+  connectionId     String?
+  apiKey           String?
+  endpoint         String?
+  promptTokens     Int?    @default(0)
+  completionTokens Int?    @default(0)
+  cost             Float?  @default(0)
+  status           String?
+  tokens           String?
+  meta             String?
+
+  @@index([connectionId], map: "idx_uh_conn")
+  @@index([model], map: "idx_uh_model")
+  @@index([provider], map: "idx_uh_provider")
+  @@index([timestamp], map: "idx_uh_ts")
+}

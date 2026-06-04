@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node --experimental-strip-types server.mjs",
     "build": "next build",
-    "start": "node --experimental-strip-types server.mjs",
+    "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {

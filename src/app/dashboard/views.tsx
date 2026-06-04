@@ -142,6 +142,11 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
+function buildPublicShareUrl(token: string): string {
+  const path = `/chat/share/${token}`;
+  return typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
+}
+
 /* -------------------------------------------------------------------------- */
 /*  AI Overview (landing)                                                      */
 /* -------------------------------------------------------------------------- */
@@ -1710,17 +1715,12 @@ export function ChatView({
                         <div className="flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5">
                           <Link2 className="h-3 w-3 shrink-0 text-white/30" aria-hidden />
                           <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-white/55">
-                            {typeof window !== "undefined"
-                              ? `${window.location.origin}/chat/${shareConv.share_token}`
-                              : `/chat/${shareConv.share_token}`}
+                            {buildPublicShareUrl(shareConv.share_token)}
                           </span>
                           <button
                             type="button"
                             onClick={async () => {
-                              const url =
-                                typeof window !== "undefined"
-                                  ? `${window.location.origin}/chat/${shareConv.share_token}`
-                                  : `/chat/${shareConv.share_token}`;
+                              const url = buildPublicShareUrl(shareConv.share_token);
                               if (await copyToClipboard(url)) {
                                 setShareCopied(true);
                                 setTimeout(() => setShareCopied(false), 1500);

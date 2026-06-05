@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { LogOut, Menu, X } from "lucide-react";
 
+import { Logo } from "@/components/ui/Logo";
+
 type NavItem = {
   href: string;
   label: string;
@@ -51,9 +53,9 @@ export function NavbarClient({ user }: NavbarClientProps) {
         >
           <span
             aria-hidden
-            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-white/15 bg-white/[0.04] text-[12px] font-semibold leading-none text-white"
+            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-white/15 bg-white/[0.04]"
           >
-            y
+            <Logo className="h-4 w-4" />
           </span>
           yoga
         </Link>

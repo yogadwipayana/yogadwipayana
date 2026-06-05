@@ -9,7 +9,7 @@ export function Footer() {
             aria-hidden
             className="inline-block h-1.5 w-1.5 rounded-full bg-[#3ecf8e]"
           />
-          <span>© {new Date().getFullYear()} Yoga Dwipayana · Bali, ID</span>
+          <span>© {new Date().getFullYear()} Yoga · Bali, ID</span>
         </div>
         <div className="flex items-center gap-5">
           <a

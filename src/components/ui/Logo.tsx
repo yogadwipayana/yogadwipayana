@@ -1,8 +1,9 @@
 import { cn } from "@/lib/utils";
 
 /**
- * The "y" brand mark — a geometric lowercase y: a left arm meeting a right
- * arm that continues into the descender. Sized via `className` (e.g. "h-4 w-4").
+ * The Yoga brand mark — an isometric cube (a builder/infrastructure motif).
+ * Three rhombus faces share a center vertex; the top face is brightest and the
+ * two side faces step down in opacity to read as 3D. Sized via `className`.
  */
 export function Logo({ className }: { className?: string }) {
   return (
@@ -13,19 +14,22 @@ export function Logo({ className }: { className?: string }) {
       aria-label="Yoga logo"
       className={cn("h-4 w-4", className)}
     >
+      {/* top face */}
       <path
-        d="M6.5 6 L12 13"
-        stroke="#3ecf8e"
-        strokeWidth={2.4}
-        strokeLinecap="round"
-        strokeLinejoin="round"
+        d="M12 3 L20 7.5 L12 12 L4 7.5 Z"
+        fill="#3ecf8e"
       />
+      {/* left face */}
       <path
-        d="M17.5 6 L8.8 17.2"
-        stroke="#3ecf8e"
-        strokeWidth={2.4}
-        strokeLinecap="round"
-        strokeLinejoin="round"
+        d="M4 7.5 L12 12 L12 21 L4 16.5 Z"
+        fill="#3ecf8e"
+        fillOpacity={0.5}
+      />
+      {/* right face */}
+      <path
+        d="M20 7.5 L12 12 L12 21 L20 16.5 Z"
+        fill="#3ecf8e"
+        fillOpacity={0.75}
       />
     </svg>
   );

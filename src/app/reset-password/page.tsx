@@ -27,12 +27,7 @@ export default async function ResetPasswordPage() {
             href="/"
             className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em] text-white"
           >
-            <span
-              aria-hidden
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/15 bg-white/[0.04]"
-            >
-              <Logo className="h-[18px] w-[18px]" />
-            </span>
+            <Logo className="h-7 w-7" />
             yoga
           </Link>
           <h1 className="mt-6 text-2xl font-medium tracking-[-0.01em] text-white">

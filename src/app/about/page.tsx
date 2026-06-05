@@ -79,12 +79,7 @@ export default function About() {
             </div>
 
             <div className="mt-8 flex items-center gap-4">
-              <span
-                aria-hidden
-                className="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-white/15 bg-white/[0.04]"
-              >
-                <Logo className="h-7 w-7" />
-              </span>
+              <Logo className="h-10 w-10" />
               <div className="text-[15px] text-white/50">
                 Yoga
                 <span className="px-2 text-white/25">·</span>

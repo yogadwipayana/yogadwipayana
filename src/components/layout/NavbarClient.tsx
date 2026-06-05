@@ -51,12 +51,7 @@ export function NavbarClient({ user }: NavbarClientProps) {
           onClick={close}
           className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em] text-white"
         >
-          <span
-            aria-hidden
-            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-white/15 bg-white/[0.04]"
-          >
-            <Logo className="h-4 w-4" />
-          </span>
+          <Logo className="h-6 w-6" />
           yoga
         </Link>
 

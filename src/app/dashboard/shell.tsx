@@ -46,6 +46,7 @@ import {
   VpsView,
 } from "./views";
 import { GalleryView } from "./chat/gallery";
+import { Logo } from "@/components/ui/Logo";
 import { vpsApi, type VpsInstance as ApiVpsInstance } from "@/lib/client/vps-api";
 import { normalizeStatus, toUiInstance } from "@/lib/client/vps-mappers";
 
@@ -949,10 +950,7 @@ function TopBar({
           href="/"
           className="flex h-8 items-center gap-2 rounded-md px-2 text-[13px] font-medium tracking-[-0.01em] text-white/85 transition-colors hover:bg-white/5 hover:text-white"
         >
-          <span
-            aria-hidden
-            className="inline-block h-2 w-2 rounded-full bg-[#3ecf8e] shadow-[0_0_8px_#3ecf8e]"
-          />
+          <Logo className="h-4 w-4" />
           yoga
         </Link>
 
@@ -1711,10 +1709,7 @@ function MobileDrawer({
               onClick={onClose}
               className="flex items-center gap-2 px-1 text-[13px] font-medium tracking-[-0.01em]"
             >
-              <span
-                aria-hidden
-                className="inline-block h-2 w-2 rounded-full bg-[#3ecf8e] shadow-[0_0_8px_#3ecf8e]"
-              />
+              <Logo className="h-4 w-4" />
               yoga
             </Link>
             <button

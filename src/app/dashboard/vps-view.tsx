@@ -205,7 +205,6 @@ function VpsHeader({
         <div className="flex flex-wrap items-start justify-between gap-4 pb-5">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2.5">
-              <StatusDot status={instance.status} />
               <h2 className="font-mono text-[20px] font-medium tracking-[-0.01em] text-white">
                 {instance.name}
               </h2>

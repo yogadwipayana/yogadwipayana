@@ -53,15 +53,7 @@ export default function Home() {
         {/* Hero */}
         <section className="border-b border-white/[0.08]">
           <div className="mx-auto w-full max-w-6xl px-6 pt-10 pb-20 sm:px-8 sm:pt-14 sm:pb-28 lg:pt-16 lg:pb-32">
-            <div className="flex items-center gap-2 text-[13px] text-white/50">
-              <span
-                aria-hidden
-                className="inline-block h-1.5 w-1.5 rounded-full bg-[#3ecf8e]"
-              />
-              Personal portfolio &amp; working hub
-            </div>
-
-            <h1 className="mt-6 max-w-3xl text-balance text-4xl font-medium leading-[1.1] tracking-[-0.02em] text-white sm:text-5xl lg:text-6xl">
+            <h1 className="max-w-3xl text-balance text-4xl font-medium leading-[1.1] tracking-[-0.02em] text-white sm:text-5xl lg:text-6xl">
               Hi, I&apos;m Yoga — a builder shipping AI-powered developer tools.
             </h1>
 

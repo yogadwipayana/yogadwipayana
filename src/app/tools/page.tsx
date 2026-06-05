@@ -128,15 +128,7 @@ export default function Tools() {
         {/* Hero */}
         <section className="border-b border-white/[0.08]">
           <div className="mx-auto w-full max-w-6xl px-6 pt-10 pb-16 sm:px-8 sm:pt-14 sm:pb-20 lg:pt-16">
-            <div className="flex items-center gap-2 text-[13px] text-white/50">
-              <span
-                aria-hidden
-                className="inline-block h-1.5 w-1.5 rounded-full bg-[#3ecf8e]"
-              />
-              Tools
-            </div>
-
-            <h1 className="mt-6 max-w-3xl text-balance text-4xl font-medium leading-[1.1] tracking-[-0.02em] text-white sm:text-5xl lg:text-6xl">
+            <h1 className="max-w-3xl text-balance text-4xl font-medium leading-[1.1] tracking-[-0.02em] text-white sm:text-5xl lg:text-6xl">
               Four tools, one place to run them.
             </h1>
 

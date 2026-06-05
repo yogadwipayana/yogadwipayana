@@ -70,15 +70,7 @@ export default function About() {
         {/* Intro */}
         <section className="border-b border-white/[0.08]">
           <div className="mx-auto w-full max-w-6xl px-6 pt-10 pb-20 sm:px-8 sm:pt-14 sm:pb-28 lg:pt-16 lg:pb-32">
-            <div className="flex items-center gap-2 text-[13px] text-white/50">
-              <span
-                aria-hidden
-                className="inline-block h-1.5 w-1.5 rounded-full bg-[#3ecf8e]"
-              />
-              About
-            </div>
-
-            <div className="mt-8 flex items-center gap-4">
+            <div className="flex items-center gap-4">
               <Logo className="h-10 w-10" />
               <div className="text-[15px] text-white/50">
                 Yoga

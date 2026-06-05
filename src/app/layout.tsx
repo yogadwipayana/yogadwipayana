@@ -17,11 +17,11 @@ export const metadata: Metadata = {
     ? new URL(process.env.NEXT_PUBLIC_SITE_URL)
     : undefined,
   title: {
-    default: "Yoga Dwipayana",
-    template: "%s · Yoga Dwipayana",
+    default: "Yoga",
+    template: "%s · Yoga",
   },
   description:
-    "Personal portfolio and working hub of Yoga Dwipayana — a polyagentmorous builder shipping AI-powered developer tools from Bali.",
+    "Personal portfolio and working hub of Yoga — a builder shipping AI-powered developer tools",
 };
 
 const GA_ID = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;

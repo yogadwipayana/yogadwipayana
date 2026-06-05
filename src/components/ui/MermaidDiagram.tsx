@@ -31,18 +31,35 @@ export function MermaidDiagram({ code }: { code: string }) {
   useEffect(() => {
     let cancelled = false;
     ensureInit();
-    const id = `mermaid-${Math.random().toString(36).slice(2)}`;
-    mermaid
-      .render(id, code)
-      .then(({ svg: rendered }) => {
-        if (!cancelled) setSvg(rendered);
-      })
-      .catch((err: unknown) => {
+
+    (async () => {
+      // Pre-validate with `suppressErrors` so an invalid (often still-
+      // streaming or truncated) diagram doesn't fall through to the default
+      // mermaid render path that injects the giant "Syntax error in text"
+      // bomb SVG into our container.
+      const parsed = await mermaid.parse(code, { suppressErrors: true });
+      if (cancelled) return;
+      if (!parsed) {
+        setSvg(null);
+        setError("Diagram syntax is incomplete or invalid.");
+        return;
+      }
+
+      const id = `mermaid-${Math.random().toString(36).slice(2)}`;
+      try {
+        const { svg: rendered } = await mermaid.render(id, code);
+        if (!cancelled) {
+          setError(null);
+          setSvg(rendered);
+        }
+      } catch (err: unknown) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : String(err));
           setSvg(null);
         }
-      });
+      }
+    })();
+
     return () => {
       cancelled = true;
     };

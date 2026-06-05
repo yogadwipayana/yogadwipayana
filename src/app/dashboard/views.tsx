@@ -202,7 +202,7 @@ export function AiOverview() {
 
         <div className="mt-5 rounded-md border border-white/[0.05] bg-white/[0.02] p-4 text-[12px] leading-relaxed text-white/35">
           <span className="font-mono text-white/55">POST</span>{" "}
-          <span className="font-mono">https://api.dwipa.my.id/v1/chat/completions</span>
+          <span className="font-mono">https://ai.yogathedev.com/v1/chat/completions</span>
           <br />
           Compatible with any OpenAI SDK — just point to this base URL and use your API key.
         </div>
@@ -3362,43 +3362,17 @@ function AssistantMarkdown({
   streaming?: boolean;
   onIterateImage?: (url: string) => void;
 }) {
-  // While streaming: keep raw content updating immediately (shown as pre),
-  // and debounce the parsed markdown render by 80ms. Switch to markdown-only
-  // once stable (streaming ended or content hasn't changed for 80ms).
-  const [debouncedContent, setDebouncedContent] = useState(content);
-  const [isStable, setIsStable] = useState(!streaming);
-
-  useEffect(() => {
-    if (!streaming) {
-      setDebouncedContent(content);
-      setIsStable(true);
-      return;
-    }
-    setIsStable(false);
-    const id = setTimeout(() => {
-      setDebouncedContent(content);
-      setIsStable(true);
-    }, 80);
-    return () => clearTimeout(id);
-  }, [content, streaming]);
-
-  // Fix dangling unclosed code fence so ReactMarkdown doesn't swallow the rest
-  function closeFences(src: string): string {
-    const count = (src.match(/```/g) ?? []).length;
-    return count % 2 !== 0 ? src + "\n```" : src;
-  }
-
-  const renderContent = isStable ? debouncedContent : closeFences(debouncedContent);
+  // While streaming, the tail of `content` may contain half-formed markdown
+  // tokens (unclosed code fence, bold, inline code, etc). Rendering them
+  // raw makes earlier — already complete — blocks flip back to plain text.
+  // Solution: always render through ReactMarkdown, but close any open tail
+  // tokens so the parser treats the suffix as inline text instead of
+  // letting it bleed into the rest of the document.
+  const renderContent = streaming ? closeIncompleteMarkdown(content) : content;
 
   return (
     <div className="markdown">
-      {streaming && !isStable && content.length > 0 ? (
-        // Show raw text while debounce is pending to avoid flicker
-        <pre className="whitespace-pre-wrap font-sans text-[14px] leading-relaxed text-white/80">
-          {content}
-        </pre>
-      ) : (
-        <ReactMarkdown
+      <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           components={{
             // react-markdown v9 dropped the `inline` prop. Fenced code blocks
@@ -3419,7 +3393,7 @@ function AssistantMarkdown({
               }
               const lang = match[1] ?? null;
               const code = String(children).replace(/\n$/, "");
-              return <CodeBubble lang={lang} code={code} />;
+              return <CodeBubble lang={lang} code={code} streaming={streaming} />;
             },
             pre({ children }) {
               return <>{children}</>;
@@ -3572,16 +3546,61 @@ function AssistantMarkdown({
         >
           {renderContent}
         </ReactMarkdown>
-      )}
     </div>
   );
+}
+
+/**
+ * Close incomplete markdown tokens at the tail of a streaming buffer so the
+ * parser treats partial syntax as inline text instead of letting it bleed
+ * into — and re-flow — the already-complete blocks above.
+ *
+ * Order matters: code fences first (they swallow everything inside), then
+ * inline tokens. `*` / `_` italic is intentionally skipped since the false-
+ * positive rate on prose with arithmetic or snake_case is too high; bold
+ * (`**`) is handled because the double-character pair is unambiguous.
+ */
+function closeIncompleteMarkdown(src: string): string {
+  if (!src) return src;
+  let out = src;
+
+  // 1. Code fences (```): if odd count, the tail is inside an open block.
+  const fenceCount = (out.match(/```/g) ?? []).length;
+  if (fenceCount % 2 !== 0) {
+    return out + "\n```";
+  }
+
+  // 2. Inline code: count single backticks NOT part of a triple fence.
+  // Strip ``` runs first to avoid double-counting.
+  const stripped = out.replace(/```[\s\S]*?```/g, "").replace(/```/g, "");
+  const inlineTicks = (stripped.match(/`/g) ?? []).length;
+  if (inlineTicks % 2 !== 0) out += "`";
+
+  // 3. Bold (**): split on `**` — even number of segments = unmatched opener.
+  // Operates on `out` (post-fence) so code blocks are already balanced.
+  const boldParts = out.split("**");
+  if (boldParts.length % 2 === 0) out += "**";
+
+  // 4. Strikethrough (~~): same logic as bold.
+  const strikeParts = out.split("~~");
+  if (strikeParts.length % 2 === 0) out += "~~";
+
+  return out;
 }
 
 /* -------------------------------------------------------------------------- */
 /*  Code bubble                                                                */
 /* -------------------------------------------------------------------------- */
 
-function CodeBubble({ lang, code }: { lang: string | null; code: string }) {
+function CodeBubble({
+  lang,
+  code,
+  streaming,
+}: {
+  lang: string | null;
+  code: string;
+  streaming?: boolean;
+}) {
   const isSingleLine = !code.includes("\n") && code.trim().length <= 80;
   const [copied, setCopied] = useState(false);
 
@@ -3593,6 +3612,18 @@ function CodeBubble({ lang, code }: { lang: string | null; code: string }) {
   };
 
   if (lang === "mermaid") {
+    // While the assistant is still streaming, the mermaid block is almost
+    // always incomplete — feeding partial syntax to mermaid.render() yields
+    // the default "Syntax error in text" bomb SVG on every chunk. Defer the
+    // diagram render until the stream settles.
+    if (streaming) {
+      return (
+        <div className="my-2 flex items-center gap-2 rounded-lg border border-white/[0.07] bg-[#0f0f0f] px-3 py-4 text-[12px] text-white/30">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+          Building diagram…
+        </div>
+      );
+    }
     return <MermaidDiagram code={code} />;
   }
 

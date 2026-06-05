@@ -57,6 +57,8 @@ function MeterCard({
 /*  Page                                                                       */
 /* -------------------------------------------------------------------------- */
 
+export const revalidate = 30;
+
 const PAGE_SIZE = 10;
 
 export default async function AiUsagePage({

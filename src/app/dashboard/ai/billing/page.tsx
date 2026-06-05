@@ -21,6 +21,8 @@ function formatUsd(value: number): string {
 /*  Page                                                                       */
 /* -------------------------------------------------------------------------- */
 
+export const revalidate = 60;
+
 export default async function AiBillingPage() {
   /* ── Auth ── */
   const cookieStore = await cookies();

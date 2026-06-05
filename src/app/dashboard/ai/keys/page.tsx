@@ -3,6 +3,9 @@ import { cookies } from "next/headers";
 
 import { createClient } from "@/utils/supabase/server";
 import { aiDb } from "@/lib/db/ai";
+import CreateKeyModal from "./CreateKeyModal";
+import DeleteKeyButton from "./DeleteKeyButton";
+import EditKeyModal from "./EditKeyModal";
 
 /* -------------------------------------------------------------------------- */
 /*  Helpers                                                                    */
@@ -55,9 +58,10 @@ export default async function AiKeysPage() {
           <div>
             <h2 className="text-[18px] font-medium text-white">API Keys</h2>
             <p className="mt-1 text-[13px] text-white/40">
-              Read-only view — keys are managed via the admin API.
+              Manage your personal API keys for accessing the AI router.
             </p>
           </div>
+          {isLoggedIn && <CreateKeyModal />}
         </div>
 
         {/* Sign-in banner */}
@@ -101,13 +105,15 @@ export default async function AiKeysPage() {
                     <span className="font-mono">{maskKey(key.key)}</span>
                     <span className="text-white/20">·</span>
                     <span>Added {formatDate(key.createdAt)}</span>
-                    {key.owner && (
-                      <>
-                        <span className="text-white/20">·</span>
-                        <span>{key.owner}</span>
-                      </>
-                    )}
                   </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <EditKeyModal
+                    keyId={key.id}
+                    initialName={key.name ?? ""}
+                    initialIsActive={key.isActive === 1}
+                  />
+                  <DeleteKeyButton keyId={key.id} keyName={key.name ?? "Untitled key"} />
                 </div>
               </div>
             ))}

@@ -42,6 +42,11 @@ async function sb() {
 }
 
 async function ensureInstanceOwned(userId: string, instanceId: string) {
+  // The synthetic "__custom__" target has no instance row — it is keyed only by
+  // its saved credential (host lives in host_override). Skip the row check so a
+  // missing credential degrades to a graceful null instead of a hard 404 crash,
+  // matching ssh-exec.ts and ssh-bridge.ts which both special-case it.
+  if (instanceId === "__custom__") return null;
   const instance = await getUserInstanceById(userId, instanceId);
   if (!instance) {
     throw new ApiError(404, "INSTANCE_NOT_FOUND", "Instance not found");

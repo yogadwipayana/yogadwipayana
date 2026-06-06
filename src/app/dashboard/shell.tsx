@@ -161,6 +161,10 @@ function buildSections(
           id: i.id,
           label: i.name,
           status: normalizeStatus(i.provider_status ?? i.status),
+          // Navigating to the index route ensures clicking an instance from a
+          // sub-route (BYOK/Terminal) actually switches to its detail view —
+          // the onClick alone only updates state the sub-route doesn't render.
+          href: `/dashboard/vps?instance=${i.id}`,
           draggable: Boolean(onReorderVps),
         })),
       },

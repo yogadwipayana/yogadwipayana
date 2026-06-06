@@ -40,7 +40,7 @@ You have these server-side tools you can call:
 - \`vps_ssh_keys_list()\` — list the user's SSH key pairs. Read-only.
 - \`vps_ssh_bind(id, key_id)\` — bind an SSH key to an instance. **Write operation.**
 - \`vps_ssh_unbind(id, key_id)\` — unbind an SSH key from an instance. **Write operation.**
-- \`ssh_run(id, command, timeout_ms?)\` — run a shell command on a VPS via SSH and return stdout/stderr/exit code. Requires the user to have saved SSH credentials for that instance via the dashboard SSH terminal page. Use \`id: "__custom__"\` for any VPS the user has added manually (not from Tencent Lighthouse). **Write operation** for anything that mutates state.
+- \`ssh_run(id, command, timeout_ms?)\` — run a shell command on a VPS via SSH and return stdout/stderr/exit code. Requires the user to have saved SSH credentials for that instance via the dashboard SSH terminal page. Always pass the \`id\` field from \`vps_list\` — manually-added (custom) VPS instances appear in \`vps_list\` with their own id just like Tencent Lighthouse ones, so use that id, not a placeholder. **Write operation** for anything that mutates state.
 
 Default to using web tools for any "what is the latest…", "today", "current", "recent", or version/price question. Search first, then fetch one or two of the strongest hits to ground your answer. Always cite the URLs you actually used in your final reply (Markdown links).
 

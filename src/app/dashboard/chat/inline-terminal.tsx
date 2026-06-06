@@ -9,9 +9,37 @@ import {
 } from "react";
 import { Loader2, Maximize2, Minus, Terminal, X } from "lucide-react";
 
+export interface TerminalCommandResult {
+  /** Cleaned stdout/stderr produced by the command (ANSI stripped). */
+  output: string;
+  /** Exit code parsed from the trailing sentinel, or null if unknown/timed out. */
+  exitCode: number | null;
+  /** True if capture was cut short (timeout or size cap). */
+  truncated: boolean;
+  /** Set when the command could not be dispatched at all. */
+  error?: string;
+}
+
 export interface InlineSshTerminalHandle {
   /** Type text directly into the terminal's SSH session (e.g. a command + "\n"). */
   injectInput(text: string): void;
+  /**
+   * Run a command and resolve with its captured output once it completes.
+   * Wraps the command in unique sentinel markers so the surrounding shell
+   * echo, prompt, and unrelated output are excluded from the result.
+   */
+  runCommand(command: string, callId: string): Promise<TerminalCommandResult>;
+}
+
+/** Strip ANSI/VT escape sequences (CSI, OSC, single-char) from terminal text. */
+function stripAnsi(input: string): string {
+  return input
+    // OSC: ESC ] ... BEL  or  ESC ] ... ESC \
+    .replace(/\][^]*(?:|\\)/g, "")
+    // CSI: ESC [ ... final-byte
+    .replace(/\[[0-9;?]*[ -/]*[@-~]/g, "")
+    // Other two-char escapes
+    .replace(/[@-Z\\-_]/g, "");
 }
 
 interface Props {
@@ -29,6 +57,18 @@ export const InlineSshTerminal = forwardRef<InlineSshTerminalHandle, Props>(
   function InlineSshTerminal({ instanceId, instanceName, onClose }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const wsRef = useRef<WebSocket | null>(null);
+    const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
+    const fitAddonRef = useRef<import("@xterm/addon-fit").FitAddon | null>(null);
+    // Active command capture: when set, raw ws output is accumulated here and
+    // scanned for the start/end sentinel markers to extract command output.
+    const captureRef = useRef<{
+      buffer: string;
+      startMarker: string;
+      endMarker: string;
+      started: boolean;
+      resolve: (r: TerminalCommandResult) => void;
+      timer: ReturnType<typeof setTimeout>;
+    } | null>(null);
     const [status, setStatus] = useState<
       "connecting" | "ready" | "error" | "closed"
     >("connecting");
@@ -75,6 +115,8 @@ export const InlineSshTerminal = forwardRef<InlineSshTerminalHandle, Props>(
         term.loadAddon(fitAddon);
         term.loadAddon(new WebLinksAddon());
         term.open(containerRef.current);
+        termRef.current = term;
+        fitAddonRef.current = fitAddon;
         requestAnimationFrame(() => {
           if (mounted) fitAddon.fit();
         });
@@ -151,6 +193,8 @@ export const InlineSshTerminal = forwardRef<InlineSshTerminalHandle, Props>(
           dataDisposable.dispose();
           resizeDisposable.dispose();
           term.dispose();
+          termRef.current = null;
+          fitAddonRef.current = null;
         };
       }
 
@@ -166,6 +210,21 @@ export const InlineSshTerminal = forwardRef<InlineSshTerminalHandle, Props>(
       // instanceId is stable for the lifetime of a session
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [instanceId]);
+
+    // Re-fit and redraw when expanding from a minimized state. The container is
+    // kept mounted (hidden via CSS), so the Terminal stays attached to its DOM
+    // node — but xterm can't measure a display:none element, so we re-measure
+    // once it's visible again.
+    useEffect(() => {
+      if (minimized) return;
+      const term = termRef.current;
+      const fitAddon = fitAddonRef.current;
+      if (!term || !fitAddon) return;
+      requestAnimationFrame(() => {
+        fitAddon.fit();
+        term.refresh(0, term.rows - 1);
+      });
+    }, [minimized]);
 
     return (
       <div className="overflow-hidden rounded-lg border border-white/[0.08]">
@@ -214,32 +273,31 @@ export const InlineSshTerminal = forwardRef<InlineSshTerminalHandle, Props>(
           </div>
         </div>
 
-        {/* Body */}
-        {!minimized && (
-          <>
-            {status === "error" && (
-              <div className="border-b border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-[12px] text-red-400">
-                {errorMsg}
-              </div>
-            )}
-            {status === "closed" && (
-              <div className="border-b border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-white/40">
-                Connection closed.
-              </div>
-            )}
-            {status === "connecting" && (
-              <div className="flex items-center gap-2 bg-[#0a0a0a] px-3 py-2 text-[12px] text-white/35">
-                <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
-                Connecting…
-              </div>
-            )}
-            <div
-              ref={containerRef}
-              className="h-64 w-full bg-[#0a0a0a] md:h-72"
-              aria-label="SSH terminal"
-            />
-          </>
-        )}
+        {/* Body — kept mounted (hidden via CSS when minimized) so the xterm
+            instance stays attached to its DOM node across minimize/expand. */}
+        <div className={minimized ? "hidden" : "block"}>
+          {status === "error" && (
+            <div className="border-b border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-[12px] text-red-400">
+              {errorMsg}
+            </div>
+          )}
+          {status === "closed" && (
+            <div className="border-b border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] text-white/40">
+              Connection closed.
+            </div>
+          )}
+          {status === "connecting" && (
+            <div className="flex items-center gap-2 bg-[#0a0a0a] px-3 py-2 text-[12px] text-white/35">
+              <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+              Connecting…
+            </div>
+          )}
+          <div
+            ref={containerRef}
+            className="h-64 w-full bg-[#0a0a0a] md:h-72"
+            aria-label="SSH terminal"
+          />
+        </div>
       </div>
     );
   },

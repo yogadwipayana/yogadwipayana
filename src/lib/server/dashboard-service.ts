@@ -187,6 +187,68 @@ export async function upsertInstance(
   return data as InstanceRow;
 }
 
+export async function createCustomInstance(input: {
+  userId: string;
+  name: string;
+  host: string;
+}): Promise<InstanceRow> {
+  const name = input.name.trim();
+  const host = input.host.trim();
+  if (name.length < 1 || name.length > 100) {
+    throw new ApiError(400, "INVALID_INPUT", "Name must be 1–100 characters");
+  }
+  if (host.length < 1 || host.length > 255) {
+    throw new ApiError(400, "INVALID_INPUT", "Host is required");
+  }
+
+  const client = await sb();
+
+  // Give the new row a sort_order at the end of the user's list.
+  const { data: maxRow } = await client
+    .from("instance")
+    .select("sort_order")
+    .eq("user_id", input.userId)
+    .order("sort_order", { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+  const maxSort = (maxRow as { sort_order: number | null } | null)?.sort_order ?? 0;
+
+  const row = {
+    user_id: input.userId,
+    provider: "custom" as const,
+    // No provider id for custom targets; use a stable synthetic value so the
+    // (provider, external_instance_id, user_id) unique constraint stays happy
+    // and a later edit can upsert against it.
+    external_instance_id: `custom:${host}`,
+    name,
+    region: "custom",
+    zone: null,
+    status: "active" as const,
+    sort_order: maxSort + 1000,
+    provider_status: "UNKNOWN",
+    secret_id_enc: null,
+    secret_key_enc: null,
+    ip_public: host,
+    ip_private: null,
+    cpu: null,
+    memory_gb: null,
+    system_disk_gb: null,
+    bandwidth_mbps: null,
+    os_name: null,
+    expires_at: null,
+    source: "custom" as const,
+    last_synced_at: null,
+  };
+
+  const { data, error } = await client
+    .from("instance")
+    .upsert(row, { onConflict: "provider,external_instance_id,user_id" })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as InstanceRow;
+}
+
 export async function listUserInstances(userId: string) {
   const client = await sb();
   const nowIso = new Date().toISOString();

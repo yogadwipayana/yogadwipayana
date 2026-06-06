@@ -85,6 +85,8 @@ export type VpsInstance = {
   status: VpsStatus;
   /** Raw provider state, useful for transitional states (STARTING, STOPPING, …) */
   providerStatus: string;
+  /** True for user-added SSH targets with no cloud provider behind them. */
+  isCustom: boolean;
   vcpu: number;
   memoryGb: number;
   diskGb: number;

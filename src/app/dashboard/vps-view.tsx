@@ -20,6 +20,7 @@ import {
   Server,
   Shield,
   Square,
+  TerminalSquare,
   Trash2,
   X,
 } from "lucide-react";
@@ -74,8 +75,8 @@ export function VpsView({ instance: initialInstance }: { instance: VpsInstance }
       />
       <div className="flex-1 overflow-y-auto">
         {tab === "overview" && <OverviewTab instance={instance} onGoSsh={() => setTab("ssh")} />}
-        {tab === "firewall" && <FirewallTab instance={instance} />}
-        {tab === "ssh" && <SshTab instance={instance} />}
+        {tab === "firewall" && !instance.isCustom && <FirewallTab instance={instance} />}
+        {tab === "ssh" && !instance.isCustom && <SshTab instance={instance} />}
       </div>
     </div>
   );
@@ -98,6 +99,7 @@ function VpsHeader({
 }) {
   const isStopped = instance.status === "stopped";
   const isTransitional = instance.status === "rebooting";
+  const isCustom = instance.isCustom;
 
   const [pendingAction, setPendingAction] = useState<LifecycleAction | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -233,45 +235,56 @@ function VpsHeader({
 
           {/* Action buttons */}
           <div className="flex flex-wrap gap-2 shrink-0">
-            <Btn
-              icon={RefreshCw}
-              label={refreshing ? "Refreshing…" : "Refresh"}
-              onClick={handleRefresh}
-              disabled={refreshing || pendingAction !== null}
-            />
-            {isStopped ? (
-              <Btn
-                icon={Play}
-                label={pendingAction === "start" ? "Starting…" : "Start"}
+            {isCustom ? (
+              <BtnLink
+                href={`/dashboard/vps/terminal?instance=${instance.id}`}
+                icon={TerminalSquare}
+                label="Open terminal"
                 primary
-                onClick={() => onClickAction("start")}
-                disabled={pendingAction !== null || isTransitional}
               />
             ) : (
-              <Btn
-                icon={Square}
-                label={pendingAction === "stop" ? "Stopping…" : "Stop"}
-                onClick={() => onClickAction("stop")}
-                disabled={pendingAction !== null || isTransitional}
-              />
+              <>
+                <Btn
+                  icon={RefreshCw}
+                  label={refreshing ? "Refreshing…" : "Refresh"}
+                  onClick={handleRefresh}
+                  disabled={refreshing || pendingAction !== null}
+                />
+                {isStopped ? (
+                  <Btn
+                    icon={Play}
+                    label={pendingAction === "start" ? "Starting…" : "Start"}
+                    primary
+                    onClick={() => onClickAction("start")}
+                    disabled={pendingAction !== null || isTransitional}
+                  />
+                ) : (
+                  <Btn
+                    icon={Square}
+                    label={pendingAction === "stop" ? "Stopping…" : "Stop"}
+                    onClick={() => onClickAction("stop")}
+                    disabled={pendingAction !== null || isTransitional}
+                  />
+                )}
+                <Btn
+                  icon={RotateCw}
+                  label={pendingAction === "reboot" ? "Rebooting…" : "Reboot"}
+                  onClick={() => onClickAction("reboot")}
+                  disabled={isStopped || pendingAction !== null || isTransitional}
+                />
+                <BtnLink
+                  href={`/dashboard/vps/reset?id=${instance.id}`}
+                  icon={Lock}
+                  label="Reset password"
+                />
+                <BtnLink
+                  href={`/dashboard/vps/reinstall?id=${instance.id}`}
+                  icon={Server}
+                  label="Reinstall"
+                  danger
+                />
+              </>
             )}
-            <Btn
-              icon={RotateCw}
-              label={pendingAction === "reboot" ? "Rebooting…" : "Reboot"}
-              onClick={() => onClickAction("reboot")}
-              disabled={isStopped || pendingAction !== null || isTransitional}
-            />
-            <BtnLink
-              href={`/dashboard/vps/reset?id=${instance.id}`}
-              icon={Lock}
-              label="Reset password"
-            />
-            <BtnLink
-              href={`/dashboard/vps/reinstall?id=${instance.id}`}
-              icon={Server}
-              label="Reinstall"
-              danger
-            />
           </div>
         </div>
 
@@ -283,7 +296,10 @@ function VpsHeader({
 
         {/* Tab nav */}
         <div className="flex">
-          {(["overview", "firewall", "ssh"] as VpsTab[]).map((t) => (
+          {(isCustom
+            ? (["overview"] as VpsTab[])
+            : (["overview", "firewall", "ssh"] as VpsTab[])
+          ).map((t) => (
             <button
               key={t}
               type="button"
@@ -396,10 +412,47 @@ function OverviewTab({
   instance: VpsInstance;
   onGoSsh: () => void;
 }) {
+  const isCustom = instance.isCustom;
+  const [sshUser, setSshUser] = useState("root");
+  const [sshPort, setSshPort] = useState(22);
+
+  // Custom targets store their username/port in the SSH credential, not on the
+  // instance row — fetch it so the SSH command reflects what the user entered.
+  useEffect(() => {
+    if (!isCustom) return;
+    const controller = new AbortController();
+    fetch(`/api/vps/instances/${instance.id}/ssh-credential`, {
+      signal: controller.signal,
+      cache: "no-store",
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { credential: { username?: string; port?: number } | null } | null) => {
+        const cred = body?.credential;
+        if (!cred) return;
+        if (cred.username) setSshUser(cred.username);
+        if (cred.port) setSshPort(cred.port);
+      })
+      .catch(() => {
+        // Network/abort — keep the root@22 default.
+      });
+    return () => controller.abort();
+  }, [isCustom, instance.id]);
+
+  const sshCommand =
+    sshPort === 22
+      ? `$ ssh ${sshUser}@${instance.ipv4}`
+      : `$ ssh -p ${sshPort} ${sshUser}@${instance.ipv4}`;
+
   return (
     <div className="flex flex-col gap-5 p-6 sm:p-8">
       {/* Row 1: Details + Specs */}
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_280px]">
+      <div
+        className={
+          isCustom
+            ? "grid grid-cols-1 gap-5"
+            : "grid grid-cols-1 gap-5 xl:grid-cols-[1fr_280px]"
+        }
+      >
         {/* Details */}
         <Card>
           <CardHeader title="Instance details" />
@@ -430,8 +483,12 @@ function OverviewTab({
               </>
             )}
 
-            <FieldLabel>OS</FieldLabel>
-            <span className="font-mono text-white/65">{instance.osName ?? "—"}</span>
+            {!isCustom && (
+              <>
+                <FieldLabel>OS</FieldLabel>
+                <span className="font-mono text-white/65">{instance.osName ?? "—"}</span>
+              </>
+            )}
 
             {instance.expiresAt && (
               <>
@@ -446,24 +503,26 @@ function OverviewTab({
         </Card>
 
         {/* Specs */}
-        <div className="rounded-lg border border-[#3ecf8e]/[0.12] bg-[#3ecf8e]/[0.04] p-4">
-          <div className="mb-4 flex items-center justify-between">
-            <span className="text-[10px] uppercase tracking-[0.1em] text-white/35">
-              Specifications
-            </span>
-            <Server className="h-3.5 w-3.5 text-white/20" />
+        {!isCustom && (
+          <div className="rounded-lg border border-[#3ecf8e]/[0.12] bg-[#3ecf8e]/[0.04] p-4">
+            <div className="mb-4 flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-[0.1em] text-white/35">
+                Specifications
+              </span>
+              <Server className="h-3.5 w-3.5 text-white/20" />
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <SpecCell icon={Cpu} label="CPU" value={`${instance.vcpu} vCPU`} />
+              <SpecCell icon={MemoryStick} label="Memory" value={`${instance.memoryGb} GB`} />
+              <SpecCell icon={HardDrive} label="Storage" value={`${instance.diskGb} GB SSD`} />
+              <SpecCell
+                icon={Activity}
+                label="Bandwidth"
+                value={instance.bandwidthMbps ? `${instance.bandwidthMbps} Mbps` : "—"}
+              />
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-2.5">
-            <SpecCell icon={Cpu} label="CPU" value={`${instance.vcpu} vCPU`} />
-            <SpecCell icon={MemoryStick} label="Memory" value={`${instance.memoryGb} GB`} />
-            <SpecCell icon={HardDrive} label="Storage" value={`${instance.diskGb} GB SSD`} />
-            <SpecCell
-              icon={Activity}
-              label="Bandwidth"
-              value={instance.bandwidthMbps ? `${instance.bandwidthMbps} Mbps` : "—"}
-            />
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Row 2: Server login */}
@@ -478,7 +537,7 @@ function OverviewTab({
                 </span>
               </div>
               <pre className="px-4 py-3 font-mono text-[12px] leading-relaxed text-white/80">
-                <code>$ ssh root@{instance.ipv4}</code>
+                <code>{sshCommand}</code>
               </pre>
             </div>
           ) : (
@@ -488,16 +547,28 @@ function OverviewTab({
           )}
 
           <div className="flex flex-wrap gap-2">
-            <SmallBtnLink
-              href={`/dashboard/vps/reset?id=${instance.id}`}
-              icon={Lock}
-              label="Reset password"
-            />
-            <SmallBtn icon={Key} label="Manage SSH keys" onClick={onGoSsh} />
+            {isCustom ? (
+              <SmallBtnLink
+                href={`/dashboard/vps/terminal?instance=${instance.id}`}
+                icon={TerminalSquare}
+                label="Open terminal"
+              />
+            ) : (
+              <>
+                <SmallBtnLink
+                  href={`/dashboard/vps/reset?id=${instance.id}`}
+                  icon={Lock}
+                  label="Reset password"
+                />
+                <SmallBtn icon={Key} label="Manage SSH keys" onClick={onGoSsh} />
+              </>
+            )}
           </div>
 
           <p className="text-[12px] leading-relaxed text-white/30">
-            Reset the root password or bind an SSH key before logging in for the first time.
+            {isCustom
+              ? "This is a custom SSH target. Connect from the in-dashboard terminal using your saved credentials."
+              : "Reset the root password or bind an SSH key before logging in for the first time."}
           </p>
         </div>
       </Card>
@@ -1264,14 +1335,16 @@ function BtnLink({
   href,
   icon: Icon,
   label,
+  primary,
   danger,
 }: {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   label: string;
+  primary?: boolean;
   danger?: boolean;
 }) {
-  const variant = BTN_VARIANT[pickBtnVariant(false, danger)];
+  const variant = BTN_VARIANT[pickBtnVariant(primary, danger)];
   return (
     <Link href={href} className={`${BTN_BASE} ${variant}`}>
       <Icon className="h-3.5 w-3.5" />

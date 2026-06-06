@@ -67,7 +67,7 @@ export interface VpsInstance {
   bandwidth_mbps: number | null;
   os_name: string | null;
   expires_at: string | null;
-  source: "order" | "byok_import";
+  source: "order" | "byok_import" | "custom";
   last_synced_at: string | null;
   created_at: string;
   updated_at: string;
@@ -128,6 +128,16 @@ export const vpsApi = {
     secretKey: string;
     region: string;
   }) => apiSend(`/api/vps/byok/import`, "POST", body),
+  byokAddCustom: (body: {
+    name: string;
+    host: string;
+    port: number;
+    username: string;
+    authMethod: "password" | "key";
+    password?: string;
+    privateKey?: string;
+    passphrase?: string;
+  }) => apiSend<{ instance: VpsInstance }>(`/api/vps/byok/custom`, "POST", body),
 
   listSshKeys: () => apiGet(`/api/vps/ssh-keys`),
   generateSshKey: (keyName: string) =>

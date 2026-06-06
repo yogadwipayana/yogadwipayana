@@ -14,6 +14,7 @@ import {
   KeyRound,
   Plus,
   Server,
+  TerminalSquare,
   Trash2,
   X,
 } from "lucide-react";
@@ -321,6 +322,14 @@ export default function ByokPage() {
           </div>
         </form>
 
+        {/* Custom instance */}
+        <CustomInstanceForm
+          onAdded={(inst) => {
+            setManaged((prev) => [...prev, inst]);
+            router.refresh();
+          }}
+        />
+
         {/* Discovered instances */}
         {instances.length > 0 && (
           <div className="rounded-lg border border-white/[0.08] bg-[#171717]">
@@ -421,9 +430,19 @@ export default function ByokPage() {
               </button>
             </div>
             <p className="mb-6 text-[13px] leading-relaxed text-white/55">
-              Detach <strong className="text-white">{confirmRemove.name}</strong> from this dashboard?
-              The VPS keeps running on Tencent Cloud and you can re-import it later by reconnecting.
-              Stored Tencent credentials for this instance will be cleared.
+              {confirmRemove.source === "custom" ? (
+                <>
+                  Remove <strong className="text-white">{confirmRemove.name}</strong> from this
+                  dashboard? This deletes the saved host and SSH credentials for this custom
+                  instance. The server itself is not affected, and you can add it again anytime.
+                </>
+              ) : (
+                <>
+                  Detach <strong className="text-white">{confirmRemove.name}</strong> from this
+                  dashboard? The VPS keeps running on Tencent Cloud and you can re-import it later by
+                  reconnecting. Stored Tencent credentials for this instance will be cleared.
+                </>
+              )}
             </p>
             <div className="flex gap-3">
               <button
@@ -539,5 +558,227 @@ function RegionSelect({
         </ul>
       )}
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Custom instance form                                                      */
+/*  Adds an arbitrary SSH target (not backed by a cloud provider) so it shows */
+/*  up in the terminal's instance picker with credentials pre-saved.          */
+/* -------------------------------------------------------------------------- */
+
+type CustomAuthMethod = "password" | "key";
+
+function CustomInstanceForm({
+  onAdded,
+}: {
+  onAdded: (instance: ApiVpsInstance) => void;
+}) {
+  const [name, setName] = useState("");
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState("22");
+  const [username, setUsername] = useState("root");
+  const [authMethod, setAuthMethod] = useState<CustomAuthMethod>("password");
+  const [password, setPassword] = useState("");
+  const [privateKey, setPrivateKey] = useState("");
+  const [passphrase, setPassphrase] = useState("");
+
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  function reset() {
+    setName("");
+    setHost("");
+    setPort("22");
+    setUsername("root");
+    setAuthMethod("password");
+    setPassword("");
+    setPrivateKey("");
+    setPassphrase("");
+  }
+
+  function validate(): string | null {
+    if (!name.trim()) return "Name is required.";
+    if (!host.trim()) return "Host / IP is required.";
+    const portNum = parseInt(port, 10);
+    if (isNaN(portNum) || portNum < 1 || portNum > 65535) return "Port must be 1–65535.";
+    if (!username.trim()) return "Username is required.";
+    if (authMethod === "password" && !password.trim()) return "Password is required.";
+    if (authMethod === "key" && !privateKey.trim()) return "Private key is required.";
+    return null;
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    const err = validate();
+    if (err) {
+      setError(err);
+      return;
+    }
+    setSaving(true);
+    try {
+      const { instance } = await vpsApi.byokAddCustom({
+        name: name.trim(),
+        host: host.trim(),
+        port: parseInt(port, 10),
+        username: username.trim(),
+        authMethod,
+        password: authMethod === "password" ? password : undefined,
+        privateKey: authMethod === "key" ? privateKey : undefined,
+        passphrase: authMethod === "key" && passphrase ? passphrase : undefined,
+      });
+      onAdded(instance);
+      setSuccess(`Added “${instance.name}”. It's now available in the terminal.`);
+      reset();
+    } catch (e2) {
+      setError(e2 instanceof Error ? e2.message : "Failed to add custom instance.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputClass =
+    "w-full rounded-md border border-white/[0.08] bg-[#1c1c1c] px-3 py-2 text-[13px] text-white placeholder:text-white/20 focus:border-[#3ecf8e]/40 focus:outline-none disabled:opacity-50";
+  const labelClass =
+    "mb-1.5 block text-[10px] uppercase tracking-[0.1em] text-white/35";
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="rounded-lg border border-white/[0.08] bg-[#171717] p-6 space-y-5"
+    >
+      <div className="flex items-center gap-2">
+        <TerminalSquare className="h-4 w-4 text-white/40" aria-hidden />
+        <h2 className="text-[14px] font-medium text-white">Custom Instance</h2>
+      </div>
+      <p className="-mt-2 text-[12px] leading-relaxed text-white/45">
+        Add any SSH-reachable server by host and credentials. It will appear in the
+        terminal&apos;s instance picker with its credentials saved — no cloud provider required.
+      </p>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label className={labelClass}>Name</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="my-server"
+            disabled={saving}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Host / IP</label>
+          <input
+            type="text"
+            value={host}
+            onChange={(e) => setHost(e.target.value)}
+            placeholder="192.168.1.1"
+            disabled={saving}
+            className={`${inputClass} font-mono`}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Port</label>
+          <input
+            type="text"
+            value={port}
+            onChange={(e) => setPort(e.target.value)}
+            placeholder="22"
+            disabled={saving}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className={labelClass}>Username</label>
+          <input
+            type="text"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="root"
+            disabled={saving}
+            className={inputClass}
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className={labelClass}>Auth Method</label>
+        <div className="flex w-fit gap-1 rounded-md border border-white/[0.08] bg-[#1c1c1c] p-0.5">
+          {(["password", "key"] as CustomAuthMethod[]).map((m) => (
+            <button
+              key={m}
+              type="button"
+              disabled={saving}
+              onClick={() => setAuthMethod(m)}
+              className={`rounded px-3 py-1 text-[12px] transition-colors disabled:opacity-50 ${
+                authMethod === m
+                  ? "bg-white/[0.08] text-white"
+                  : "text-white/45 hover:text-white/70"
+              }`}
+            >
+              {m === "password" ? "Password" : "Private Key"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {authMethod === "password" ? (
+        <div>
+          <label className={labelClass}>Password</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value.replace(/\s/g, ""))}
+            placeholder="Enter password"
+            disabled={saving}
+            className={`${inputClass} font-mono text-[12px]`}
+          />
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <label className={labelClass}>Private Key</label>
+            <textarea
+              value={privateKey}
+              onChange={(e) => setPrivateKey(e.target.value)}
+              rows={5}
+              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+              disabled={saving}
+              className={`${inputClass} resize-none font-mono text-[12px]`}
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Passphrase (optional)</label>
+            <input
+              type="password"
+              value={passphrase}
+              onChange={(e) => setPassphrase(e.target.value)}
+              placeholder="Leave blank if none"
+              disabled={saving}
+              className={inputClass}
+            />
+          </div>
+        </div>
+      )}
+
+      {error && <p className="text-[12px] text-red-400">{error}</p>}
+      {success && <p className="text-[12px] text-[#3ecf8e]">{success}</p>}
+
+      <div className="flex justify-end">
+        <button
+          type="submit"
+          disabled={saving}
+          className="inline-flex h-9 items-center gap-2 rounded-md bg-[#3ecf8e] px-4 text-[13px] font-medium text-[#171717] transition-colors hover:bg-[#24b47e] disabled:opacity-60"
+        >
+          {saving ? "Adding…" : "Add Custom Instance"}
+          {!saving && <Plus className="h-4 w-4" />}
+        </button>
+      </div>
+    </form>
   );
 }

@@ -315,7 +315,7 @@ export const CHAT_TOOLS: ChatTool[] = [
           id: {
             type: "string",
             description:
-              "Internal instance id (the `id` field from `vps_list`), or `\"__custom__\"` to target the custom VPS the user has configured in the SSH terminal.",
+              "Internal instance id (the `id` field from `vps_list`). Manually-added (custom) VPS instances appear in `vps_list` with their own id, so use that id directly.",
           },
           command: {
             type: "string",
@@ -347,7 +347,7 @@ export const CHAT_TOOLS: ChatTool[] = [
           instance_id: {
             type: "string",
             description:
-              "Internal instance id (the `id` field from `vps_list`), or `\"__custom__\"` to open a terminal to the custom VPS the user has configured in the SSH terminal. If omitted and the user has exactly one instance, that instance is used automatically.",
+              "Internal instance id (the `id` field from `vps_list`). Manually-added (custom) VPS instances appear in `vps_list` with their own id, so use that id directly. If omitted and the user has exactly one instance, that instance is used automatically.",
           },
         },
         additionalProperties: false,

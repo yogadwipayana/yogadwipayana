@@ -35,6 +35,7 @@ export function toUiInstance(api: ApiVpsInstance): UiVpsInstance {
     ipv4: api.ip_public ?? "—",
     status: normalizeStatus(api.provider_status ?? api.status),
     providerStatus: api.provider_status ?? api.status,
+    isCustom: api.source === "custom",
     vcpu: api.cpu ?? 0,
     memoryGb: api.memory_gb ?? 0,
     diskGb: api.system_disk_gb ?? 0,

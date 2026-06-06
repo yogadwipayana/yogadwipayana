@@ -38,8 +38,6 @@ import {
   Sparkles,
   Terminal,
   Trash2,
-  ThumbsUp,
-  ThumbsDown,
   X,
 } from "lucide-react";
 import hljs from "highlight.js/lib/common";
@@ -2450,80 +2448,6 @@ function SourcesButton({ events }: { events: ToolEvent[] }) {
   );
 }
 
-function MessageActionsMenu({
-  onCopy,
-  copied,
-  onEdit,
-  onRegenerate,
-}: {
-  onCopy: () => void;
-  copied: boolean;
-  onEdit?: () => void;
-  onRegenerate?: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  return (
-    <div ref={containerRef} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-label="Message actions"
-        className="inline-flex h-7 w-7 items-center justify-center rounded border border-white/[0.06] bg-white/[0.02] text-white/40 transition-colors hover:border-white/[0.12] hover:bg-white/[0.05] hover:text-white/75 sm:h-6 sm:w-6"
-      >
-        <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
-      </button>
-
-      {open && (
-        <div className="absolute bottom-full right-0 z-30 mb-1.5 min-w-[148px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
-          <button
-            type="button"
-            onClick={() => { setOpen(false); onCopy(); }}
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-white/75 transition-colors hover:bg-white/[0.05] hover:text-white"
-          >
-            {copied ? (
-              <Check className="h-3 w-3 shrink-0 text-[#3ecf8e]" aria-hidden />
-            ) : (
-              <Copy className="h-3 w-3 shrink-0 text-white/40" aria-hidden />
-            )}
-            {copied ? "Copied!" : "Copy"}
-          </button>
-          {onEdit && (
-            <button
-              type="button"
-              onClick={() => { setOpen(false); onEdit(); }}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-white/75 transition-colors hover:bg-white/[0.05] hover:text-white"
-            >
-              <Pencil className="h-3 w-3 shrink-0 text-white/40" aria-hidden />
-              Edit
-            </button>
-          )}
-          {onRegenerate && (
-            <button
-              type="button"
-              onClick={() => { setOpen(false); onRegenerate(); }}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-white/75 transition-colors hover:bg-white/[0.05] hover:text-white"
-            >
-              <RefreshCw className="h-3 w-3 shrink-0 text-white/40" aria-hidden />
-              Regenerate
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 type ApproveTerminalCommand = (
   callId: string,
   command: string,
@@ -2678,12 +2602,29 @@ function ChatBubble({
               )
             )}
           </div>
-          <div className="mt-1.5 flex items-center justify-end">
-            <MessageActionsMenu
-              onCopy={handleCopy}
-              copied={copied}
-              onEdit={onEdit ? () => { setDraft(message.content); setEditing(true); } : undefined}
-            />
+          <div className="mt-1.5 flex items-center justify-end gap-0.5">
+            <button
+              type="button"
+              onClick={handleCopy}
+              title={copied ? "Copied!" : "Copy"}
+              aria-label="Copy message"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-white/30 transition-colors hover:bg-white/[0.05] hover:text-white/60"
+            >
+              {copied
+                ? <Check className="h-3.5 w-3.5 text-[#3ecf8e]" aria-hidden />
+                : <Copy className="h-3.5 w-3.5" aria-hidden />}
+            </button>
+            {onEdit && (
+              <button
+                type="button"
+                onClick={() => { setDraft(message.content); setEditing(true); }}
+                title="Edit"
+                aria-label="Edit message"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-white/30 transition-colors hover:bg-white/[0.05] hover:text-white/60"
+              >
+                <Pencil className="h-3.5 w-3.5" aria-hidden />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -2744,40 +2685,21 @@ function ChatBubble({
               <button
                 type="button"
                 onClick={onRegenerate}
-                title="Regenerate response"
+                title="Retry"
+                aria-label="Retry response"
                 className="inline-flex h-7 w-7 items-center justify-center rounded-md text-white/30 transition-colors hover:bg-white/[0.05] hover:text-white/60"
               >
                 <RefreshCw className="h-3.5 w-3.5" aria-hidden />
               </button>
             )}
-            {/* Thumbs — decorative feedback hints */}
-            <button
-              type="button"
-              title="Good response"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-white/20 transition-colors hover:bg-white/[0.05] hover:text-white/50"
-            >
-              <ThumbsUp className="h-3.5 w-3.5" aria-hidden />
-            </button>
-            <button
-              type="button"
-              title="Bad response"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-white/20 transition-colors hover:bg-white/[0.05] hover:text-white/50"
-            >
-              <ThumbsDown className="h-3.5 w-3.5" aria-hidden />
-            </button>
 
             {/* Spacer */}
             <div className="flex-1" />
 
-            {/* Right: sources pill + ⋯ */}
+            {/* Right: sources pill */}
             {message.toolEvents && message.toolEvents.length > 0 && (
               <SourcesButton events={message.toolEvents} />
             )}
-            <MessageActionsMenu
-              onCopy={handleCopy}
-              copied={copied}
-              onRegenerate={onRegenerate}
-            />
           </div>
         ) : null}
         {!streaming && onFollowUp && message.followUps && message.followUps.length > 0 && (

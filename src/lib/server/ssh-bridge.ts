@@ -224,21 +224,15 @@ export function attachSshSession(
   // Handle connect_saved frame — fetch credentials from DB server-side
   // ------------------------------------------------------------------
   async function handleConnectSaved(frame: ConnectSavedFrame): Promise<void> {
-    // For real instances verify ownership and resolve the default IP.
-    // Custom instances have no DB row — host comes entirely from host_override.
+    // Resolve the instance's default public IP when the instance is active.
+    // We do NOT hard-fail when it isn't found/active: stopped or custom-style
+    // targets fall back to the saved credential's host_override below, matching
+    // the standalone terminal which connects with a user-supplied host.
+    // Ownership stays enforced via the credential row's user_id filter.
     let instanceIp: string | null = null;
     if (frame.instanceId !== "__custom__") {
       const instance = await getInstanceForUser(supabase, userId, frame.instanceId);
-      if (!instance || !instance.ip_public) {
-        sendStatus(ws, {
-          type: "status",
-          status: "error",
-          message: "Instance not found or has no public IP",
-        });
-        ws.close(1008);
-        return;
-      }
-      instanceIp = instance.ip_public;
+      instanceIp = instance?.ip_public ?? null;
     }
 
     // Fetch saved credentials directly via the authenticated supabase client

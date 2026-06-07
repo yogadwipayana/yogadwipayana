@@ -82,6 +82,64 @@ export const InlineSshTerminal = forwardRef<InlineSshTerminalHandle, Props>(
           ws.send(new TextEncoder().encode(text));
         }
       },
+      runCommand(command: string, callId: string): Promise<TerminalCommandResult> {
+        const ws = wsRef.current;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+          return Promise.resolve({
+            output: "",
+            exitCode: null,
+            truncated: false,
+            error: "Terminal is not connected.",
+          });
+        }
+        // Only one capture at a time — resolve any prior one as truncated.
+        const prior = captureRef.current;
+        if (prior) {
+          clearTimeout(prior.timer);
+          prior.resolve({
+            output: stripAnsi(prior.buffer),
+            exitCode: null,
+            truncated: true,
+            error: "Superseded by a newer command.",
+          });
+          captureRef.current = null;
+        }
+
+        const token = callId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 16) || "cmd";
+        const startMarker = `__CMDSTART_${token}__`;
+        const endMarker = `__CMDEND_${token}__`;
+
+        return new Promise<TerminalCommandResult>((resolve) => {
+          const timer = setTimeout(() => {
+            const cap = captureRef.current;
+            captureRef.current = null;
+            resolve({
+              output: cap ? stripAnsi(cap.buffer) : "",
+              exitCode: null,
+              truncated: true,
+              error: "Command timed out before completion.",
+            });
+          }, 120_000);
+
+          captureRef.current = {
+            buffer: "",
+            startMarker,
+            endMarker,
+            started: false,
+            resolve,
+            timer,
+          };
+
+          // Wrap so we can isolate the command's own output between markers and
+          // read its exit code. `printf` avoids echo portability issues.
+          // The markers are printed by the shell, not echoed as input noise we
+          // care about, because we slice strictly between them.
+          const wrapped =
+            `printf '\\n${startMarker}\\n'; ${command}\n` +
+            `printf '${endMarker}%d\\n' "$?"\n`;
+          ws.send(new TextEncoder().encode(wrapped));
+        });
+      },
     }));
 
     useEffect(() => {
@@ -122,6 +180,48 @@ export const InlineSshTerminal = forwardRef<InlineSshTerminalHandle, Props>(
         });
 
         const encoder = new TextEncoder();
+        const decoder = new TextDecoder();
+
+        // Accumulate output for an in-flight runCommand() capture and resolve
+        // it once the end sentinel (with exit code) appears.
+        function feedCapture(chunk: string): void {
+          const cap = captureRef.current;
+          if (!cap) return;
+          cap.buffer += chunk;
+
+          // Hard size cap to avoid unbounded growth on a runaway command.
+          if (cap.buffer.length > 500_000) {
+            cap.buffer = cap.buffer.slice(-500_000);
+          }
+
+          const clean = stripAnsi(cap.buffer);
+          // Match the REAL end marker: it is followed by the exit-code digits.
+          // The echoed command line contains "<endMarker>%d" (literal %d, not
+          // digits) so this regex skips it and only fires on the printf output.
+          const endRe = new RegExp(`${cap.endMarker}(\\d+)`);
+          const endHit = endRe.exec(clean);
+          if (!endHit) return;
+
+          const exitCode = parseInt(endHit[1], 10);
+          const endIdx = endHit.index;
+
+          // Output is between the LAST start marker before endIdx and endIdx.
+          // (The wrapped command is echoed once, then the real marker prints, so
+          //  the last occurrence is the one that precedes genuine output.)
+          let output = "";
+          const startIdx = clean.lastIndexOf(cap.startMarker, endIdx);
+          if (startIdx !== -1) {
+            output = clean.slice(startIdx + cap.startMarker.length, endIdx);
+          } else {
+            output = clean.slice(0, endIdx);
+          }
+          output = output.replace(/^\n+/, "").replace(/\n+$/, "");
+
+          clearTimeout(cap.timer);
+          captureRef.current = null;
+          cap.resolve({ output, exitCode, truncated: false });
+        }
+
         const wsUrl =
           window.location.origin.replace(/^http/, "ws") + "/api/ssh/ws";
         ws = new WebSocket(wsUrl);
@@ -142,7 +242,9 @@ export const InlineSshTerminal = forwardRef<InlineSshTerminalHandle, Props>(
         ws.onmessage = (event) => {
           if (!mounted) return;
           if (event.data instanceof ArrayBuffer) {
-            term.write(new Uint8Array(event.data));
+            const bytes = new Uint8Array(event.data);
+            term.write(bytes);
+            feedCapture(decoder.decode(bytes, { stream: true }));
           } else if (typeof event.data === "string") {
             try {
               const msg = JSON.parse(event.data) as {
@@ -157,6 +259,7 @@ export const InlineSshTerminal = forwardRef<InlineSshTerminalHandle, Props>(
               }
             } catch {
               term.write(event.data);
+              feedCapture(event.data);
             }
           }
         };

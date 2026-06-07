@@ -8,7 +8,7 @@ import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
 
 import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
-import { copyToClipboard } from "@/lib/utils";
+import { copyToClipboard, normalizeMarkdownLists } from "@/lib/utils";
 
 export type PublicMessage = {
   id: string;
@@ -115,7 +115,7 @@ function AssistantMarkdown({ content }: { content: string }) {
           },
         }}
       >
-        {content}
+        {normalizeMarkdownLists(content)}
       </ReactMarkdown>
     </div>
   );

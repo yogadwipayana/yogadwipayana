@@ -20,6 +20,7 @@ import { safeFetch, validatePublicHttpUrl } from "@/lib/server/safe-fetch";
 import { getSshCredential } from "@/lib/server/ssh-credential-service";
 import { sshExec } from "@/lib/server/ssh-exec";
 import { requestApproval } from "@/lib/server/terminal-approval-store";
+import { waitForTerminalOutput } from "@/lib/server/terminal-output-store";
 
 /**
  * Server-side tools the chat AI can call. Implementations live in this module
@@ -359,7 +360,7 @@ export const CHAT_TOOLS: ChatTool[] = [
     function: {
       name: "terminal_run",
       description:
-        "Propose a shell command to run in the open interactive terminal. The user MUST approve the command before it executes — you MUST call open_terminal first. The stream pauses until the user clicks Run or Deny. Use this for each step of a multi-command task (e.g. update, install, configure). Do NOT chain unrelated commands into one call — propose them one at a time so the user can review each step.",
+        "Propose a shell command to run in the open interactive terminal. The user MUST approve the command before it executes — you MUST call open_terminal first. The stream pauses until the user clicks Run or Deny, then waits for the command to finish and returns its actual `output` and `exit_code`. Read that output to decide your next step. Use this for each step of a multi-command task (e.g. update, install, configure). Do NOT chain unrelated commands into one call — propose them one at a time so the user can review each step. Avoid long-running or never-ending commands (e.g. `tail -f`, `top`, interactive REPLs) since capture waits for the command to exit.",
       parameters: {
         type: "object",
         properties: {
@@ -856,14 +857,47 @@ export async function executeTool(
         context.abortSignal,
       );
 
+      if (!approved) {
+        return JSON.stringify({
+          ok: false,
+          approved: false,
+          command,
+          reason: reason || undefined,
+          note: "User denied or the request timed out. Command was not executed.",
+        });
+      }
+
+      // Approved — wait for the client to run the command and post back the
+      // captured stdout/stderr + exit code so we can return the real result.
+      const captured = await waitForTerminalOutput(
+        context.callId,
+        context.abortSignal,
+      );
+
+      if (!captured) {
+        return JSON.stringify({
+          ok: true,
+          approved: true,
+          command,
+          reason: reason || undefined,
+          note: "Command was approved and sent to the terminal, but its output could not be captured (timed out). Ask the user what the terminal shows if you need the result.",
+        });
+      }
+
       return JSON.stringify({
-        ok: approved,
-        approved,
+        ok: true,
+        approved: true,
         command,
         reason: reason || undefined,
-        note: approved
-          ? "User approved. The command has been injected into the terminal."
-          : "User denied or the request timed out. Command was not executed.",
+        exit_code: captured.exitCode,
+        output: captured.output || "(no output)",
+        truncated: captured.truncated || undefined,
+        note:
+          captured.exitCode === 0
+            ? "Command completed successfully. The output above is the actual terminal result."
+            : captured.exitCode === null
+              ? "Command finished but the exit code is unknown. The output above is what the terminal produced."
+              : `Command exited with code ${captured.exitCode}. The output above is the actual terminal result.`,
       });
     }
 

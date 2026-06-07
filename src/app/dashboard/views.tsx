@@ -57,7 +57,7 @@ import type {
 } from "./data";
 import { AI_MODELS, AI_RECENT_CALLS, CHAT_MODES } from "./data";
 import { deriveConversationTitle } from "@/lib/chat-title";
-import { copyToClipboard, stripMarkdown } from "@/lib/utils";
+import { copyToClipboard, normalizeMarkdownLists, stripMarkdown } from "@/lib/utils";
 
 export { VpsView } from "./vps-view";
 
@@ -1448,20 +1448,41 @@ export function ChatView({
       instanceId: string | undefined,
       approved: boolean,
     ) => {
-      // Resolve the server-side blocking promise
+      // Resolve the server-side blocking promise (unblocks the SSE stream).
       await fetch(`/api/terminal/approve/${callId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ approved }),
       }).catch(() => {/* best-effort */});
 
-      // Inject command into the terminal when approved
-      if (approved) {
-        const session = instanceId
-          ? terminalSessions.get(instanceId)
-          : [...terminalSessions.values()][0];
-        session?.ref.current?.injectInput(command + "\n");
+      if (!approved) return;
+
+      const session = instanceId
+        ? terminalSessions.get(instanceId)
+        : [...terminalSessions.values()][0];
+      const handle = session?.ref.current;
+      if (!handle) return;
+
+      // Run the command, capture its output, and feed it back so the blocked
+      // terminal_run tool returns the real result (stdout + exit code) to the AI.
+      let payload: { output: string; exitCode: number | null; truncated: boolean };
+      try {
+        const result = await handle.runCommand(command, callId);
+        payload = {
+          output: result.error
+            ? `${result.output}\n[${result.error}]`.trim()
+            : result.output,
+          exitCode: result.exitCode,
+          truncated: result.truncated,
+        };
+      } catch {
+        payload = { output: "", exitCode: null, truncated: true };
       }
+      await fetch(`/api/terminal/output/${callId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).catch(() => {/* best-effort */});
     },
     [terminalSessions],
   );
@@ -3290,7 +3311,9 @@ function AssistantMarkdown({
   // Solution: always render through ReactMarkdown, but close any open tail
   // tokens so the parser treats the suffix as inline text instead of
   // letting it bleed into the rest of the document.
-  const renderContent = streaming ? closeIncompleteMarkdown(content) : content;
+  const renderContent = normalizeMarkdownLists(
+    streaming ? closeIncompleteMarkdown(content) : content,
+  );
 
   return (
     <div className="markdown">
@@ -3416,8 +3439,8 @@ function AssistantMarkdown({
             ul({ children }) {
               return <ul className="my-2 ml-5 list-disc space-y-1 marker:text-white/30">{children}</ul>;
             },
-            ol({ children }) {
-              return <ol className="my-2 ml-5 list-decimal space-y-1 marker:text-white/30">{children}</ol>;
+            ol({ children, start }) {
+              return <ol start={start} className="my-2 ml-5 list-decimal space-y-1 marker:text-white/30">{children}</ol>;
             },
             li({ children }) {
               return <li className="leading-relaxed">{children}</li>;

@@ -6,6 +6,39 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * CommonMark forbids an ordered list starting at anything other than 1 from
+ * interrupting a paragraph. So when the model emits a heading/paragraph line
+ * directly followed by `5.` (no blank line between), the `5.`, `6.`, … get
+ * absorbed into the paragraph as soft-wrapped text instead of becoming list
+ * items — which is why items 1–4 render but 5+ collapse. Insert the missing
+ * blank line before any numbered-list run that is glued to a preceding
+ * non-list, non-blank line so the parser re-opens a list there.
+ */
+export function normalizeMarkdownLists(src: string): string {
+  if (!src) return src;
+  const lines = src.split("\n");
+  const out: string[] = [];
+  let insideFence = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) insideFence = !insideFence;
+
+    if (!insideFence && /^\s*\d+\.\s/.test(line)) {
+      const prev = out[out.length - 1];
+      const prevIsListItem =
+        prev !== undefined && /^\s*(\d+\.|[-*+])\s/.test(prev);
+      if (prev !== undefined && prev.trim() !== "" && !prevIsListItem) {
+        out.push("");
+      }
+    }
+    out.push(line);
+  }
+
+  return out.join("\n");
+}
+
+/**
  * Convert markdown source to readable plain text suitable for pasting into
  * other apps. Handles bold/italic, inline code, fenced code blocks, tables,
  * headings, blockquotes, links, images, and horizontal rules.

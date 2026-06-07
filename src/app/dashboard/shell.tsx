@@ -1446,9 +1446,12 @@ function SubItemButton({
 }) {
   const hasMenu = Boolean(item.onDelete || item.onRename);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(item.label);
   const menuContainerRef = useRef<HTMLDivElement | null>(null);
+  const menuPopupRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   // Sync draft with label if it changes externally (after optimistic rename)
@@ -1462,12 +1465,36 @@ function SubItemButton({
   useEffect(() => {
     if (!menuOpen) return;
     const handler = (e: MouseEvent) => {
-      if (!menuContainerRef.current?.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        !menuContainerRef.current?.contains(target) &&
+        !menuPopupRef.current?.contains(target)
+      ) {
         setMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
+  }, [menuOpen]);
+
+  // Reposition the portal-rendered menu while open (scroll/resize)
+  useEffect(() => {
+    if (!menuOpen) return;
+    const place = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setMenuPos({
+        top: rect.bottom + 4,
+        right: window.innerWidth - rect.right,
+      });
+    };
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
   }, [menuOpen]);
 
   // Focus & select input when rename mode activates
@@ -1554,6 +1581,7 @@ function SubItemButton({
       onKeyDown={(e) => e.stopPropagation()}
     >
       <button
+        ref={triggerRef}
         type="button"
         onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
         aria-label="More options"
@@ -1562,8 +1590,13 @@ function SubItemButton({
         <MoreHorizontal className="h-3.5 w-3.5" aria-hidden />
       </button>
 
-      {menuOpen && (
-        <div className="absolute right-0 top-full z-30 mt-1 min-w-[148px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
+      {menuOpen && menuPos && createPortal(
+        <div
+          ref={menuPopupRef}
+          style={{ position: "fixed", top: menuPos.top, right: menuPos.right }}
+          className="z-[60] min-w-[148px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
+          onClick={(e) => e.stopPropagation()}
+        >
           {item.onRename && (
             <button
               type="button"
@@ -1584,7 +1617,8 @@ function SubItemButton({
               {item.deleteLabel ?? "Delete"}
             </button>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   ) : null;

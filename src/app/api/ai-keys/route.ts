@@ -1,27 +1,13 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { aiDb } from "@/lib/db/ai";
 import { createClient } from "@/utils/supabase/server";
+import { aiAdminConfigured, aiHeaders, aiUrl, ensureAiOwner } from "@/lib/server/ai-admin";
 
 export const runtime = "nodejs";
 
-function aiHeaders(): HeadersInit {
-  return {
-    Authorization: `Bearer ${process.env.ADMIN_AI_API_KEY}`,
-    "Content-Type": "application/json",
-  };
-}
-
-function aiUrl(path: string): string {
-  const base = (process.env.AI_BASE_URL ?? "").replace(/\/v1\/?$/, "");
-  return `${base}/v1${path}`;
-}
-
 export async function POST(request: Request) {
-  const aiBaseUrl = process.env.AI_BASE_URL;
-  const adminKey = process.env.ADMIN_AI_API_KEY;
-  if (!aiBaseUrl || !adminKey) {
+  if (!aiAdminConfigured()) {
     return NextResponse.json(
       { error: "AI router not configured" },
       { status: 503 },
@@ -43,31 +29,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Name is required" }, { status: 400 });
   }
 
-  // Check ownership via direct DB read instead of an upstream round-trip —
-  // upstream POST /admin/api-keys rejects unknown owners with 400.
-  const existingOwner = await aiDb.ownerUsers
-    .findUnique({ where: { email }, select: { email: true } })
-    .catch(() => null);
-
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 25_000);
 
   try {
-    if (!existingOwner) {
-      const upsertRes = await fetch(aiUrl("/admin/users"), {
-        method: "POST",
-        headers: aiHeaders(),
-        signal: controller.signal,
-        body: JSON.stringify({ email, budgetUsd: 0, isActive: true }),
-      });
-      if (!upsertRes.ok) {
-        const detail = await upsertRes.text().catch(() => "");
-        console.error("[ai-keys] owner upsert failed", upsertRes.status, detail);
-        return NextResponse.json(
-          { error: "AI router upstream error", detail },
-          { status: 502 },
-        );
-      }
+    try {
+      await ensureAiOwner(email);
+    } catch (err) {
+      console.error("[ai-keys] owner upsert failed", err);
+      return NextResponse.json(
+        { error: "AI router upstream error", detail: String(err) },
+        { status: 502 },
+      );
     }
 
     const createRes = await fetch(aiUrl("/admin/api-keys"), {

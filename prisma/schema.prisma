@@ -69,9 +69,26 @@ model usageHistory {
   status           String?
   tokens           String?
   meta             String?
+  owner            String?
 
   @@index([connectionId], map: "idx_uh_conn")
   @@index([model], map: "idx_uh_model")
   @@index([provider], map: "idx_uh_provider")
   @@index([timestamp], map: "idx_uh_ts")
+  @@index([owner], map: "idx_uh_owner")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model pricing {
+  providerAlias  String
+  modelId        String
+  input          Float?
+  output         Float?
+  cached         Float?
+  reasoning      Float?
+  cache_creation Float?
+  updatedAt      String
+
+  @@id([providerAlias, modelId])
+  @@index([providerAlias], map: "idx_pricing_provider")
 }

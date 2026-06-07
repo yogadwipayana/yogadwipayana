@@ -2,7 +2,10 @@ import { type EmailOtpType } from "@supabase/supabase-js";
 import { type NextRequest, NextResponse } from "next/server";
 
 import { createClient } from "@/utils/supabase/server";
+import { ensureAiOwner } from "@/lib/server/ai-admin";
 import { cookies } from "next/headers";
+
+export const runtime = "nodejs";
 
 function safePath(input: string | null): string {
   if (!input || typeof input !== "string") return "/dashboard";
@@ -28,6 +31,21 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.verifyOtp({ type, token_hash });
 
     if (!error) {
+      // On signup confirmation, provision the AI-router owner. Best-effort:
+      // AI-router downtime must not block account activation — a later
+      // API-key creation will retry the same idempotent upsert.
+      if (type === "signup") {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user?.email) {
+          try {
+            await ensureAiOwner(user.email);
+          } catch (err) {
+            console.error("[auth/confirm] ensureAiOwner failed", err);
+          }
+        }
+      }
       return NextResponse.redirect(redirectTo);
     }
   }

@@ -3,28 +3,17 @@ import { NextResponse } from "next/server";
 
 import { aiDb } from "@/lib/db/ai";
 import { createClient } from "@/utils/supabase/server";
+import { aiAdminConfigured, aiHeaders, aiUrl } from "@/lib/server/ai-admin";
 
 export const runtime = "nodejs";
-
-function aiHeaders(): HeadersInit {
-  return {
-    Authorization: `Bearer ${process.env.ADMIN_AI_API_KEY}`,
-    "Content-Type": "application/json",
-  };
-}
-
-function aiUrl(path: string): string {
-  const base = (process.env.AI_BASE_URL ?? "").replace(/\/v1\/?$/, "");
-  return `${base}/v1${path}`;
-}
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const aiBaseUrl = process.env.AI_BASE_URL;
-  const adminKey = process.env.ADMIN_AI_API_KEY;
-  if (!aiBaseUrl || !adminKey) {
+  const { id } = await params;
+
+  if (!aiAdminConfigured()) {
     return NextResponse.json(
       { error: "AI router not configured" },
       { status: 503 },
@@ -39,8 +28,6 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const email = user.email;
-
-  const { id } = await params;
 
   const key = await aiDb.apiKeys
     .findUnique({ where: { id }, select: { id: true, owner: true } })
@@ -138,9 +125,9 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const aiBaseUrl = process.env.AI_BASE_URL;
-  const adminKey = process.env.ADMIN_AI_API_KEY;
-  if (!aiBaseUrl || !adminKey) {
+  const { id } = await params;
+
+  if (!aiAdminConfigured()) {
     return NextResponse.json(
       { error: "AI router not configured" },
       { status: 503 },
@@ -155,8 +142,6 @@ export async function DELETE(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const email = user.email;
-
-  const { id } = await params;
 
   // Ownership check — query DB directly to avoid an extra upstream round-trip.
   // Return 404 for both true-not-found and ownership-mismatch so we don't

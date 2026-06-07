@@ -1,7 +1,6 @@
 export type SlashParse = {
-  command: "summarize" | "translate" | "explain" | "diagram";
+  command: "summarize" | "diagram";
   argText: string;
-  language?: string;
 } | null;
 
 /**
@@ -21,30 +20,6 @@ export function parseSlash(content: string): SlashParse {
     case "summarize":
       return { command: "summarize", argText: rest };
 
-    case "translate": {
-      // /translate <lang> <text>
-      // lang = first whitespace-delimited token; rest = everything after
-      const spaceIdx = rest.search(/\s/);
-      if (spaceIdx === -1) {
-        // Only a lang word, no text
-        return {
-          command: "translate",
-          argText: "",
-          language: rest || "English",
-        };
-      }
-      const lang = rest.slice(0, spaceIdx).trim();
-      const argText = rest.slice(spaceIdx + 1).trim();
-      return {
-        command: "translate",
-        argText,
-        language: lang || "English",
-      };
-    }
-
-    case "explain":
-      return { command: "explain", argText: rest };
-
     case "diagram":
       return { command: "diagram", argText: rest };
 
@@ -63,20 +38,6 @@ export function slashSystemPrompt(p: NonNullable<SlashParse>): string {
         "The user typed `/summarize`. Produce a concise structured summary of either the " +
         "supplied text or the previous conversation if no text is given. " +
         "Output: 1-sentence TL;DR, then 3–6 bullet key points, then any open questions."
-      );
-
-    case "translate":
-      return (
-        `The user typed \`/translate\`. Translate the supplied text into ${p.language ?? "English"}. ` +
-        "Preserve markdown structure, code blocks, and inline code verbatim. " +
-        "Output ONLY the translation."
-      );
-
-    case "explain":
-      return (
-        "The user typed `/explain`. Walk through the supplied text/code step by step. " +
-        "Use ## headings for sections (Overview, Step-by-step, Gotchas). " +
-        "Be precise and beginner-friendly."
       );
 
     case "diagram":

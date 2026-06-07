@@ -388,8 +388,6 @@ type Attachment = {
 
 const SLASH_COMMANDS = [
   { command: "/summarize", description: "Summarize the conversation or pasted text." },
-  { command: "/translate", description: "/translate <lang> <text> — Translate to another language." },
-  { command: "/explain", description: "Walk through a piece of text or code." },
   { command: "/diagram", description: "Generate a Mermaid diagram." },
 ] as const;
 

@@ -11,7 +11,7 @@ import { WebSocketServer } from "ws";
 import { validateSessionFromCookies, attachSshSession } from "./src/lib/server/ssh-bridge.ts";
 
 if (!process.env.NODE_ENV) {
-  process.env.NODE_ENV = "development";
+  process.env.NODE_ENV = process.env.npm_lifecycle_event === "start" ? "production" : "development";
 }
 
 const dev = process.env.NODE_ENV !== "production";

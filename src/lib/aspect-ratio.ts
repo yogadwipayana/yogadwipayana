@@ -5,7 +5,7 @@
  * accepts `1024x1024`, Stability uses `aspect_ratio: "16:9"`, FLUX wants exact
  * width/height. The UI exposes a single preset; this module maps it to the
  * canonical OpenAI-compatible `size` string that 9router accepts for the
- * cx/gpt-5.4-image route we use today, plus side data callers can use to
+ * cx/gpt-5.5-image route we use today, plus side data callers can use to
  * switch providers later without touching the UI.
  */
 

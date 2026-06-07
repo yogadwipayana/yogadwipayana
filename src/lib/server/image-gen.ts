@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 /**
- * Generates an image from a text prompt using the cx/gpt-5.4-image model via
+ * Generates an image from a text prompt using the cx/gpt-5.5-image model via
  * the configured OpenAI-compatible endpoint. The image is saved to
  * public/generated-images/ and the public URL path is returned.
  *
@@ -12,7 +12,7 @@ import { join } from "node:path";
  *
  * Pass `image` (or `images`) to perform image-to-image / edit / reference
  * workflows — the same endpoint accepts a reference image URL alongside the
- * prompt for providers that support it (gpt-5.4-image, FLUX, nanobanana,
+ * prompt for providers that support it (gpt-5.5-image, FLUX, nanobanana,
  * runwayml, codex, etc.).
  *
  * Pass an `abortSignal` to cancel an in-flight generation. Aborts propagate
@@ -57,7 +57,7 @@ export async function generateImage(opts: GenerateImageOptions): Promise<{ url: 
   }
 
   const body: Record<string, unknown> = {
-    model: "cx/gpt-5.4-image",
+    model: "cx/gpt-5.5-image",
     prompt: opts.prompt,
     n: 1,
     size: opts.size ?? "auto",

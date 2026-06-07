@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node --experimental-strip-types server.mjs",
     "build": "next build",
-    "start": "next start",
+    "start": "node --experimental-strip-types server.mjs",
     "lint": "eslint",
     "prisma:ai:pull": "prisma db pull",
     "prisma:ai:generate": "prisma generate",

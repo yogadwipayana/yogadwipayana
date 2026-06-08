@@ -20,6 +20,7 @@ import {
   CreditCard,
   Download,
   ExternalLink,
+  FileText,
   Globe,
   ImagePlus,
   Key,
@@ -389,6 +390,7 @@ type Attachment = {
 const SLASH_COMMANDS = [
   { command: "/summarize", description: "Summarize the conversation or pasted text." },
   { command: "/diagram", description: "Generate a Mermaid diagram." },
+  { command: "/word", description: "Generate a downloadable Word (.docx) document." },
 ] as const;
 
 /* -------------------------------------------------------------------------- */
@@ -3344,6 +3346,32 @@ function AssistantMarkdown({
             a({ children, href, ...props }) {
               const linkClass =
                 "text-[#3ecf8e] underline decoration-[#3ecf8e]/40 underline-offset-2 hover:decoration-[#3ecf8e]";
+              // Generated .docx → download card with an icon, not a plain link.
+              if (href && /\/generated-documents\//.test(href)) {
+                const label = String(children ?? "").trim() || "Download document";
+                let filename = "document.docx";
+                try {
+                  filename = decodeURIComponent(href.split("/").pop() || filename);
+                } catch {
+                  /* keep fallback */
+                }
+                return (
+                  <a
+                    href={href}
+                    download
+                    className="my-2 inline-flex items-center gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-2 no-underline transition-colors hover:border-[#3ecf8e]/30 hover:bg-[#3ecf8e]/[0.06]"
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#3ecf8e]/10 text-[#3ecf8e]">
+                      <FileText className="h-4 w-4" aria-hidden />
+                    </span>
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate text-[13px] font-medium text-white/85">{label}</span>
+                      <span className="text-[11px] text-white/40">Word document · .docx</span>
+                    </span>
+                    <Download className="ml-1 h-3.5 w-3.5 shrink-0 text-white/40" aria-hidden />
+                  </a>
+                );
+              }
               // Internal relative paths → Next.js Link (SPA navigation, no reload)
               if (href && href.startsWith("/")) {
                 return (

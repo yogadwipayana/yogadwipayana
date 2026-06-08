@@ -15,7 +15,7 @@ import {
   getRateLimitIdentifier,
   ratelimits,
 } from "@/lib/server/rate-limit";
-import { parseSlash, slashSystemPrompt } from "@/lib/server/slash-commands";
+import { parseSlash, slashSystemPrompt, slashRewriteUserContent } from "@/lib/server/slash-commands";
 import { createClient } from "@/utils/supabase/server";
 
 export const runtime = "nodejs";
@@ -69,6 +69,12 @@ export async function POST(request: Request, { params }: RouteContext) {
     const lastUserMessage = [...history].reverse().find((m) => m.role === "user");
     const slashParsed = lastUserMessage ? parseSlash(lastUserMessage.content) : null;
 
+    // For tool-backed slash commands (/word), reframe the last user turn sent
+    // to the model so it triggers the tool under tool_choice:"auto". The DB
+    // copy keeps the original `/word …` text.
+    const rewritten = slashParsed ? slashRewriteUserContent(slashParsed) : null;
+    const lastUserId = rewritten ? lastUserMessage?.id : undefined;
+
     const messagesForModel = [
       { role: "system" as const, content: CHAT_SYSTEM_PROMPT },
       ...(conversation.mode === "image"
@@ -77,7 +83,10 @@ export async function POST(request: Request, { params }: RouteContext) {
       ...(slashParsed
         ? [{ role: "system" as const, content: slashSystemPrompt(slashParsed) }]
         : []),
-      ...history.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      ...history.map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: rewritten && m.id === lastUserId ? rewritten : m.content,
+      })),
     ];
 
     return runChatStream({

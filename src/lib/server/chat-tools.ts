@@ -16,6 +16,7 @@ import {
 } from "@/lib/server/dashboard-service";
 import { generateImage } from "@/lib/server/image-gen";
 import { generateAndRecord } from "@/lib/server/image-service";
+import { generateAndRecord as generateDocAndRecord } from "@/lib/server/docx-service";
 import { safeFetch, validatePublicHttpUrl } from "@/lib/server/safe-fetch";
 import { getSshCredential } from "@/lib/server/ssh-credential-service";
 import { sshExec } from "@/lib/server/ssh-exec";
@@ -448,6 +449,31 @@ export const CHAT_TOOLS: ChatTool[] = [
           },
         },
         required: ["prompt", "image_url"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "word_generate",
+      description:
+        "Generate a downloadable Microsoft Word (.docx) document. Use whenever the user asks for a Word document, .docx, report, letter, essay, proposal, CV/resume, or any content they want to download and open in Word. You write the full document body yourself as Markdown (headings, bold/italic, bullet and numbered lists, tables, blockquotes, code blocks all convert to native Word formatting). The tool returns a URL to the saved .docx. After it returns, you MUST give the user a markdown download link: [Download <title>.docx](url). Generation is fast (a second or two). Do not call more than once per request unless the user asks for a revision.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            description:
+              "A short, descriptive title for the document. Used as the download filename. E.g. 'Q3 Marketing Report' or 'Cover Letter — Acme Corp'.",
+          },
+          markdown: {
+            type: "string",
+            description:
+              "The FULL document body as Markdown. Write complete, well-structured content — use # / ## headings, **bold**, *italic*, - bullet lists, 1. numbered lists, | tables |, > blockquotes, and ``` code blocks as appropriate. Do not leave placeholders; produce the finished document the user asked for.",
+          },
+        },
+        required: ["title", "markdown"],
         additionalProperties: false,
       },
     },
@@ -935,6 +961,24 @@ export async function executeTool(
         },
       });
       return JSON.stringify(result);
+    }
+
+    if (name === "word_generate") {
+      const markdown = typeof args.markdown === "string" ? args.markdown.trim() : "";
+      const title = typeof args.title === "string" ? args.title.trim() : "";
+      if (!markdown) return JSON.stringify({ error: "Missing markdown content" });
+      if (!context.supabase) {
+        return JSON.stringify({ error: "Document generation requires an authenticated session" });
+      }
+      const row = await generateDocAndRecord({
+        supabase: context.supabase,
+        userId: context.userId,
+        prompt: title || markdown.slice(0, 200),
+        conversationId: context.conversationId ?? null,
+        source: "chat",
+        options: { markdown, title, abortSignal: context.abortSignal },
+      });
+      return JSON.stringify({ url: row.url, title: row.title });
     }
 
     return JSON.stringify({ error: `Unknown tool: ${name}` });

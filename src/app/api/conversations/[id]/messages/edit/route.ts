@@ -17,7 +17,7 @@ import {
   ratelimits,
 } from "@/lib/server/rate-limit";
 import { validatePublicHttpUrl } from "@/lib/server/safe-fetch";
-import { parseSlash, slashSystemPrompt } from "@/lib/server/slash-commands";
+import { parseSlash, slashSystemPrompt, slashRewriteUserContent } from "@/lib/server/slash-commands";
 import {
   buildAttachmentFooter,
   buildUserContentWithAttachments,
@@ -117,14 +117,19 @@ export async function POST(request: Request, { params }: RouteContext) {
       );
     }
 
-    // Build the multipart content for the model's latest user turn
-    const userContentForModel = await buildUserContentWithAttachments({
-      text: content,
-      attachments: (attachments ?? []) as Attachment[],
-    });
-
     // Parse slash command (if any)
     const slashParsed = parseSlash(content);
+
+    // For tool-backed slash commands (/word), reframe the text sent to the
+    // model so it actually triggers the tool under tool_choice:"auto".
+    const modelText =
+      (slashParsed && slashRewriteUserContent(slashParsed)) ?? content;
+
+    // Build the multipart content for the model's latest user turn
+    const userContentForModel = await buildUserContentWithAttachments({
+      text: modelText,
+      attachments: (attachments ?? []) as Attachment[],
+    });
 
     // Replace the last history entry's content with the multipart version
     // (the edited message is always the last in history after truncation)

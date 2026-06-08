@@ -50,5 +50,8 @@ next-env.d.ts
 # generated images (runtime artifacts)
 /public/generated-images/
 
+# generated documents (runtime artifacts)
+/public/generated-documents/
+
 # Prisma generated clients
 /src/generated/

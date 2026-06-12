@@ -110,6 +110,25 @@ function _subscribeLive(id: string, fn: LiveListener): () => void {
 const _draftCache = new Map<string, string>();
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─── Pending first-message handoff ─────────────────────────────────────────────
+// Deferred conversation creation: the landing composer (/dashboard/chat) creates
+// a conversation, stashes the typed text here keyed by the new id, then navigates
+// to /dashboard/chat/[id]. The freshly-mounted ChatView reads it once and
+// auto-sends, so the user's first message survives the route change.
+const _pendingFirstMessage = new Map<
+  string,
+  { text: string; attachments: AttachmentPayload[] }
+>();
+
+export function stashPendingFirstMessage(
+  conversationId: string,
+  text: string,
+  attachments: AttachmentPayload[] = [],
+): void {
+  _pendingFirstMessage.set(conversationId, { text, attachments });
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 function highlightCode(code: string, lang: string | null): string {
   const key = `${lang ?? ""}::${code}`;
   const cached = HIGHLIGHT_CACHE.get(key);
@@ -370,7 +389,7 @@ function Action({
 /*  Attachment types                                                           */
 /* -------------------------------------------------------------------------- */
 
-type AttachmentKind = "image" | "pdf";
+type AttachmentKind = "image" | "pdf" | "document";
 
 type Attachment = {
   key: string; // unique local key
@@ -405,7 +424,227 @@ function formatBytes(bytes: number): string {
 
 const MAX_ATTACHMENTS = 6;
 const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
-const ACCEPTED_MIME = ["image/png", "image/jpeg", "image/webp", "image/gif", "application/pdf"];
+const ACCEPTED_MIME = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+  "application/vnd.ms-excel", // .xls
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
+  "application/vnd.ms-powerpoint", // .ppt
+  "text/csv",
+  "text/plain",
+  "text/markdown",
+];
+
+/** Map a file's MIME type to the attachment kind the server expects. */
+function mimeToKind(mime: string): AttachmentKind {
+  if (mime.startsWith("image/")) return "image";
+  if (mime === "application/pdf") return "pdf";
+  return "document";
+}
+
+/** Wire payload shape for an attachment sent to the messages API. */
+export type AttachmentPayload = {
+  kind: AttachmentKind;
+  url: string;
+  name: string;
+  mime: string;
+  size: number;
+};
+
+/**
+ * Attachment upload + drag/drop/paste state, shared by both the landing
+ * composer (ChatLanding) and the in-conversation composer (ChatView). Keeps the
+ * upload-to-/api/upload flow and the MAX_ATTACHMENTS / MIME guards in one place.
+ */
+function useAttachments() {
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const uploadFile = useCallback(async (file: File) => {
+    if (!ACCEPTED_MIME.includes(file.type)) return;
+    if (file.size > MAX_ATTACHMENT_BYTES) return;
+
+    const key = `att-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const kind: AttachmentKind = mimeToKind(file.type);
+
+    const placeholder: Attachment = {
+      key,
+      kind,
+      name: file.name,
+      mime: file.type,
+      size: file.size,
+      publicUrl: "",
+      uploading: true,
+    };
+    // Guard against exceeding the cap using the functional updater so it stays
+    // correct when multiple files upload concurrently.
+    let accepted = true;
+    setAttachments((prev) => {
+      if (prev.length >= MAX_ATTACHMENTS) {
+        accepted = false;
+        return prev;
+      }
+      return [...prev, placeholder];
+    });
+    if (!accepted) return;
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(json.error ?? `Upload failed: ${res.status}`);
+      }
+      const { publicUrl: rawUrl } = (await res.json()) as { publicUrl: string };
+      // Convert relative path to absolute URL so Zod's .url() validation passes
+      const publicUrl =
+        rawUrl.startsWith("/") && typeof window !== "undefined"
+          ? `${window.location.origin}${rawUrl}`
+          : rawUrl;
+
+      setAttachments((prev) =>
+        prev.map((a) =>
+          a.key === key ? { ...a, uploading: false, publicUrl } : a,
+        ),
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      setAttachments((prev) =>
+        prev.map((a) => (a.key === key ? { ...a, uploading: false, error: msg } : a)),
+      );
+    }
+  }, []);
+
+  const handleFiles = useCallback(
+    (files: FileList | File[]) => {
+      Array.from(files).forEach((f) => void uploadFile(f));
+    },
+    [uploadFile],
+  );
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = e.clipboardData.items;
+      const imageItems: File[] = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          const f = item.getAsFile();
+          if (f) imageItems.push(f);
+        }
+      }
+      if (imageItems.length > 0) {
+        e.preventDefault();
+        handleFiles(imageItems);
+      }
+    },
+    [handleFiles],
+  );
+
+  // Drag state uses an enter/leave counter so the overlay doesn't flicker as
+  // the cursor crosses child elements of a large drop surface (the whole
+  // conversation), since each child fires its own dragenter/dragleave.
+  const dragDepthRef = useRef(0);
+
+  // Only react to drags that actually carry files (ignore text/element drags).
+  const isFileDrag = (e: React.DragEvent) =>
+    Array.from(e.dataTransfer?.types ?? []).includes("Files");
+
+  const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    dragDepthRef.current += 1;
+    setDragOver(true);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      dragDepthRef.current = 0;
+      setDragOver(false);
+      if (e.dataTransfer.files.length > 0) {
+        handleFiles(e.dataTransfer.files);
+      }
+    },
+    [handleFiles],
+  );
+
+  const removeAttachment = useCallback((key: string) => {
+    setAttachments((prev) => prev.filter((a) => a.key !== key));
+  }, []);
+
+  const clearAttachments = useCallback(() => setAttachments([]), []);
+
+  const anyUploading = attachments.some((a) => a.uploading);
+  const hasReadyAttachment = attachments.some((a) => !a.uploading && !a.error);
+  const atCapacity = attachments.length >= MAX_ATTACHMENTS;
+
+  /** Ready (non-errored) attachments mapped to the messages-API wire shape. */
+  const readyAttachmentPayloads = useCallback(
+    (): AttachmentPayload[] =>
+      attachments
+        .filter((a) => !a.error)
+        .map((a) => ({
+          kind: a.kind,
+          url: a.publicUrl,
+          name: a.name,
+          mime: a.mime,
+          size: a.size,
+        })),
+    [attachments],
+  );
+
+  return {
+    attachments,
+    setAttachments,
+    dragOver,
+    fileInputRef,
+    handleFiles,
+    handlePaste,
+    handleDragEnter,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    removeAttachment,
+    clearAttachments,
+    anyUploading,
+    hasReadyAttachment,
+    atCapacity,
+    readyAttachmentPayloads,
+  };
+}
+
+/** Local-message footer (markdown) mirroring the server's persisted footer. */
+function buildLocalAttachmentFooter(
+  atts: { kind: AttachmentKind; name: string; publicUrl: string }[],
+): string {
+  return atts
+    .map((a) =>
+      a.kind === "image"
+        ? `![${a.name}](${a.publicUrl})`
+        : `[📎 ${a.name}](${a.publicUrl})`,
+    )
+    .join("\n");
+}
 
 export function ChatView({
   conversation,
@@ -421,6 +660,20 @@ export function ChatView({
   onDelete?: (id: string) => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Always-current mirror of `messages` so async callbacks (send/stream seed)
+  // can read the latest list without a stale closure or relying on a state
+  // updater's side effects running synchronously.
+  const messagesRef = useRef<ChatMessage[]>(messages);
+  messagesRef.current = messages;
+  // Captured once at first render (before any effect runs) so it's stable across
+  // React StrictMode's double effect-invoke. The auto-send effect deletes the
+  // map entry, so re-reading the map inside the hydrate effect would race and
+  // let the second pass fall through to an empty DB fetch — flashing the welcome
+  // panel mid-stream. This ref is the single source of truth for "this mount is
+  // a deferred-creation handoff".
+  const hadPendingFirstMessageRef = useRef(
+    _pendingFirstMessage.has(conversation.id),
+  );
   const [input, setInput] = useState(() => _draftCache.get(conversation.id) ?? "");
   const [model, setModel] = useState(conversation.model || defaultModel || "");
   const [mode, setMode] = useState<ChatMode>(conversation.mode ?? "chat");
@@ -430,7 +683,6 @@ export function ChatView({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   // Always holds the latest model/mode values so async callbacks can check
   // for stale selections without reading state inside an updater function.
   const latestModelRef = useRef(model);
@@ -446,9 +698,24 @@ export function ChatView({
   // Supplemented at runtime by any new images streamed in the current session.
   const [loadedImages, setLoadedImages] = useState<Array<{ url: string; prompt: string }>>([]);
 
-  // Attachments state
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [dragOver, setDragOver] = useState(false);
+  // Attachments state (upload + drag/drop/paste shared with ChatLanding)
+  const {
+    attachments,
+    setAttachments,
+    dragOver,
+    fileInputRef,
+    handleFiles,
+    handlePaste,
+    handleDragEnter,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    removeAttachment,
+    clearAttachments,
+    anyUploading,
+    hasReadyAttachment,
+    readyAttachmentPayloads,
+  } = useAttachments();
 
   // Slash command autocomplete
   const [slashOpen, setSlashOpen] = useState(false);
@@ -484,6 +751,24 @@ export function ChatView({
   // local state inside the effect.
   useEffect(() => {
     let cancelled = false;
+
+    // Deferred-creation handoff: if a first message was queued for this
+    // brand-new conversation at mount, skip DB hydration entirely. The DB has no
+    // messages yet (conversation just created, assistant not persisted), so
+    // fetching would resolve with an empty list and — racing ahead of the
+    // auto-send seed — flip `loaded` true with zero messages, flashing the
+    // welcome panel. We read a ref captured at first render (not the map, which
+    // the auto-send effect deletes) so this holds across StrictMode's double
+    // invoke. The pending-send effect below seeds the messages and streams.
+    if (hadPendingFirstMessageRef.current) {
+      // Mark loaded so the post-seed render shows the message thread, not the
+      // "Loading conversation…" spinner. This is batched in the same effect
+      // flush as the auto-send effect's synchronous seed (which runs right
+      // after and sets a non-empty `messages`), so the committed render has
+      // loaded=true AND messages.length>0 — never the empty welcome panel.
+      setLoaded(true);
+      return;
+    }
 
     // If generation is still in-flight for this conversation (user navigated
     // away and back), re-attach to the live stream cache so tool call
@@ -684,15 +969,19 @@ export function ChatView({
       let currentAssistantId = assistantMsgId;
 
       // Helper: apply an updater, capture the result, and publish to live cache.
-      // Functional updaters run synchronously, so `captured` is set before we
-      // call _publishLive.
+      // We compute the next list from `messagesRef.current` (a ref kept in sync
+      // with state) and pass the SAME array into setMessages — instead of
+      // reading `prev` inside the updater. This matters once the user navigates
+      // away mid-stream: the ChatView unmounts, React no longer runs its state
+      // updaters, so an updater-captured value would be stale/empty and would
+      // overwrite the live cache with [] (re-attaching later shows an empty
+      // welcome panel). Driving from the ref keeps the published list correct
+      // even while unmounted.
       const applyAndPublish = (updater: (prev: ChatMessage[]) => ChatMessage[]) => {
-        let captured: ChatMessage[] = [];
-        setMessages((prev) => {
-          captured = updater(prev);
-          return captured;
-        });
-        _publishLive(conversation.id, captured);
+        const next = updater(messagesRef.current);
+        messagesRef.current = next;
+        setMessages(next);
+        _publishLive(conversation.id, next);
       };
 
       while (true) {
@@ -830,24 +1119,32 @@ export function ChatView({
     abortRef.current?.abort();
   }, []);
 
-  const handleSend = useCallback(async (overrideText?: string) => {
+  const handleSend = useCallback(
+    async (overrideText?: string, pendingAttachments?: AttachmentPayload[]) => {
     const trimmed = (overrideText ?? input).trim();
-    const hasAttachments = !overrideText && attachments.some((a) => !a.error);
+    // Attachments come either from the live composer state (normal send) or,
+    // for the deferred-creation handoff, from pendingAttachments passed by the
+    // landing composer alongside the first message.
+    const sendAttachments: AttachmentPayload[] =
+      pendingAttachments && pendingAttachments.length > 0
+        ? pendingAttachments
+        : overrideText
+          ? []
+          : readyAttachmentPayloads();
+    const hasAttachments = sendAttachments.length > 0;
     if ((!trimmed && !hasAttachments) || isStreaming) return;
     // Block send while any attachment is still uploading (skip for follow-ups)
-    if (!overrideText && attachments.some((a) => a.uploading)) return;
-
-    const readyAttachments = overrideText ? [] : attachments.filter((a) => !a.error);
+    if (!overrideText && anyUploading) return;
 
     // Mirror the footer that the server appends so the optimistic bubble looks
     // identical to the persisted message (images visible immediately).
-    const localFooter = readyAttachments
-      .map((a) =>
-        a.kind === "image"
-          ? `![${a.name}](${a.publicUrl})`
-          : `[📎 ${a.name}](${a.publicUrl})`,
-      )
-      .join("\n");
+    const localFooter = buildLocalAttachmentFooter(
+      sendAttachments.map((a) => ({
+        kind: a.kind,
+        name: a.name,
+        publicUrl: a.url,
+      })),
+    );
     const localContent = localFooter
       ? trimmed
         ? `${trimmed}\n\n${localFooter}`
@@ -870,17 +1167,17 @@ export function ChatView({
     pinnedToBottomRef.current = true;
     // Seed live cache before the first SSE event so navigation-then-return
     // can always re-attach even if the first delta takes a long time (e.g.
-    // slow tool calls like ssh_run).
-    let seedMsgs: ChatMessage[] = [];
-    setMessages((prev) => {
-      seedMsgs = [...prev, userMsg, assistantMsg];
-      return seedMsgs;
-    });
+    // slow tool calls like ssh_run). Build the seed from the ref (not from
+    // inside the setMessages updater) so the publish can never race ahead of
+    // the state update and cache an empty list.
+    const seedMsgs: ChatMessage[] = [...messagesRef.current, userMsg, assistantMsg];
+    messagesRef.current = seedMsgs;
+    setMessages(seedMsgs);
     _publishLive(conversation.id, seedMsgs);
     if (!overrideText) {
       setInput("");
       _draftCache.delete(conversation.id);
-      setAttachments([]);
+      clearAttachments();
       setSlashOpen(false);
     }
     notifyStreaming(true);
@@ -890,17 +1187,11 @@ export function ChatView({
     abortRef.current = ctrl;
 
     try {
-      const body: { content: string; attachments?: { kind: AttachmentKind; url: string; name: string; mime: string; size: number }[] } = {
+      const body: { content: string; attachments?: AttachmentPayload[] } = {
         content: trimmed,
       };
-      if (readyAttachments.length > 0) {
-        body.attachments = readyAttachments.map((a) => ({
-          kind: a.kind,
-          url: a.publicUrl,
-          name: a.name,
-          mime: a.mime,
-          size: a.size,
-        }));
+      if (sendAttachments.length > 0) {
+        body.attachments = sendAttachments;
       }
 
       const res = await fetch(
@@ -955,7 +1246,8 @@ export function ChatView({
       notifyStreaming(false);
     }
   }, [
-    attachments,
+    anyUploading,
+    clearAttachments,
     consumeStream,
     conversation.id,
     conversation.title,
@@ -966,7 +1258,23 @@ export function ChatView({
     mode,
     notifyStreaming,
     onConversationUpdated,
+    readyAttachmentPayloads,
   ]);
+
+  // Deferred-creation handoff: if the landing composer stashed a first message
+  // for this conversation, send it once the view has mounted. The fetch effect
+  // above guards against clobbering these optimistic messages with the empty DB
+  // result, so it's safe to fire immediately rather than waiting for `loaded`.
+  const pendingSentRef = useRef(false);
+  useEffect(() => {
+    if (pendingSentRef.current) return;
+    const pending = _pendingFirstMessage.get(conversation.id);
+    if (pending === undefined) return;
+    _pendingFirstMessage.delete(conversation.id);
+    pendingSentRef.current = true;
+    void handleSend(pending.text, pending.attachments);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation.id]);
 
   const handleRegenerate = useCallback(async () => {
     if (isStreaming) return;
@@ -986,6 +1294,7 @@ export function ChatView({
 
     pinnedToBottomRef.current = true;
     const regenSeedMsgs = [...next, assistantMsg];
+    messagesRef.current = regenSeedMsgs;
     setMessages(regenSeedMsgs);
     _publishLive(conversation.id, regenSeedMsgs);
     notifyStreaming(true);
@@ -1097,6 +1406,7 @@ export function ChatView({
       const truncated = messages.slice(0, idx);
       pinnedToBottomRef.current = true;
       const editSeedMsgs = [...truncated, editedUser, assistantMsg];
+      messagesRef.current = editSeedMsgs;
       setMessages(editSeedMsgs);
       _publishLive(conversation.id, editSeedMsgs);
       notifyStreaming(true);
@@ -1160,103 +1470,6 @@ export function ChatView({
       notifyStreaming,
       onConversationUpdated,
     ],
-  );
-
-  // Upload a single file: POST /api/upload (multipart) → saved to public/uploads/
-  const uploadFile = useCallback(async (file: File) => {
-    if (!ACCEPTED_MIME.includes(file.type)) return;
-    if (file.size > MAX_ATTACHMENT_BYTES) return;
-    if (attachments.length >= MAX_ATTACHMENTS) return;
-
-    const key = `att-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const kind: AttachmentKind = file.type === "application/pdf" ? "pdf" : "image";
-
-    const placeholder: Attachment = {
-      key,
-      kind,
-      name: file.name,
-      mime: file.type,
-      size: file.size,
-      publicUrl: "",
-      uploading: true,
-    };
-    setAttachments((prev) => [...prev, placeholder]);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body: formData });
-      if (!res.ok) {
-        const json = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(json.error ?? `Upload failed: ${res.status}`);
-      }
-      const { publicUrl: rawUrl } = (await res.json()) as { publicUrl: string };
-      // Convert relative path to absolute URL so Zod's .url() validation passes
-      const publicUrl =
-        rawUrl.startsWith("/") && typeof window !== "undefined"
-          ? `${window.location.origin}${rawUrl}`
-          : rawUrl;
-
-      setAttachments((prev) =>
-        prev.map((a) =>
-          a.key === key ? { ...a, uploading: false, publicUrl } : a,
-        ),
-      );
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Upload failed";
-      setAttachments((prev) =>
-        prev.map((a) => (a.key === key ? { ...a, uploading: false, error: msg } : a)),
-      );
-    }
-  }, [attachments.length]);
-
-  const handleFiles = useCallback(
-    (files: FileList | File[]) => {
-      const arr = Array.from(files);
-      const remaining = MAX_ATTACHMENTS - attachments.length;
-      arr.slice(0, remaining).forEach((f) => void uploadFile(f));
-    },
-    [attachments.length, uploadFile],
-  );
-
-  const handlePaste = useCallback(
-    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      const items = e.clipboardData.items;
-      const imageItems: File[] = [];
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (item.kind === "file" && item.type.startsWith("image/")) {
-          const f = item.getAsFile();
-          if (f) imageItems.push(f);
-        }
-      }
-      if (imageItems.length > 0) {
-        e.preventDefault();
-        handleFiles(imageItems);
-      }
-    },
-    [handleFiles],
-  );
-
-  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragOver(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setDragOver(false);
-  }, []);
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      setDragOver(false);
-      if (e.dataTransfer.files.length > 0) {
-        handleFiles(e.dataTransfer.files);
-      }
-    },
-    [handleFiles],
   );
 
   // Slash command: detect when input matches ^\s*\/\w*$
@@ -1436,7 +1649,7 @@ export function ChatView({
         }
       });
     },
-    [handleSelectMode, mode],
+    [handleSelectMode, mode, setAttachments],
   );
 
   // Approve or deny a terminal_run command proposed by the AI.
@@ -1485,6 +1698,20 @@ export function ChatView({
       }).catch(() => {/* best-effort */});
     },
     [terminalSessions],
+  );
+
+  const handleAnswerQuestion = useCallback<AnswerQuestion>(
+    (_callId, answer) => {
+      // Non-blocking design: the AI's question was persisted as its assistant
+      // turn and the stream closed. Submitting an answer simply sends it as the
+      // next user message, which resumes the conversation with the question
+      // already in history. A null answer (Skip) is a no-op — the user can type
+      // their own message instead.
+      if (answer && answer.trim()) {
+        void handleSend(answer.trim());
+      }
+    },
+    [handleSend],
   );
 
   const lastAssistantId = useMemo(() => {
@@ -1541,12 +1768,24 @@ export function ChatView({
     return imgs;
   }, [loadedImages, messages]);
 
-  const anyUploading = attachments.some((a) => a.uploading);
-  const hasReadyAttachment = attachments.some((a) => !a.uploading && !a.error);
   const canSend = (!!input.trim() || hasReadyAttachment) && !isStreaming && !anyUploading;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div
+      className="relative flex h-full flex-col overflow-hidden"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {dragOver && (
+        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-[#0a0a0a]/70 backdrop-blur-[1px]">
+          <div className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-[#3ecf8e]/50 bg-[#141414]/80 px-8 py-6">
+            <Paperclip className="h-6 w-6 text-[#3ecf8e]/70" aria-hidden />
+            <span className="text-[14px] text-[#3ecf8e]/80">Drop files to attach</span>
+          </div>
+        </div>
+      )}
       {/* Header — Perplexity-inspired */}
       <header className="relative flex h-[52px] shrink-0 items-center border-b border-white/[0.06] px-4 sm:px-6 lg:px-8">
         {/* Tabs / rename — centered with content column */}
@@ -1816,6 +2055,10 @@ export function ChatView({
                     : undefined
                 }
                 onApproveTerminalCommand={handleApproveTerminalCommand}
+                onAnswerQuestion={handleAnswerQuestion}
+                questionInteractive={
+                  i === messages.length - 1 && !isStreaming
+                }
                 onFollowUp={
                   isLastAssistant && !isStreaming ? handleFollowUp : undefined
                 }
@@ -1836,6 +2079,26 @@ export function ChatView({
                   Retry
                 </button>
               ) : null}
+            </div>
+          ) : null}
+
+          {/* Trailing user message with no assistant reply (e.g. the previous
+              response failed or was abandoned before this load). The transient
+              error banner above is gone after a reload, so surface a retry here. */}
+          {!error &&
+          !isStreaming &&
+          loaded &&
+          messages.length > 0 &&
+          messages[messages.length - 1].role === "user" ? (
+            <div className="mt-3 flex justify-start">
+              <button
+                type="button"
+                onClick={handleRegenerate}
+                className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[12px] font-medium text-foreground/70 transition-colors hover:border-white/[0.14] hover:bg-white/[0.06] hover:text-foreground"
+              >
+                <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+                Retry
+              </button>
             </div>
           ) : null}
         </div>
@@ -1935,20 +2198,7 @@ export function ChatView({
           />
 
           {/* Prompt box */}
-          <div
-            className={`rounded-2xl bg-[#141414] transition-colors ${
-              dragOver ? "bg-[#3ecf8e]/[0.03]" : ""
-            }`}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-          >
-            {dragOver && (
-              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-[#3ecf8e]/50">
-                <span className="text-[13px] text-[#3ecf8e]/70">Drop files here</span>
-              </div>
-            )}
-
+          <div className="rounded-2xl bg-[#141414]">
             {/* Text area */}
             <textarea
               ref={textareaRef}
@@ -1984,7 +2234,7 @@ export function ChatView({
                     <span className="max-w-[120px] truncate text-[11px] text-white/60">{att.name}</span>
                     <button
                       type="button"
-                      onClick={() => setAttachments((prev) => prev.filter((a) => a.key !== att.key))}
+                      onClick={() => removeAttachment(att.key)}
                       className="ml-0.5 text-white/25 transition-colors hover:text-white/60"
                       aria-label={`Remove ${att.name}`}
                     >
@@ -2339,39 +2589,200 @@ function ChatWelcomePanel({ onPrompt }: { onPrompt: (p: string) => void }) {
   );
 }
 
-export function ChatEmptyState({
-  onCreate,
-  creating,
+/* -------------------------------------------------------------------------- */
+/*  Chat landing (deferred creation)                                          */
+/*  Shown at /dashboard/chat with no conversation selected. The conversation  */
+/*  is only created when the user sends their first message — `onStart` is    */
+/*  responsible for creating it, stashing the text, and navigating to its     */
+/*  /dashboard/chat/[id] route.                                               */
+/* -------------------------------------------------------------------------- */
+
+export function ChatLanding({
+  onStart,
+  starting,
+  defaultModel,
 }: {
-  onCreate: () => void;
-  creating: boolean;
+  onStart: (
+    text: string,
+    opts: { model: string; mode: ChatMode; attachments: AttachmentPayload[] },
+  ) => void;
+  starting: boolean;
+  defaultModel?: string;
 }) {
+  const [text, setText] = useState("");
+  const [model, setModel] = useState(
+    defaultModel || CHAT_MODELS[0]?.slug || "",
+  );
+  const [mode, setMode] = useState<ChatMode>("chat");
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const {
+    attachments,
+    dragOver,
+    fileInputRef,
+    handleFiles,
+    handlePaste,
+    handleDragEnter,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    removeAttachment,
+    anyUploading,
+    hasReadyAttachment,
+    atCapacity,
+    readyAttachmentPayloads,
+  } = useAttachments();
+  const trimmed = text.trim();
+  const canSend =
+    (Boolean(trimmed) || hasReadyAttachment) && !starting && !anyUploading;
+
+  const submit = () => {
+    if (!canSend) return;
+    onStart(trimmed, { model, mode, attachments: readyAttachmentPayloads() });
+  };
+
+  // Auto-grow the textarea up to a cap, mirroring the in-conversation composer.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [text]);
+
   return (
-    <div className="flex h-full items-center justify-center p-6 sm:p-8">
-      <div className="max-w-md text-center">
-        <div className="mx-auto inline-flex h-10 w-10 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.03] text-white/50">
-          <MessageSquare className="h-4 w-4" aria-hidden />
+    <div
+      className="relative flex h-full flex-col items-center justify-center px-4 py-8 sm:px-6"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {dragOver && (
+        <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-[#0a0a0a]/70 backdrop-blur-[1px]">
+          <div className="flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed border-[#3ecf8e]/50 bg-[#141414]/80 px-8 py-6">
+            <Paperclip className="h-6 w-6 text-[#3ecf8e]/70" aria-hidden />
+            <span className="text-[14px] text-[#3ecf8e]/80">Drop files to attach</span>
+          </div>
         </div>
-        <h2 className="mt-4 text-[20px] font-medium tracking-[-0.01em] text-white">
-          No conversations yet
-        </h2>
-        <p className="mt-2 text-[14px] leading-relaxed text-white/55">
-          Start your first chat. Your default model is configured in
-          environment.
-        </p>
-        <button
-          type="button"
-          onClick={onCreate}
-          disabled={creating}
-          className="mt-5 inline-flex h-9 items-center gap-1.5 rounded-md bg-[#3ecf8e] px-3 text-[13px] font-medium text-[#171717] transition-colors hover:bg-[#24b47e] disabled:opacity-60"
-        >
-          {creating ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-          ) : (
-            <Plus className="h-3.5 w-3.5" aria-hidden />
+      )}
+      <div className="w-full max-w-[720px]">
+        <div className="mb-6 text-center">
+          <div className="mx-auto inline-flex h-10 w-10 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.03] text-[#3ecf8e]/70">
+            <Sparkles className="h-4 w-4" aria-hidden />
+          </div>
+          <h2 className="mt-4 text-[20px] font-medium tracking-[-0.01em] text-white">
+            Start a new chat
+          </h2>
+          <p className="mt-2 text-[14px] leading-relaxed text-white/55">
+            Type a message to begin. A conversation is created the moment you
+            send.
+          </p>
+        </div>
+
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ACCEPTED_MIME.join(",")}
+          multiple
+          className="sr-only"
+          onChange={(e) => {
+            if (e.target.files) handleFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+
+        <div className="relative rounded-xl border border-white/[0.1] bg-[#171717] transition-colors focus-within:border-[#3ecf8e]/40">
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            onPaste={handlePaste}
+            disabled={starting}
+            rows={1}
+            placeholder={mode === "image" ? "Describe an image to generate…" : "Ask anything…"}
+            autoFocus
+            className="block max-h-[200px] w-full resize-none bg-transparent px-4 pt-4 pb-2 text-[14px] leading-relaxed text-white placeholder:text-white/30 focus:outline-none disabled:opacity-60"
+          />
+
+          {/* Attachment previews */}
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-4 pb-2">
+              {attachments.map((att) => (
+                <div
+                  key={att.key}
+                  className="group relative flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-1.5"
+                >
+                  {att.uploading ? (
+                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-white/40" aria-hidden />
+                  ) : att.error ? (
+                    <X className="h-3.5 w-3.5 shrink-0 text-red-400" aria-hidden />
+                  ) : att.kind === "image" ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={att.publicUrl} alt={att.name} className="h-5 w-5 rounded object-cover" />
+                  ) : (
+                    <Paperclip className="h-3.5 w-3.5 shrink-0 text-white/40" aria-hidden />
+                  )}
+                  <span className="max-w-[120px] truncate text-[11px] text-white/60">{att.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(att.key)}
+                    className="ml-0.5 text-white/25 transition-colors hover:text-white/60"
+                    aria-label={`Remove ${att.name}`}
+                  >
+                    <X className="h-3 w-3" aria-hidden />
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
-          New conversation
-        </button>
+
+          {/* Divider */}
+          <div className="mx-4 h-px bg-white/[0.06]" />
+
+          {/* Toolbar — mirrors the in-conversation composer */}
+          <div className="flex items-center justify-between gap-2 px-3 py-2.5">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={starting || atCapacity}
+                title="Attach file"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Plus className="h-4 w-4" aria-hidden />
+              </button>
+              <ModeSelector mode={mode} onSelect={setMode} />
+            </div>
+            <div className="flex items-center gap-2">
+              <ModelSelector model={model} onSelect={setModel} />
+              <button
+                type="button"
+                onClick={submit}
+                disabled={!canSend}
+                aria-label="Send message"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#3ecf8e] text-[#0a0a0a] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-white/25"
+              >
+                {starting || anyUploading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                ) : (
+                  <ArrowUp className="h-3.5 w-3.5" aria-hidden />
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+        <p className="mt-1 hidden text-center text-[11px] text-white/20 sm:block">
+          <kbd className="rounded border border-white/[0.08] px-1 py-0.5 font-mono text-[10px]">Enter</kbd>{" "}
+          to send ·{" "}
+          <kbd className="rounded border border-white/[0.08] px-1 py-0.5 font-mono text-[10px]">Shift+Enter</kbd>{" "}
+          for new line
+        </p>
       </div>
     </div>
   );
@@ -2476,6 +2887,8 @@ type ApproveTerminalCommand = (
   approved: boolean,
 ) => void;
 
+type AnswerQuestion = (callId: string, answer: string | null) => void;
+
 function ChatBubble({
   message,
   prevRole,
@@ -2484,6 +2897,8 @@ function ChatBubble({
   onEdit,
   onIterateImage,
   onApproveTerminalCommand,
+  onAnswerQuestion,
+  questionInteractive,
   onFollowUp,
 }: {
   message: ChatMessage;
@@ -2493,6 +2908,8 @@ function ChatBubble({
   onEdit?: (nextContent: string) => void;
   onIterateImage?: (url: string) => void;
   onApproveTerminalCommand?: ApproveTerminalCommand;
+  onAnswerQuestion?: AnswerQuestion;
+  questionInteractive?: boolean;
   onFollowUp?: (text: string) => void;
 }) {
   const isUser = message.role === "user";
@@ -2584,19 +3001,34 @@ function ChatBubble({
       );
     }
 
-    // Parse inline markdown images out of user message content so attachments
-    // are shown as real <img> elements rather than raw markdown syntax.
-    const userParts: Array<{ type: "text"; value: string } | { type: "image"; alt: string; url: string }> = [];
+    // Parse attachments out of the user message content so they render as real
+    // UI (images as <img>, files as a chip) instead of raw markdown. The send
+    // path encodes images as `![name](url)` and other files as `[📎 name](url)`.
+    const userParts: Array<
+      | { type: "text"; value: string }
+      | { type: "image"; alt: string; url: string }
+      | { type: "file"; name: string; url: string }
+    > = [];
     {
-      const imgRe = /!\[([^\]]*)\]\(([^)]+)\)/g;
+      // Matches an optional leading `!` (image) or a `📎 ` filename prefix
+      // (file attachment), then `[label](url)`.
+      const attRe = /(!)?\[(?:📎\s*)?([^\]]*)\]\(([^)]+)\)/g;
       let last = 0;
       let m: RegExpExecArray | null;
       const raw = message.content;
-      while ((m = imgRe.exec(raw)) !== null) {
+      while ((m = attRe.exec(raw)) !== null) {
+        const isImage = m[1] === "!";
+        const isFile = !isImage && /\[\s*📎/.test(m[0]);
+        // Leave ordinary markdown links (neither image nor 📎 file) as text.
+        if (!isImage && !isFile) continue;
         const text = raw.slice(last, m.index).replace(/^\n+|\n+$/g, "");
         if (text) userParts.push({ type: "text", value: text });
-        userParts.push({ type: "image", alt: m[1], url: m[2] });
-        last = imgRe.lastIndex;
+        if (isImage) {
+          userParts.push({ type: "image", alt: m[2], url: m[3] });
+        } else {
+          userParts.push({ type: "file", name: m[2].trim(), url: m[3] });
+        }
+        last = attRe.lastIndex;
       }
       const tail = raw.slice(last).replace(/^\n+|\n+$/g, "");
       if (tail) userParts.push({ type: "text", value: tail });
@@ -2612,7 +3044,7 @@ function ChatBubble({
             {userParts.map((part, i) =>
               part.type === "text" ? (
                 <p key={i} className="whitespace-pre-wrap m-0">{part.value}</p>
-              ) : (
+              ) : part.type === "image" ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   key={i}
@@ -2620,6 +3052,18 @@ function ChatBubble({
                   alt={part.alt}
                   className="mt-2 max-h-64 max-w-full rounded-lg object-contain first:mt-0"
                 />
+              ) : (
+                <a
+                  key={i}
+                  href={part.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  download={part.name || true}
+                  className="mt-2 flex w-fit max-w-full items-center gap-2 rounded-lg border border-white/[0.1] bg-white/[0.04] px-2.5 py-1.5 no-underline transition-colors first:mt-0 hover:border-white/[0.2] hover:bg-white/[0.08]"
+                >
+                  <Paperclip className="h-3.5 w-3.5 shrink-0 text-white/50" aria-hidden />
+                  <span className="truncate text-[12px] text-white/80">{part.name}</span>
+                </a>
               )
             )}
           </div>
@@ -2667,6 +3111,7 @@ function ChatBubble({
                     key={evt.call_id}
                     event={evt}
                     onApproveTerminalCommand={onApproveTerminalCommand}
+                    onAnswerQuestion={onAnswerQuestion}
                   />
                 ))}
               </div>
@@ -2674,6 +3119,8 @@ function ChatBubble({
               <ToolCallSummary
                 events={message.toolEvents}
                 onApproveTerminalCommand={onApproveTerminalCommand}
+                onAnswerQuestion={onAnswerQuestion}
+                questionInteractive={questionInteractive}
               />
             )}
           </div>
@@ -2754,22 +3201,35 @@ function ChatBubble({
 function ToolCallSummary({
   events,
   onApproveTerminalCommand,
+  onAnswerQuestion,
+  questionInteractive,
 }: {
   events: ToolEvent[];
   onApproveTerminalCommand?: ApproveTerminalCommand;
+  onAnswerQuestion?: AnswerQuestion;
+  questionInteractive?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
   // Always expand inline for special interactive cards
   const hasInteractive = events.some(
-    (e) => e.name === "open_terminal" || e.name === "terminal_run",
+    (e) =>
+      e.name === "open_terminal" ||
+      e.name === "terminal_run" ||
+      e.name === "ask_user",
   );
 
   if (hasInteractive) {
     return (
       <div className="flex flex-col gap-1.5">
         {events.map((evt) => (
-          <ToolCard key={evt.call_id} event={evt} onApproveTerminalCommand={onApproveTerminalCommand} />
+          <ToolCard
+            key={evt.call_id}
+            event={evt}
+            onApproveTerminalCommand={onApproveTerminalCommand}
+            onAnswerQuestion={onAnswerQuestion}
+            questionInteractive={questionInteractive}
+          />
         ))}
       </div>
     );
@@ -2793,9 +3253,121 @@ function ToolCallSummary({
       {expanded && (
         <div className="mt-2 flex flex-col gap-1.5">
           {events.map((evt) => (
-            <ToolCard key={evt.call_id} event={evt} onApproveTerminalCommand={onApproveTerminalCommand} />
+            <ToolCard
+              key={evt.call_id}
+              event={evt}
+              onApproveTerminalCommand={onApproveTerminalCommand}
+              onAnswerQuestion={onAnswerQuestion}
+              questionInteractive={questionInteractive}
+            />
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Interactive "ask the user a question" card                                 */
+/* -------------------------------------------------------------------------- */
+
+function AskUserCard({
+  event,
+  onAnswerQuestion,
+  interactive,
+}: {
+  event: ToolEvent;
+  onAnswerQuestion?: AnswerQuestion;
+  interactive?: boolean;
+}) {
+  const args = event.args as
+    | { question?: string; options?: unknown; allow_text?: boolean }
+    | undefined;
+
+  const options = Array.isArray(args?.options)
+    ? (args!.options as unknown[]).filter(
+        (o): o is string => typeof o === "string",
+      )
+    : [];
+  const allowText = args?.allow_text !== false;
+
+  const [text, setText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  // The question text itself is rendered as the assistant message content (just
+  // above this card), so the card only carries the answer controls. Once the
+  // question has been answered (a later turn follows, so `interactive` is
+  // false), the controls collapse — the conversation has already moved on.
+  if (!interactive) {
+    if (options.length === 0) return null;
+    return (
+      <div className="mt-1 flex flex-wrap gap-1.5 opacity-50">
+        {options.map((opt, i) => (
+          <span
+            key={`${i}-${opt}`}
+            className="inline-flex items-center rounded-md border border-white/[0.08] px-2.5 py-1 text-[12px] text-white/45"
+          >
+            {opt}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  const submit = (answer: string | null) => {
+    if (submitting) return;
+    if (answer !== null) setSubmitting(true);
+    onAnswerQuestion?.(event.call_id, answer);
+  };
+
+  return (
+    <div className="mt-1">
+      {options.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {options.map((opt, i) => (
+            <button
+              key={`${i}-${opt}`}
+              type="button"
+              disabled={submitting}
+              onClick={() => submit(opt)}
+              className="inline-flex items-center rounded-md border border-[#3ecf8e]/30 bg-[#3ecf8e]/[0.06] px-3 py-1.5 text-[12px] text-white/85 transition-colors hover:border-[#3ecf8e]/60 hover:bg-[#3ecf8e]/[0.12] disabled:opacity-50"
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+      {allowText && (
+        <form
+          className="mt-2 flex items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (text.trim()) submit(text.trim());
+          }}
+        >
+          <input
+            type="text"
+            value={text}
+            disabled={submitting}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={
+              options.length > 0 ? "Or type your own answer…" : "Type your answer…"
+            }
+            className="min-w-0 flex-1 rounded-md border border-white/[0.08] bg-[#0a0a0a] px-3 py-1.5 text-[12px] text-white/85 outline-none transition-colors placeholder:text-white/30 focus:border-[#3ecf8e]/40 disabled:opacity-50"
+          />
+          <button
+            type="submit"
+            disabled={submitting || !text.trim()}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[#3ecf8e] px-3 text-[12px] font-medium text-[#171717] transition-colors hover:bg-[#24b47e] disabled:opacity-40"
+          >
+            {submitting ? (
+              <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+            ) : (
+              <ArrowUp className="h-3 w-3" aria-hidden />
+            )}
+            Send
+          </button>
+        </form>
       )}
     </div>
   );
@@ -2808,9 +3380,13 @@ function ToolCallSummary({
 function ToolCard({
   event,
   onApproveTerminalCommand,
+  onAnswerQuestion,
+  questionInteractive,
 }: {
   event: ToolEvent;
   onApproveTerminalCommand?: ApproveTerminalCommand;
+  onAnswerQuestion?: AnswerQuestion;
+  questionInteractive?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [approving, setApproving] = useState(false);
@@ -2846,6 +3422,17 @@ function ToolCard({
           </span>
         </div>
       </div>
+    );
+  }
+
+  // ── ask_user card ─────────────────────────────────────────────────────────
+  if (event.name === "ask_user") {
+    return (
+      <AskUserCard
+        event={event}
+        onAnswerQuestion={onAnswerQuestion}
+        interactive={questionInteractive}
+      />
     );
   }
 
@@ -3349,23 +3936,36 @@ function AssistantMarkdown({
               // Generated .docx → download card with an icon, not a plain link.
               if (href && /\/generated-documents\//.test(href)) {
                 const label = String(children ?? "").trim() || "Download document";
-                let filename = "document.docx";
-                try {
-                  filename = decodeURIComponent(href.split("/").pop() || filename);
-                } catch {
-                  /* keep fallback */
-                }
+                // The file is stored on disk under an opaque timestamp-UUID name
+                // for uniqueness, but the browser should save it under a readable
+                // name. Since the file is served same-origin, the `download`
+                // attribute's value sets the suggested filename. Derive it from
+                // the card label (the AI-provided document title), stripping
+                // characters that are unsafe in filenames across OSes.
+                const safeName =
+                  label
+                    .replace(/^download\s+/i, "")
+                    .replace(/[\\/:*?"<>|]/g, "")
+                    .replace(/\s+/g, " ")
+                    .trim()
+                    .slice(0, 120) || "document";
+                const downloadName = /\.docx$/i.test(safeName)
+                  ? safeName
+                  : `${safeName}.docx`;
+                // Display the readable filename, not the raw link text which may
+                // carry a "Download " prefix from the AI-generated markdown.
+                const displayName = downloadName;
                 return (
                   <a
                     href={href}
-                    download
-                    className="my-2 inline-flex items-center gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-2 no-underline transition-colors hover:border-[#3ecf8e]/30 hover:bg-[#3ecf8e]/[0.06]"
+                    download={downloadName}
+                    className="my-2 flex w-fit max-w-full items-center gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-2 no-underline transition-colors hover:border-[#3ecf8e]/30 hover:bg-[#3ecf8e]/[0.06]"
                   >
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#3ecf8e]/10 text-[#3ecf8e]">
                       <FileText className="h-4 w-4" aria-hidden />
                     </span>
                     <span className="flex min-w-0 flex-col">
-                      <span className="truncate text-[13px] font-medium text-white/85">{label}</span>
+                      <span className="truncate text-[13px] font-medium text-white/85">{displayName}</span>
                       <span className="text-[11px] text-white/40">Word document · .docx</span>
                     </span>
                     <Download className="ml-1 h-3.5 w-3.5 shrink-0 text-white/40" aria-hidden />

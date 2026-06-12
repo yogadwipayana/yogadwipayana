@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { CHAT_SYSTEM_PROMPT, IMAGE_MODE_SYSTEM_PROMPT } from "@/lib/server/chat-prompt";
 import {
+  applyHistoryWindow,
   editUserMessageAndTruncate,
   getConversation,
   getMessages,
@@ -28,7 +29,7 @@ import { createClient } from "@/utils/supabase/server";
 export const runtime = "nodejs";
 
 const AttachmentSchema = z.object({
-  kind: z.enum(["image", "pdf"]),
+  kind: z.enum(["image", "pdf", "document"]),
   url: z.string().url(),
   name: z.string().min(1).max(255),
   mime: z.string().min(1).max(127),
@@ -133,10 +134,12 @@ export async function POST(request: Request, { params }: RouteContext) {
 
     // Replace the last history entry's content with the multipart version
     // (the edited message is always the last in history after truncation)
-    const historyForModel = history.slice(0, -1).map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: m.content,
-    }));
+    const historyForModel = applyHistoryWindow(
+      history.slice(0, -1).map((m) => ({
+        role: m.role as "user" | "assistant",
+        content: m.content,
+      })),
+    );
 
     const messagesForModel = [
       { role: "system" as const, content: CHAT_SYSTEM_PROMPT },

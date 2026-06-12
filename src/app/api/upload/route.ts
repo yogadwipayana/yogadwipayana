@@ -21,6 +21,15 @@ const ALLOWED_TYPES = new Set([
   "image/webp",
   "image/gif",
   "application/pdf",
+  // Documents — text extracted server-side via document-parse.ts
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
+  "application/vnd.ms-excel", // legacy .xls
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
+  "application/vnd.ms-powerpoint", // legacy .ppt
+  "text/csv",
+  "text/plain",
+  "text/markdown",
 ]);
 
 const MAX_BYTES = 50 * 1024 * 1024; // 50 MB

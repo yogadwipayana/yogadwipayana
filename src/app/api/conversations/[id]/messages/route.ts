@@ -7,6 +7,7 @@ import { z } from "zod";
 import { CHAT_SYSTEM_PROMPT, IMAGE_MODE_SYSTEM_PROMPT } from "@/lib/server/chat-prompt";
 import {
   appendMessage,
+  applyHistoryWindow,
   deriveTitle,
   getConversation,
   getMessages,
@@ -66,7 +67,7 @@ async function validateAttachmentUrl(
 export const runtime = "nodejs";
 
 const AttachmentSchema = z.object({
-  kind: z.enum(["image", "pdf"]),
+  kind: z.enum(["image", "pdf", "document"]),
   url: z.string().url(),
   name: z.string().min(1).max(255),
   mime: z.string().min(1).max(127),
@@ -168,7 +169,9 @@ export async function POST(request: Request, { params }: RouteContext) {
       ...(slashParsed
         ? [{ role: "system" as const, content: slashSystemPrompt(slashParsed) }]
         : []),
-      ...priorMessages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      ...applyHistoryWindow(
+        priorMessages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      ),
       { role: "user" as const, content: userContentForModel },
     ];
 

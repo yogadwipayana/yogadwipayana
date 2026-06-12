@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSelectedLayoutSegment } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -30,7 +30,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import type { ChatConversationSummary, ToolId } from "./data";
+import type { ChatConversationSummary, ChatMode, ToolId } from "./data";
 import type { GeneratedImageRow } from "@/lib/server/image-service";
 import type { AspectRatioPreset } from "@/lib/aspect-ratio";
 import type { GenerateArgs, Quality } from "./image/workspace";
@@ -40,10 +40,12 @@ import { SETTINGS_TOOL, TOOLS } from "./data";
 import type { Tool } from "./data";
 import {
   AiOverview,
-  ChatEmptyState,
+  ChatLanding,
   ChatView,
   PlaceholderView,
   VpsView,
+  stashPendingFirstMessage,
+  type AttachmentPayload,
 } from "./views";
 import { GalleryView } from "./chat/gallery";
 import { Logo } from "@/components/ui/Logo";
@@ -365,6 +367,44 @@ export function DashboardShell({
     setActiveItems((prev) => ({ ...prev, [toolId]: id }));
   }, [toolId]);
 
+  const router = useRouter();
+
+  // ── Route-based chat selection ────────────────────────────────────────────
+  // The active conversation lives in the URL: /dashboard/chat/[id]. The layout
+  // segment is the conversation id, or null on the bare /dashboard/chat landing.
+  // Config items (chat:gallery, chat:prompts, …) have no route, so they're held
+  // in local state and only meaningful while no conversation segment is active.
+  const chatSegment = useSelectedLayoutSegment();
+  const [chatConfigItem, setChatConfigItem] = useState("");
+  // When the user navigates into a conversation, drop any stale config selection
+  // so returning to the landing shows the composer, not the old config view.
+  const [lastChatSegment, setLastChatSegment] = useState(chatSegment);
+  if (chatSegment !== lastChatSegment) {
+    setLastChatSegment(chatSegment);
+    if (chatSegment !== null && chatConfigItem) setChatConfigItem("");
+  }
+  const activeChatId = chatSegment ?? chatConfigItem;
+  // Effective active sub-sidebar item for the current tool. Chat is URL-driven;
+  // every other tool still reads from local `activeItems` state.
+  const activeItemId = toolId === "chat" ? activeChatId : activeItems[toolId];
+
+  const handleSelectItem = useCallback(
+    (id: string) => {
+      if (toolId === "chat") {
+        if (id.startsWith("chat:")) {
+          setChatConfigItem(id);
+          if (chatSegment !== null) router.push("/dashboard/chat");
+        } else {
+          setChatConfigItem("");
+          router.push(`/dashboard/chat/${id}`);
+        }
+        return;
+      }
+      setItem(id);
+    },
+    [toolId, chatSegment, router, setItem],
+  );
+
   const handleReorderVps = useCallback(
     async (orderedIds: string[]) => {
       const prev = vpsInstancesState;
@@ -393,14 +433,13 @@ export function DashboardShell({
       // Optimistic remove. If the request fails we restore the prior list so
       // the user doesn't lose the conversation visually.
       const prevList = chatConversations;
-      const prevActive = activeItems.chat;
       const remaining = prevList.filter((c) => c.id !== id);
       setChatConversations(remaining);
-      if (prevActive === id) {
-        setActiveItems((prev) => ({
-          ...prev,
-          chat: remaining[0]?.id ?? "",
-        }));
+      // If the deleted conversation is the one open in the URL, go to the
+      // new-chat landing rather than auto-opening another conversation — the
+      // user closed this thread, so don't silently surface an unrelated one.
+      if (chatSegment === id) {
+        router.push("/dashboard/chat");
       }
       try {
         const res = await fetch(`/api/conversations/${id}`, {
@@ -408,14 +447,12 @@ export function DashboardShell({
         });
         if (!res.ok && res.status !== 204) {
           setChatConversations(prevList);
-          setActiveItems((prev) => ({ ...prev, chat: prevActive }));
         }
       } catch {
         setChatConversations(prevList);
-        setActiveItems((prev) => ({ ...prev, chat: prevActive }));
       }
     },
-    [activeItems.chat, chatConversations],
+    [chatConversations, chatSegment, router],
   );
 
   const handleRenameConversation = useCallback(
@@ -490,25 +527,53 @@ export function DashboardShell({
     ],
   );
 
-  const handleCreateConversation = useCallback(async () => {
-    if (creatingConversation) return;
-    setCreatingConversation(true);
-    try {
-      const res = await fetch("/api/conversations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) {
-        return;
+  // The "new conversation" (+) button just opens the landing composer. No row
+  // is created here — deferred creation means the conversation is only POSTed
+  // on first send (handleStartChat), so clicking + repeatedly can never leave
+  // empty "New conversation" rows in the list.
+  const handleCreateConversation = useCallback(() => {
+    setChatConfigItem("");
+    router.push("/dashboard/chat");
+  }, [router]);
+
+  // Deferred creation: the landing composer calls this with the first message
+  // plus the chosen model and mode. We create the conversation with those
+  // settings, stash the text keyed by its new id, then navigate to
+  // /dashboard/chat/[id] where the mounted ChatView auto-sends it. This avoids
+  // ever creating an empty conversation row from just opening chat.
+  const handleStartChat = useCallback(
+    async (
+      text: string,
+      opts: { model: string; mode: ChatMode; attachments?: AttachmentPayload[] },
+    ) => {
+      if (creatingConversation) return;
+      setCreatingConversation(true);
+      try {
+        const res = await fetch("/api/conversations", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ model: opts.model, mode: opts.mode }),
+        });
+        if (!res.ok) {
+          return;
+        }
+        const data = (await res.json()) as {
+          conversation: ChatConversationSummary;
+        };
+        setChatConversations((prev) => [data.conversation, ...prev]);
+        setChatConfigItem("");
+        stashPendingFirstMessage(
+          data.conversation.id,
+          text,
+          opts.attachments ?? [],
+        );
+        router.push(`/dashboard/chat/${data.conversation.id}`);
+      } finally {
+        setCreatingConversation(false);
       }
-      const data = (await res.json()) as { conversation: ChatConversationSummary };
-      setChatConversations((prev) => [data.conversation, ...prev]);
-      setActiveItems((prev) => ({ ...prev, chat: data.conversation.id }));
-    } finally {
-      setCreatingConversation(false);
-    }
-  }, [creatingConversation]);
+    },
+    [creatingConversation, router],
+  );
 
   const handleConversationUpdated = useCallback(
     (updated: ChatConversationSummary) => {
@@ -635,8 +700,8 @@ export function DashboardShell({
         <SubSidebar
           tool={tool}
           sections={sections}
-          activeItem={activeItems[toolId]}
-          onSelectItem={setItem}
+          activeItem={activeItemId}
+          onSelectItem={handleSelectItem}
           onCreate={onCreate}
           search={
             toolId === "chat"
@@ -663,13 +728,13 @@ export function DashboardShell({
 
         {/* Main working surface */}
         <main className="flex min-w-0 flex-1 flex-col overflow-y-auto bg-[#1c1c1c]">
-          {children ??
-            renderMain({
+          {(() => {
+            const main = renderMain({
               activeTool: toolId,
-              activeItemId: activeItems[toolId],
+              activeItemId,
               chatConversations,
               defaultChatModel,
-              onCreateConversation: handleCreateConversation,
+              onStartChat: handleStartChat,
               creatingConversation,
               onConversationUpdated: handleConversationUpdated,
               onStreamingChange: handleStreamingChange,
@@ -679,7 +744,12 @@ export function DashboardShell({
               pendingImages,
               onGenerate: handleStartGeneration,
               onCancelPending: handleCancelPending,
-            })}
+            });
+            // Chat content is fully URL-segment-driven through renderMain (its
+            // page files render nothing), so ignore `children` for chat. Other
+            // tools render server page content via `children` when present.
+            return toolId === "chat" ? main : (children ?? main);
+          })()}
         </main>
       </div>
 
@@ -689,9 +759,9 @@ export function DashboardShell({
           tool={tool}
           sections={sections}
           activeTool={toolId}
-          activeItem={activeItems[toolId]}
+          activeItem={activeItemId}
           onSelectItem={(id) => {
-            setItem(id);
+            handleSelectItem(id);
             setDrawerOpen(false);
           }}
           onClose={() => setDrawerOpen(false)}
@@ -782,7 +852,7 @@ function renderMain({
   activeItemId,
   chatConversations,
   defaultChatModel,
-  onCreateConversation,
+  onStartChat,
   creatingConversation,
   onConversationUpdated,
   onStreamingChange,
@@ -797,7 +867,10 @@ function renderMain({
   activeItemId: string;
   chatConversations: ChatConversationSummary[];
   defaultChatModel?: string;
-  onCreateConversation: () => void;
+  onStartChat: (
+    text: string,
+    opts: { model: string; mode: ChatMode; attachments?: AttachmentPayload[] },
+  ) => void;
   creatingConversation: boolean;
   onConversationUpdated: (c: ChatConversationSummary) => void;
   onStreamingChange?: (conversationId: string, streaming: boolean) => void;
@@ -854,17 +927,27 @@ function renderMain({
     return <AiOverview />;
   }
 
-  const conversation =
-    chatConversations.find((c) => c.id === activeItemId) ??
-    chatConversations[0];
-  if (!conversation) {
+  // Bare /dashboard/chat (no conversation segment) → deferred-creation landing.
+  if (!activeItemId) {
     return (
-      <ChatEmptyState
-        onCreate={onCreateConversation}
-        creating={creatingConversation}
+      <ChatLanding
+        onStart={onStartChat}
+        starting={creatingConversation}
+        defaultModel={defaultChatModel}
       />
     );
   }
+  // A conversation id is in the URL. Prefer the summary from the local list;
+  // if it isn't there yet (just-created race / direct navigation), synthesize a
+  // minimal one keyed to the URL id so ChatView mounts for the RIGHT id and
+  // hydrates via its own GET — never silently fall back to another conversation.
+  const conversation = chatConversations.find((c) => c.id === activeItemId) ?? {
+    id: activeItemId,
+    title: "New chat",
+    model: defaultChatModel ?? "",
+    mode: "chat" as const,
+    updated_at: new Date().toISOString(),
+  };
   return (
     <ChatView
       key={conversation.id}

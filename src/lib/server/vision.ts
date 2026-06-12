@@ -2,7 +2,8 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type OpenAI from "openai";
 
-import { extractPdfText } from "@/lib/server/pdf-parse";
+import { extractPdfText, extractPdfTextFromBuffer } from "@/lib/server/pdf-parse";
+import { extractDocumentText } from "@/lib/server/document-parse";
 
 /**
  * If the URL points to one of our own /uploads/ files, return the absolute
@@ -40,7 +41,7 @@ async function resolveImageUrl(att: Attachment): Promise<string> {
 type ContentPart = OpenAI.Chat.Completions.ChatCompletionContentPart;
 
 export interface Attachment {
-  kind: "image" | "pdf";
+  kind: "image" | "pdf" | "document";
   url: string;
   name: string;
   mime: string;
@@ -57,6 +58,8 @@ export interface Attachment {
  *   2. Each image as a `{ type: "image_url" }` part.
  *   3. Each PDF as a `{ type: "text" }` part containing extracted text (or an
  *      error notice if extraction fails).
+ *   4. Each document (DOCX/XLSX/CSV/TXT/MD) as a `{ type: "text" }` part with
+ *      its extracted text (or an error notice if extraction fails).
  */
 export async function buildUserContentWithAttachments(args: {
   text: string;
@@ -89,10 +92,15 @@ export async function buildUserContentWithAttachments(args: {
         type: "image_url",
         image_url: { url: imageUrl },
       });
-    } else {
-      // PDF — extract text server-side
+    } else if (att.kind === "pdf") {
+      // PDF — extract text server-side. For our own uploads, read the bytes
+      // from disk directly: the SSRF-guarded fetch in extractPdfText() blocks
+      // localhost/loopback, so a localhost upload URL would otherwise fail.
       try {
-        const extracted = await extractPdfText(att.url);
+        const localPath = getLocalUploadPath(att.url);
+        const extracted = localPath
+          ? await extractPdfTextFromBuffer(await readFile(localPath))
+          : await extractPdfText(att.url);
         parts.push({
           type: "text",
           text: `[Attached PDF: ${att.name}]\n\n${extracted}\n`,
@@ -102,6 +110,31 @@ export async function buildUserContentWithAttachments(args: {
         parts.push({
           type: "text",
           text: `[Attached PDF: ${att.name} — could not extract text: ${reason}]`,
+        });
+      }
+    } else {
+      // Document (DOCX / XLSX / CSV / TXT / Markdown) — extract text from the
+      // uploaded bytes on disk. Attachments are always our own /uploads/ files,
+      // so we read them directly rather than fetching over HTTP.
+      try {
+        const localPath = getLocalUploadPath(att.url);
+        if (!localPath) {
+          throw new Error("Document must be an uploaded file");
+        }
+        const extracted = await extractDocumentText(
+          await readFile(localPath),
+          att.mime,
+          att.name,
+        );
+        parts.push({
+          type: "text",
+          text: `[Attached document: ${att.name}]\n\n${extracted}\n`,
+        });
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        parts.push({
+          type: "text",
+          text: `[Attached document: ${att.name} — could not extract text: ${reason}]`,
         });
       }
     }

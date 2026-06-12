@@ -17,6 +17,11 @@ import {
 import { generateImage } from "@/lib/server/image-gen";
 import { generateAndRecord } from "@/lib/server/image-service";
 import { generateAndRecord as generateDocAndRecord } from "@/lib/server/docx-service";
+import {
+  callContext7Tool,
+  isContext7Tool,
+  type Context7Session,
+} from "@/lib/server/mcp/context7";
 import { safeFetch, validatePublicHttpUrl } from "@/lib/server/safe-fetch";
 import { getSshCredential } from "@/lib/server/ssh-credential-service";
 import { sshExec } from "@/lib/server/ssh-exec";
@@ -64,7 +69,7 @@ export const CHAT_TOOLS: ChatTool[] = [
     function: {
       name: "web_fetch",
       description:
-        "Fetch a single web page and return its readable text content. Use this after web_search to read a specific result, or when the user gives you a URL to summarize. Returns the page title and plain-text content (truncated to ~8 KB).",
+        "Fetch a single web page and return its readable text content. Use this after web_search to read a specific result, or when the user gives you a URL to summarize. Returns the page title and plain-text content (truncated to ~30 KB).",
       parameters: {
         type: "object",
         properties: {
@@ -389,6 +394,37 @@ export const CHAT_TOOLS: ChatTool[] = [
   {
     type: "function",
     function: {
+      name: "ask_user",
+      description:
+        "Ask the user an interactive clarifying question and PAUSE until they answer. Use this whenever you need more context before you can give a good answer or safely act — e.g. ambiguous scope, a missing required detail, or a choice between several valid directions — instead of guessing or assuming. CRITICAL: if the request depends on an acronym, abbreviation, product name, or term you cannot confidently identify (e.g. \"reset BAC\", \"the GTM thing\"), ask what it means here BEFORE answering rather than picking one plausible expansion — a wrong guess wastes the entire turn. The stream pauses and the user answers inline via option buttons and/or a text box; their reply is returned to you so you can continue. Prefer offering concrete `options` (e.g. the likely expansions of the unknown term) when the answer is a choice among known alternatives. Do not use this for routine confirmations of destructive VPS actions (handle those in plain chat per the confirmation rules); use it for genuine clarification. Ask one focused question at a time, not a barrage.",
+      parameters: {
+        type: "object",
+        properties: {
+          question: {
+            type: "string",
+            description:
+              "The single, focused question to show the user. Phrase it clearly and concisely.",
+          },
+          options: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Optional list of 2–6 suggested answers shown as clickable buttons. Omit for an open-ended question. Keep each option short.",
+          },
+          allow_text: {
+            type: "boolean",
+            description:
+              "Whether to also show a free-text input so the user can type a custom answer. Defaults to true. Set false only when the options are exhaustive.",
+          },
+        },
+        required: ["question"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "image_generate",
       description:
         "Generate an image from a text prompt. Use whenever the user asks for an image, picture, drawing, illustration, photo, logo, diagram, or any visual content. Returns a URL to the saved image. You MUST embed the returned URL in your reply as a markdown image: ![brief description](url). Generation takes ~60-90 seconds — do not call this tool more than once per user request unless the user explicitly asks for a regeneration or a different variant.",
@@ -458,7 +494,7 @@ export const CHAT_TOOLS: ChatTool[] = [
     function: {
       name: "word_generate",
       description:
-        "Generate a downloadable Microsoft Word (.docx) document. Use whenever the user asks for a Word document, .docx, report, letter, essay, proposal, CV/resume, or any content they want to download and open in Word. You write the full document body yourself as Markdown (headings, bold/italic, bullet and numbered lists, tables, blockquotes, code blocks all convert to native Word formatting). The tool returns a URL to the saved .docx. After it returns, you MUST give the user a markdown download link: [Download <title>.docx](url). Generation is fast (a second or two). Do not call more than once per request unless the user asks for a revision.",
+        "Generate a downloadable Microsoft Word (.docx) document. Use whenever the user asks for a Word document, .docx, report, letter, essay, proposal, CV/resume, or any content they want to download and open in Word. You write the full document body yourself as Markdown (headings, bold/italic, bullet and numbered lists, tables, blockquotes, code blocks all convert to native Word formatting). IMPORTANT — ground factual documents before generating: if the document makes factual claims (statistics, dates, named people/places/organizations, events, technical specs, citations, 'according to' claims), you MUST first call web_search and web_fetch to verify the content, then write from what you read and cite the source URLs in your reply. Do NOT write factual content from memory — that bakes hallucinations into a file the user will trust. Skip research only for creative/personal documents (cover letters, CVs, essays from the user's own input, fiction, templates, marketing copy). The tool returns a URL to the saved .docx. After it returns, you MUST give the user a markdown download link: [Download <title>.docx](url). Generation is fast (a second or two). Do not call more than once per request unless the user asks for a revision.",
       parameters: {
         type: "object",
         properties: {
@@ -472,6 +508,11 @@ export const CHAT_TOOLS: ChatTool[] = [
             description:
               "The FULL document body as Markdown. Write complete, well-structured content — use # / ## headings, **bold**, *italic*, - bullet lists, 1. numbered lists, | tables |, > blockquotes, and ``` code blocks as appropriate. Do not leave placeholders; produce the finished document the user asked for.",
           },
+          table_of_contents: {
+            type: "boolean",
+            description:
+              "Set true ONLY when the user explicitly asks for a table of contents / daftar isi. Defaults to false. When true, a Word TOC is inserted after the title (requires 3+ headings).",
+          },
         },
         required: ["title", "markdown"],
         additionalProperties: false,
@@ -480,8 +521,20 @@ export const CHAT_TOOLS: ChatTool[] = [
   },
 ];
 
+/**
+ * Returns the full tool list the model should see for a turn: the built-in
+ * tools plus any tools discovered from a connected MCP session (e.g. Context7).
+ * Callers that haven't opened an MCP session just get `CHAT_TOOLS`.
+ */
+export function getChatTools(mcpSession?: Context7Session | null): ChatTool[] {
+  if (mcpSession && mcpSession.tools.length > 0) {
+    return [...CHAT_TOOLS, ...mcpSession.tools];
+  }
+  return CHAT_TOOLS;
+}
+
 const FETCH_TIMEOUT_MS = 10_000;
-const MAX_TEXT_BYTES = 8_000;
+const MAX_TEXT_BYTES = 30_000;
 type SearchResult = { title: string; url: string; snippet: string };
 
 /**
@@ -621,6 +674,8 @@ export type ToolContext = {
   abortSignal?: AbortSignal;
   /** The tool call id from OpenAI. Required for terminal_run (pending approval key). */
   callId?: string;
+  /** Optional connected MCP session (e.g. Context7) used to route `mcp__` tools. */
+  mcpSession?: Context7Session | null;
 };
 
 export async function executeTool(
@@ -628,6 +683,15 @@ export async function executeTool(
   argsJson: string,
   context: ToolContext,
 ): Promise<string> {
+  // Route MCP-namespaced tools to the connected MCP session. The bridge parses
+  // its own arguments, so this must run before the JSON.parse below.
+  if (isContext7Tool(name)) {
+    if (!context.mcpSession) {
+      return JSON.stringify({ error: "MCP session is not available" });
+    }
+    return callContext7Tool(context.mcpSession.client, name, argsJson);
+  }
+
   let args: Record<string, unknown>;
   try {
     args = argsJson ? JSON.parse(argsJson) : {};
@@ -927,6 +991,22 @@ export async function executeTool(
       });
     }
 
+    if (name === "ask_user") {
+      // Non-blocking: the chat-stream loop intercepts ask_user before reaching
+      // here (it persists the question as the assistant turn and closes the
+      // stream so the user can answer on the next turn). This branch only runs
+      // if ask_user is ever called outside that intercept path — return a
+      // benign marker so the model doesn't error.
+      const question =
+        typeof args.question === "string" ? args.question.trim() : "";
+      if (!question) return JSON.stringify({ error: "Missing question" });
+      return JSON.stringify({
+        asked: true,
+        question,
+        note: "The question was shown to the user. Wait for their reply (it arrives as the next message).",
+      });
+    }
+
     if (name === "image_generate") {
       const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
       if (!prompt) return JSON.stringify({ error: "Missing prompt" });
@@ -966,6 +1046,7 @@ export async function executeTool(
     if (name === "word_generate") {
       const markdown = typeof args.markdown === "string" ? args.markdown.trim() : "";
       const title = typeof args.title === "string" ? args.title.trim() : "";
+      const tableOfContents = args.table_of_contents === true;
       if (!markdown) return JSON.stringify({ error: "Missing markdown content" });
       if (!context.supabase) {
         return JSON.stringify({ error: "Document generation requires an authenticated session" });
@@ -976,7 +1057,7 @@ export async function executeTool(
         prompt: title || markdown.slice(0, 200),
         conversationId: context.conversationId ?? null,
         source: "chat",
-        options: { markdown, title, abortSignal: context.abortSignal },
+        options: { markdown, title, tableOfContents, abortSignal: context.abortSignal },
       });
       return JSON.stringify({ url: row.url, title: row.title });
     }

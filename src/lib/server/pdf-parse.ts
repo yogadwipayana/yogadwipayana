@@ -9,8 +9,39 @@ const FETCH_TIMEOUT_MS = 10_000;
 const MAX_PDF_BYTES = 20 * 1024 * 1024; // 20 MB
 
 /**
+ * Extract text from an in-memory PDF buffer, truncated to `maxBytes` UTF-8 bytes.
+ *
+ * Throws a descriptive Error if the buffer exceeds the size limit or parsing fails.
+ */
+export async function extractPdfTextFromBuffer(
+  buffer: Buffer,
+  maxBytes = 30_000,
+): Promise<string> {
+  if (buffer.byteLength > MAX_PDF_BYTES) {
+    throw new Error("PDF exceeds 20 MB limit");
+  }
+  try {
+    const { default: pdfParse } = await import("pdf-parse");
+    const result = await pdfParse(buffer);
+    const text = result.text ?? "";
+    // Truncate to maxBytes (UTF-8 safe via Buffer)
+    const encoded = Buffer.from(text, "utf8");
+    if (encoded.byteLength <= maxBytes) return text;
+    return encoded.subarray(0, maxBytes).toString("utf8");
+  } catch (err) {
+    throw new Error(
+      `pdf-parse failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+/**
  * Fetch a PDF from `url`, extract its text content, and return it truncated
  * to `maxBytes` UTF-8 bytes.
+ *
+ * Goes through the SSRF guard, so this only works for public URLs — for our
+ * own uploaded files, read the bytes from disk and call
+ * `extractPdfTextFromBuffer` instead.
  *
  * Throws a descriptive Error on fetch failure, bad status, or parse failure.
  */
@@ -38,17 +69,5 @@ export async function extractPdfText(
     );
   }
 
-  try {
-    const { default: pdfParse } = await import("pdf-parse");
-    const result = await pdfParse(Buffer.from(buffer));
-    const text = result.text ?? "";
-    // Truncate to maxBytes (UTF-8 safe via Buffer)
-    const encoded = Buffer.from(text, "utf8");
-    if (encoded.byteLength <= maxBytes) return text;
-    return encoded.subarray(0, maxBytes).toString("utf8");
-  } catch (err) {
-    throw new Error(
-      `pdf-parse failed: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
+  return extractPdfTextFromBuffer(Buffer.from(buffer), maxBytes);
 }

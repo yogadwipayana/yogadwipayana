@@ -13,6 +13,7 @@ export const runtime = "nodejs";
 
 const CreateBody = z.object({
   model: z.string().min(1).max(120).optional(),
+  mode: z.enum(["chat", "image"]).optional(),
   title: z.string().min(1).max(200).optional(),
 });
 
@@ -50,6 +51,7 @@ export async function POST(request: Request) {
   const conversation = await createConversation(supabase, {
     userId: user.id,
     model: parsed.data.model ?? DEFAULT_MODEL,
+    mode: parsed.data.mode,
     title: parsed.data.title,
   });
 

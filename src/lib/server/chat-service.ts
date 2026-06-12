@@ -35,6 +35,57 @@ export type ConversationSummary = Pick<
   "id" | "title" | "model" | "mode" | "is_public" | "share_token" | "updated_at"
 >;
 
+/** A history entry trimmed down to what the model actually receives. */
+export type ModelHistoryMessage = { role: "user" | "assistant"; content: string };
+
+// Sliding-window budget for prior conversation history, in tokens. The model's
+// own context window is the hard ceiling (input + output share it), so we keep
+// history under this to leave headroom for the system prompts, the new user
+// turn, and the completion. Configurable via CHAT_HISTORY_TOKEN_BUDGET;
+// defaults to 112k, which leaves ~16k of room inside a 128k-window model.
+const DEFAULT_HISTORY_TOKEN_BUDGET = 112_000;
+// Rough chars-per-token estimate. English/code averages ~4; we use it so we
+// never need to load a real tokenizer just to decide what to drop.
+const CHARS_PER_TOKEN = 4;
+
+function historyTokenBudget(): number {
+  const raw = Number(process.env.CHAT_HISTORY_TOKEN_BUDGET);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_HISTORY_TOKEN_BUDGET;
+}
+
+/**
+ * Keep only the most recent messages that fit within the history token budget,
+ * dropping the oldest first. This is a sliding window: the app has no model-side
+ * context management, so without this a long conversation eventually overflows
+ * the model's window and the request errors out.
+ *
+ * The newest message is always kept, even if it alone exceeds the budget, so a
+ * single huge turn degrades to "just that turn" rather than to an empty array.
+ * Token counts are estimated from character length (CHARS_PER_TOKEN) — exact
+ * enough to decide what to drop without pulling in a tokenizer.
+ */
+export function applyHistoryWindow(
+  messages: ModelHistoryMessage[],
+  tokenBudget = historyTokenBudget(),
+): ModelHistoryMessage[] {
+  if (messages.length === 0) return messages;
+
+  const charBudget = tokenBudget * CHARS_PER_TOKEN;
+  const kept: ModelHistoryMessage[] = [];
+  let usedChars = 0;
+
+  // Walk newest → oldest, accumulating until the next message would overflow.
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const cost = messages[i].content.length;
+    if (kept.length > 0 && usedChars + cost > charBudget) break;
+    kept.push(messages[i]);
+    usedChars += cost;
+  }
+
+  kept.reverse(); // restore chronological order
+  return kept;
+}
+
 // `chat_mode` is aliased to `mode` here because Postgres has a built-in
 // `mode()` ordered-set aggregate that PostgREST otherwise mistakes the column
 // name for, raising 42809 ("WITHIN GROUP is required for ordered-set aggregate

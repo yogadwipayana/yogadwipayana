@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { CHAT_SYSTEM_PROMPT, IMAGE_MODE_SYSTEM_PROMPT } from "@/lib/server/chat-prompt";
 import {
+  applyHistoryWindow,
   deleteLastAssistantMessage,
   getConversation,
   getMessages,
@@ -83,10 +84,12 @@ export async function POST(request: Request, { params }: RouteContext) {
       ...(slashParsed
         ? [{ role: "system" as const, content: slashSystemPrompt(slashParsed) }]
         : []),
-      ...history.map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: rewritten && m.id === lastUserId ? rewritten : m.content,
-      })),
+      ...applyHistoryWindow(
+        history.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: rewritten && m.id === lastUserId ? rewritten : m.content,
+        })),
+      ),
     ];
 
     return runChatStream({

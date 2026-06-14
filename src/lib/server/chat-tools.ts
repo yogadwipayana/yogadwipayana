@@ -548,15 +548,56 @@ export const CHAT_TOOLS: ChatTool[] = [
 ];
 
 /**
+ * Tool categories the user can toggle off per conversation. Each key maps to a
+ * predicate over the tool name. `get_current_time` and `ask_user` are core
+ * interaction primitives and deliberately belong to no category — they can
+ * never be disabled. Context7 tools are discovered at runtime, so the category
+ * matches by the `mcp__context7__` name prefix rather than enumerating them.
+ */
+export const TOOL_CATEGORY_KEYS = ["web", "vps", "media", "memory", "context7"] as const;
+export type ToolCategoryKey = (typeof TOOL_CATEGORY_KEYS)[number];
+
+export const TOOL_CATEGORIES: Record<ToolCategoryKey, (name: string) => boolean> = {
+  web: (n) => n === "web_search" || n === "web_fetch",
+  vps: (n) =>
+    n.startsWith("vps_") ||
+    n.startsWith("ssh_") ||
+    n === "open_terminal" ||
+    n === "terminal_run",
+  media: (n) => n === "image_generate" || n === "image_edit" || n === "word_generate",
+  memory: (n) => n === "memory_save",
+  context7: (n) => n.startsWith("mcp__context7__"),
+};
+
+/** True when `name` belongs to one of the disabled categories. */
+export function isToolDisabled(name: string, disabled: readonly string[]): boolean {
+  if (disabled.length === 0) return false;
+  return disabled.some((key) => {
+    const match = TOOL_CATEGORIES[key as ToolCategoryKey];
+    return match ? match(name) : false;
+  });
+}
+
+/**
  * Returns the full tool list the model should see for a turn: the built-in
  * tools plus any tools discovered from a connected MCP session (e.g. Context7).
  * Callers that haven't opened an MCP session just get `CHAT_TOOLS`.
+ *
+ * `disabledCategories` removes whole categories (see `TOOL_CATEGORIES`) the user
+ * switched off for this conversation.
  */
-export function getChatTools(mcpSession?: Context7Session | null): ChatTool[] {
-  if (mcpSession && mcpSession.tools.length > 0) {
-    return [...CHAT_TOOLS, ...mcpSession.tools];
-  }
-  return CHAT_TOOLS;
+export function getChatTools(
+  mcpSession?: Context7Session | null,
+  disabledCategories: readonly string[] = [],
+): ChatTool[] {
+  const all =
+    mcpSession && mcpSession.tools.length > 0
+      ? [...CHAT_TOOLS, ...mcpSession.tools]
+      : CHAT_TOOLS;
+  if (disabledCategories.length === 0) return all;
+  return all.filter(
+    (t) => !(t.type === "function" && isToolDisabled(t.function.name, disabledCategories)),
+  );
 }
 
 const FETCH_TIMEOUT_MS = 10_000;

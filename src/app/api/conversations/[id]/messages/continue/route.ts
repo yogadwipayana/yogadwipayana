@@ -4,7 +4,6 @@ import { NextResponse } from "next/server";
 import { CHAT_SYSTEM_PROMPT, IMAGE_MODE_SYSTEM_PROMPT, buildCustomSystemPromptBlock, composeSystemMessage } from "@/lib/server/chat-prompt";
 import {
   applyHistoryWindow,
-  deleteLastAssistantMessage,
   getConversation,
   getMessages,
 } from "@/lib/server/chat-service";
@@ -17,26 +16,31 @@ import {
 import { runChatStream } from "@/lib/server/chat-stream";
 import { stopAndWait } from "@/lib/server/chat-registry";
 import { getConversationSystemPromptContent } from "@/lib/server/system-prompt-service";
-import { resolveCustomSlashBlock } from "@/lib/server/custom-slash-command-service";
 import {
   checkRateLimit,
   getClientIp,
   getRateLimitIdentifier,
   ratelimits,
 } from "@/lib/server/rate-limit";
-import { parseSlash, slashSystemPrompt, slashRewriteUserContent } from "@/lib/server/slash-commands";
 import { createClient } from "@/utils/supabase/server";
 
 export const runtime = "nodejs";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+const CONTINUE_INSTRUCTION =
+  "Continue from where you left off. Your previous turn was cut short when it " +
+  "reached the tool-call limit. Pick up exactly where you stopped, complete the " +
+  "remaining work, and do not repeat what you already said.";
+
 /**
- * POST /api/conversations/:id/messages/regenerate
+ * POST /api/conversations/:id/messages/continue
  *
- * Drops the most recent assistant message (if any) and re-streams a new
- * completion using the conversation's existing user-side history. Useful for
- * "try that again" after a bad answer or a stream error.
+ * Resumes a turn that was cut off at the tool-call budget (the assistant's last
+ * message has stopped_reason = "tool_budget"). Unlike regenerate, this does NOT
+ * delete the prior assistant turn — it leaves it in history and streams a NEW
+ * assistant message that continues the work. The fresh tool-round budget lets
+ * the model keep going past the original limit.
  */
 export async function POST(request: Request, { params }: RouteContext) {
   const supabase = createClient(await cookies());
@@ -53,59 +57,36 @@ export async function POST(request: Request, { params }: RouteContext) {
     await checkRateLimit(
       ratelimits.chat,
       getRateLimitIdentifier(user.id, getClientIp(request.headers)),
-      "chat regenerate",
+      "chat continue",
     );
     const conversation = await getConversation(supabase, conversationId, user.id);
     if (!conversation) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Tear down any in-flight generation for this conversation and wait for it
-    // to persist its partial turn BEFORE mutating history. Without this, a stale
-    // generation could write a stale assistant message after the delete below.
+    // Wait for any in-flight generation to settle so history is stable before we
+    // read it. Unlike regenerate, we do NOT delete the trailing assistant turn —
+    // continuation builds on top of it.
     await stopAndWait(conversationId);
 
-    // Drop trailing assistant turn (if present) so the model regenerates from
-    // the prior user message. If the last message is a user message, just
-    // re-run the completion against the existing history.
-    await deleteLastAssistantMessage(supabase, conversationId, user.id);
-
     const history = await getMessages(supabase, conversationId, user.id);
-    if (history.length === 0) {
+    const last = history[history.length - 1];
+    if (!last || last.role !== "assistant") {
       return NextResponse.json(
-        { error: "Nothing to regenerate" },
+        { error: "Nothing to continue" },
         { status: 400 },
       );
     }
 
-    // Check the last user message for a slash command so the system prompt
-    // is re-injected consistently on regenerate.
-    const lastUserMessage = [...history].reverse().find((m) => m.role === "user");
-    const slashParsed = lastUserMessage ? parseSlash(lastUserMessage.content) : null;
-
-    // Fall back to a user-defined custom slash command when no built-in matched.
-    const customSlashBlock = slashParsed || !lastUserMessage
-      ? null
-      : await resolveCustomSlashBlock(supabase, user.id, lastUserMessage.content);
-
-    // Custom system prompt attached to this conversation (if any).
     const customSystemPrompt = await getConversationSystemPromptContent(
       supabase,
       conversationId,
       user.id,
     );
 
-    // Active long-term memory — same injection as the send route so regenerate
-    // keeps honoring the user's standing preferences.
     const activeMemories = await listActiveMemories(supabase, user.id);
     const memoryBlock = buildMemorySystemBlock(activeMemories);
     const memoryReminder = buildMemoryReminder(activeMemories);
-
-    // For tool-backed slash commands (/word), reframe the last user turn sent
-    // to the model so it triggers the tool under tool_choice:"auto". The DB
-    // copy keeps the original `/word …` text.
-    const rewritten = slashParsed ? slashRewriteUserContent(slashParsed) : null;
-    const lastUserId = rewritten ? lastUserMessage?.id : undefined;
 
     const messagesForModel = [
       {
@@ -114,8 +95,6 @@ export async function POST(request: Request, { params }: RouteContext) {
           CHAT_SYSTEM_PROMPT,
           memoryBlock,
           conversation.mode === "image" ? IMAGE_MODE_SYSTEM_PROMPT : null,
-          slashParsed ? slashSystemPrompt(slashParsed) : null,
-          customSlashBlock,
           customSystemPrompt
             ? buildCustomSystemPromptBlock(customSystemPrompt)
             : null,
@@ -124,14 +103,16 @@ export async function POST(request: Request, { params }: RouteContext) {
       ...applyHistoryWindow(
         history.map((m) => ({
           role: m.role as "user" | "assistant",
-          content: rewritten && m.id === lastUserId ? rewritten : m.content,
+          content: m.content,
         })),
       ),
-      // Restate memory after the history so recency beats prior-turn language
-      // momentum (history here ends with the user turn being regenerated).
       ...(memoryReminder
         ? [{ role: "system" as const, content: memoryReminder }]
         : []),
+      // A synthetic user turn telling the model to resume. History ends with the
+      // (cut-off) assistant turn, so this both makes the request well-formed and
+      // gives the model an explicit instruction to keep going.
+      { role: "user" as const, content: CONTINUE_INSTRUCTION },
     ];
 
     return runChatStream({

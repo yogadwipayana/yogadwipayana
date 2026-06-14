@@ -15,6 +15,10 @@ export type ConversationRow = {
   is_public: boolean;
   share_token: string | null;
   system_prompt_id: string | null;
+  disabled_tools: string[];
+  pinned: boolean;
+  archived_at: string | null;
+  active_leaf_message_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -25,6 +29,8 @@ export type MessageRow = {
   role: "user" | "assistant" | "system";
   content: string;
   created_at: string;
+  /** Parent message in the conversation tree. Null only for the root message. */
+  parent_message_id?: string | null;
   /** Tool call results for the assistant turn (null for user/system rows). */
   tool_events?: Array<{ call_id: string; name: string; status: "done"; args?: unknown; result?: unknown }> | null;
   /** Follow-up question suggestions generated after the assistant turn. */
@@ -33,11 +39,13 @@ export type MessageRow = {
   prompt_tokens?: number | null;
   completion_tokens?: number | null;
   total_tokens?: number | null;
+  /** Why the assistant turn stopped abnormally (e.g. "tool_budget"). Null = normal. */
+  stopped_reason?: string | null;
 };
 
 export type ConversationSummary = Pick<
   ConversationRow,
-  "id" | "title" | "model" | "mode" | "is_public" | "share_token" | "system_prompt_id" | "updated_at"
+  "id" | "title" | "model" | "mode" | "is_public" | "share_token" | "system_prompt_id" | "disabled_tools" | "pinned" | "archived_at" | "updated_at"
 >;
 
 /** A history entry trimmed down to what the model actually receives. */
@@ -95,17 +103,27 @@ export function applyHistoryWindow(
 // `mode()` ordered-set aggregate that PostgREST otherwise mistakes the column
 // name for, raising 42809 ("WITHIN GROUP is required for ordered-set aggregate
 // mode"). The column is `chat_mode` on the row and `mode` on the wire.
-const SUMMARY_COLS = "id,title,model,mode:chat_mode,is_public,share_token,system_prompt_id,updated_at";
-const ROW_COLS = "id,user_id,title,model,mode:chat_mode,is_public,share_token,system_prompt_id,created_at,updated_at";
+const SUMMARY_COLS = "id,title,model,mode:chat_mode,is_public,share_token,system_prompt_id,disabled_tools,pinned,archived_at,updated_at";
+const ROW_COLS = "id,user_id,title,model,mode:chat_mode,is_public,share_token,system_prompt_id,disabled_tools,pinned,archived_at,active_leaf_message_id,created_at,updated_at";
 
 export async function listConversations(
   supabase: SupabaseClient,
   userId: string,
+  opts: { archived?: boolean } = {},
 ): Promise<ConversationSummary[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("conversation")
     .select(SUMMARY_COLS)
-    .eq("user_id", userId)
+    .eq("user_id", userId);
+
+  // Default list shows active conversations only; `archived: true` shows the
+  // archived bin. Archived items never mix into the default list.
+  query = opts.archived
+    ? query.not("archived_at", "is", null)
+    : query.is("archived_at", null);
+
+  const { data, error } = await query
+    .order("pinned", { ascending: false })
     .order("updated_at", { ascending: false })
     .returns<ConversationSummary[]>();
   if (error) throw error;
@@ -268,7 +286,177 @@ export async function getMessages(
     .order("created_at", { ascending: true })
     .returns<MessageRow[]>();
   if (error) throw error;
+  const all = data ?? [];
+
+  return activePathFromLeaf(all, owner.active_leaf_message_id);
+}
+
+/**
+ * Reconstructs the active conversation path: walk parent links from the active
+ * leaf up to the root, then reverse to chronological order. Returns only the
+ * messages on that path, so sibling branches don't all render at once.
+ *
+ * Falls back to the full created_at-ordered list when there's no active leaf or
+ * the tree has no parent links yet (legacy conversations pre-backfill, or any
+ * row whose parent chain is broken) — degrading to the old linear behavior
+ * rather than dropping messages.
+ */
+function activePathFromLeaf(
+  all: MessageRow[],
+  activeLeafId: string | null,
+): MessageRow[] {
+  if (all.length === 0) return all;
+
+  const hasTree = all.some((m) => m.parent_message_id != null);
+  if (!hasTree || !activeLeafId) return all;
+
+  const byId = new Map(all.map((m) => [m.id, m]));
+  if (!byId.has(activeLeafId)) return all;
+
+  const path: MessageRow[] = [];
+  const seen = new Set<string>();
+  let cursor: string | null = activeLeafId;
+  while (cursor) {
+    if (seen.has(cursor)) break; // guard against cycles
+    seen.add(cursor);
+    const node = byId.get(cursor);
+    if (!node) break;
+    path.push(node);
+    cursor = node.parent_message_id ?? null;
+  }
+  path.reverse();
+  return path;
+}
+
+/** Direct children of a message (its sibling branches share a parent). */
+export async function listChildren(
+  supabase: SupabaseClient,
+  conversationId: string,
+  parentMessageId: string | null,
+  userId: string,
+): Promise<MessageRow[]> {
+  const owner = await getConversation(supabase, conversationId, userId);
+  if (!owner) return [];
+
+  let query = supabase
+    .from("message")
+    .select("*")
+    .eq("conversation_id", conversationId);
+  query =
+    parentMessageId === null
+      ? query.is("parent_message_id", null)
+      : query.eq("parent_message_id", parentMessageId);
+
+  const { data, error } = await query
+    .order("created_at", { ascending: true })
+    .returns<MessageRow[]>();
+  if (error) throw error;
   return data ?? [];
+}
+
+/** Sets which leaf the conversation displays. Owner-scoped. */
+export async function setActiveLeaf(
+  supabase: SupabaseClient,
+  conversationId: string,
+  userId: string,
+  leafMessageId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("conversation")
+    .update({ active_leaf_message_id: leafMessageId })
+    .eq("id", conversationId)
+    .eq("user_id", userId)
+    .select("id")
+    .maybeSingle<{ id: string }>();
+  if (error) throw error;
+  return Boolean(data);
+}
+
+/** Per-message branch navigation info for the active path. */
+export type BranchInfo = {
+  /** 1-based position of this message among its siblings (children of its parent). */
+  index: number;
+  /** Total number of siblings (1 = no branching at this point). */
+  count: number;
+  /** Sibling message ids in display order, so the client can pick prev/next. */
+  siblingIds: string[];
+};
+
+/**
+ * Computes branch-navigator info for each message on the active path: how many
+ * siblings it has and where it sits among them. Pure; operates on the full row
+ * set plus the already-resolved active path.
+ */
+export function computeBranchInfo(
+  all: MessageRow[],
+  path: MessageRow[],
+): Map<string, BranchInfo> {
+  // Group every message by its parent (null parent = roots).
+  const childrenByParent = new Map<string | null, MessageRow[]>();
+  for (const m of all) {
+    const key = m.parent_message_id ?? null;
+    const arr = childrenByParent.get(key);
+    if (arr) arr.push(m);
+    else childrenByParent.set(key, [m]);
+  }
+  for (const arr of childrenByParent.values()) {
+    arr.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+  }
+
+  const info = new Map<string, BranchInfo>();
+  for (const m of path) {
+    const siblings = childrenByParent.get(m.parent_message_id ?? null) ?? [m];
+    const idx = siblings.findIndex((s) => s.id === m.id);
+    info.set(m.id, {
+      index: idx >= 0 ? idx + 1 : 1,
+      count: siblings.length,
+      siblingIds: siblings.map((s) => s.id),
+    });
+  }
+  return info;
+}
+
+/**
+ * From a starting message, descend to a leaf by always following the NEWEST
+ * child. Used when activating a sibling branch: the client passes the sibling
+ * it picked, and we resolve the deepest message on that branch to use as the
+ * active leaf. Returns the start id itself when it has no children.
+ */
+export async function resolveBranchLeaf(
+  supabase: SupabaseClient,
+  conversationId: string,
+  userId: string,
+  startMessageId: string,
+): Promise<string | null> {
+  const owner = await getConversation(supabase, conversationId, userId);
+  if (!owner) return null;
+
+  const { data, error } = await supabase
+    .from("message")
+    .select("id,parent_message_id,created_at")
+    .eq("conversation_id", conversationId)
+    .returns<Array<Pick<MessageRow, "id" | "parent_message_id" | "created_at">>>();
+  if (error) throw error;
+  const rows = data ?? [];
+
+  const childrenByParent = new Map<string, Array<{ id: string; created_at: string }>>();
+  for (const r of rows) {
+    if (!r.parent_message_id) continue;
+    const arr = childrenByParent.get(r.parent_message_id);
+    if (arr) arr.push({ id: r.id, created_at: r.created_at });
+    else childrenByParent.set(r.parent_message_id, [{ id: r.id, created_at: r.created_at }]);
+  }
+
+  let cursor = startMessageId;
+  const seen = new Set<string>();
+  while (!seen.has(cursor)) {
+    seen.add(cursor);
+    const kids = childrenByParent.get(cursor);
+    if (!kids || kids.length === 0) break;
+    kids.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+    cursor = kids[kids.length - 1].id; // newest child
+  }
+  return cursor;
 }
 
 export async function createConversation(
@@ -300,27 +488,53 @@ export async function appendMessage(
     toolEvents?: MessageRow["tool_events"];
     followUps?: string[] | null;
     usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number } | null;
+    stoppedReason?: string | null;
+    /**
+     * Parent in the message tree. When omitted, defaults to the conversation's
+     * current active leaf, so a normal append extends the active path. Pass an
+     * explicit value (including null for a root) to branch.
+     */
+    parentMessageId?: string | null;
   },
 ): Promise<MessageRow> {
   const owner = await getConversation(supabase, args.conversationId, args.userId);
   if (!owner) {
     throw new Error("Conversation not found");
   }
+  const parentId =
+    args.parentMessageId !== undefined
+      ? args.parentMessageId
+      : owner.active_leaf_message_id;
   const { data, error } = await supabase
     .from("message")
     .insert({
       conversation_id: args.conversationId,
       role: args.role,
       content: args.content,
+      parent_message_id: parentId,
       ...(args.toolEvents?.length ? { tool_events: args.toolEvents } : {}),
       ...(args.followUps?.length ? { follow_ups: args.followUps } : {}),
       ...(args.usage?.promptTokens != null ? { prompt_tokens: args.usage.promptTokens } : {}),
       ...(args.usage?.completionTokens != null ? { completion_tokens: args.usage.completionTokens } : {}),
       ...(args.usage?.totalTokens != null ? { total_tokens: args.usage.totalTokens } : {}),
+      ...(args.stoppedReason ? { stopped_reason: args.stoppedReason } : {}),
     })
     .select("*")
     .single<MessageRow>();
   if (error) throw error;
+
+  // The newest message becomes the active leaf so the path it extends is what
+  // renders. Best-effort: a failed update just leaves the leaf where it was.
+  try {
+    await supabase
+      .from("conversation")
+      .update({ active_leaf_message_id: data.id })
+      .eq("id", args.conversationId)
+      .eq("user_id", args.userId);
+  } catch {
+    // non-fatal
+  }
+
   return data;
 }
 
@@ -328,13 +542,37 @@ export async function updateConversation(
   supabase: SupabaseClient,
   id: string,
   userId: string,
-  patch: { title?: string; model?: string; mode?: ConversationMode; systemPromptId?: string | null },
+  patch: {
+    title?: string;
+    model?: string;
+    mode?: ConversationMode;
+    systemPromptId?: string | null;
+    disabledTools?: string[];
+    pinned?: boolean;
+    archived?: boolean;
+  },
 ): Promise<ConversationSummary | null> {
-  const fields: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  const fields: Record<string, unknown> = {};
   if (patch.title !== undefined) fields.title = patch.title;
   if (patch.model !== undefined) fields.model = patch.model;
   if (patch.mode !== undefined) fields.chat_mode = patch.mode;
   if (patch.systemPromptId !== undefined) fields.system_prompt_id = patch.systemPromptId;
+  if (patch.disabledTools !== undefined) fields.disabled_tools = patch.disabledTools;
+  if (patch.pinned !== undefined) fields.pinned = patch.pinned;
+  if (patch.archived !== undefined) {
+    fields.archived_at = patch.archived ? new Date().toISOString() : null;
+  }
+
+  // Pin/archive are organizational state, not content — they must not reorder
+  // the list by bumping recency. Only bump `updated_at` when the conversation's
+  // actual content/config changed.
+  const isContentEdit =
+    patch.title !== undefined ||
+    patch.model !== undefined ||
+    patch.mode !== undefined ||
+    patch.systemPromptId !== undefined ||
+    patch.disabledTools !== undefined;
+  if (isContentEdit) fields.updated_at = new Date().toISOString();
 
   const { data, error } = await supabase
     .from("conversation")
@@ -376,6 +614,15 @@ export async function deleteConversation(
   return Boolean(data);
 }
 
+/**
+ * Prepares a regenerate by branching instead of deleting. Moves the active leaf
+ * to the parent of the latest assistant message on the active path, so the
+ * regenerated reply is appended as a NEW sibling branch and the previous reply
+ * is retained (reachable via the sibling navigator). Returns false when there's
+ * no trailing assistant message to regenerate from.
+ *
+ * Named for backwards-compat with the regenerate route; no longer deletes.
+ */
 export async function deleteLastAssistantMessage(
   supabase: SupabaseClient,
   conversationId: string,
@@ -384,22 +631,59 @@ export async function deleteLastAssistantMessage(
   const owner = await getConversation(supabase, conversationId, userId);
   if (!owner) return false;
 
-  const { data: latest, error: selectErr } = await supabase
-    .from("message")
-    .select("id,role")
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle<{ id: string; role: MessageRow["role"] }>();
-  if (selectErr) throw selectErr;
-  if (!latest || latest.role !== "assistant") return false;
+  // Find the latest assistant message on the ACTIVE path (not globally latest,
+  // which could live on a different branch).
+  const path = await getMessages(supabase, conversationId, userId);
+  const lastAssistant = [...path].reverse().find((m) => m.role === "assistant");
+  if (!lastAssistant) return false;
 
-  const { error: deleteErr } = await supabase
-    .from("message")
-    .delete()
-    .eq("id", latest.id);
-  if (deleteErr) throw deleteErr;
+  // Branch point is the assistant message's parent (typically the user turn).
+  // Setting it as the active leaf means the next appended assistant message is a
+  // sibling of `lastAssistant`, preserving the old branch.
+  const branchPoint = lastAssistant.parent_message_id ?? null;
+  if (branchPoint) {
+    await setActiveLeaf(supabase, conversationId, userId, branchPoint);
+  }
   return true;
+}
+
+/**
+ * Edits a user message by creating a NEW sibling branch instead of mutating in
+ * place and truncating. The new user message shares the edited message's parent
+ * and becomes the active leaf, so generation continues on the fresh branch while
+ * the original branch (and its replies) is retained. Returns the new message, or
+ * null if not found / not owned / not a user message.
+ */
+export async function branchUserMessage(
+  supabase: SupabaseClient,
+  args: {
+    conversationId: string;
+    userId: string;
+    messageId: string;
+    content: string;
+  },
+): Promise<MessageRow | null> {
+  const owner = await getConversation(supabase, args.conversationId, args.userId);
+  if (!owner) return null;
+
+  const { data: target, error: targetErr } = await supabase
+    .from("message")
+    .select("*")
+    .eq("id", args.messageId)
+    .eq("conversation_id", args.conversationId)
+    .maybeSingle<MessageRow>();
+  if (targetErr) throw targetErr;
+  if (!target || target.role !== "user") return null;
+
+  // Insert a sibling sharing the edited message's parent. appendMessage sets it
+  // as the new active leaf, so getMessages now follows this branch.
+  return appendMessage(supabase, {
+    conversationId: args.conversationId,
+    userId: args.userId,
+    role: "user",
+    content: args.content,
+    parentMessageId: target.parent_message_id ?? null,
+  });
 }
 
 /**
@@ -475,50 +759,4 @@ export async function listMessagesByConversationId(
     .returns<MessageRow[]>();
   if (error) throw error;
   return data ?? [];
-}
-
-/**
- * Edits an existing user message in place and deletes every message that came
- * after it (the conversation tail), so the model can regenerate from this
- * point. Returns the updated message (or `null` if not found / not owned).
- */
-export async function editUserMessageAndTruncate(
-  supabase: SupabaseClient,
-  args: {
-    conversationId: string;
-    userId: string;
-    messageId: string;
-    content: string;
-  },
-): Promise<MessageRow | null> {
-  const owner = await getConversation(supabase, args.conversationId, args.userId);
-  if (!owner) return null;
-
-  const { data: target, error: targetErr } = await supabase
-    .from("message")
-    .select("*")
-    .eq("id", args.messageId)
-    .eq("conversation_id", args.conversationId)
-    .maybeSingle<MessageRow>();
-  if (targetErr) throw targetErr;
-  if (!target || target.role !== "user") return null;
-
-  // Drop everything strictly after this message (assistant reply + any later
-  // turns). Tied timestamps would be unusual but exclude the target itself by
-  // id just in case.
-  const { error: deleteErr } = await supabase
-    .from("message")
-    .delete()
-    .eq("conversation_id", args.conversationId)
-    .gt("created_at", target.created_at);
-  if (deleteErr) throw deleteErr;
-
-  const { data: updated, error: updateErr } = await supabase
-    .from("message")
-    .update({ content: args.content })
-    .eq("id", target.id)
-    .select("*")
-    .single<MessageRow>();
-  if (updateErr) throw updateErr;
-  return updated;
 }

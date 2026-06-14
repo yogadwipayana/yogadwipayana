@@ -5,7 +5,7 @@ import { z } from "zod";
 import { CHAT_SYSTEM_PROMPT, IMAGE_MODE_SYSTEM_PROMPT, buildCustomSystemPromptBlock, composeSystemMessage } from "@/lib/server/chat-prompt";
 import {
   applyHistoryWindow,
-  editUserMessageAndTruncate,
+  branchUserMessage,
   getConversation,
   getMessages,
 } from "@/lib/server/chat-service";
@@ -18,6 +18,7 @@ import {
 import { runChatStream } from "@/lib/server/chat-stream";
 import { stopAndWait } from "@/lib/server/chat-registry";
 import { getConversationSystemPromptContent } from "@/lib/server/system-prompt-service";
+import { resolveCustomSlashBlock } from "@/lib/server/custom-slash-command-service";
 import {
   checkRateLimit,
   getClientIp,
@@ -118,10 +119,13 @@ export async function POST(request: Request, { params }: RouteContext) {
     const persistedContent = content + footer;
 
     // Tear down any in-flight generation and wait for it to persist before we
-    // edit + truncate history, so a stale runner can't write after the branch.
+    // branch history, so a stale runner can't write after the branch point.
     await stopAndWait(conversationId);
 
-    const edited = await editUserMessageAndTruncate(supabase, {
+    // Branching: instead of mutating + truncating, create a new user message as
+    // a sibling of the edited one and switch the active path to it. The original
+    // branch (and its replies) is retained and reachable via the navigator.
+    const edited = await branchUserMessage(supabase, {
       conversationId,
       userId: user.id,
       messageId: parsed.data.messageId,
@@ -144,6 +148,11 @@ export async function POST(request: Request, { params }: RouteContext) {
 
     // Parse slash command (if any)
     const slashParsed = parseSlash(content);
+
+    // Fall back to a user-defined custom slash command when no built-in matched.
+    const customSlashBlock = slashParsed
+      ? null
+      : await resolveCustomSlashBlock(supabase, user.id, content);
 
     // For tool-backed slash commands (/word), reframe the text sent to the
     // model so it actually triggers the tool under tool_choice:"auto".
@@ -173,6 +182,7 @@ export async function POST(request: Request, { params }: RouteContext) {
           memoryBlock,
           conversation.mode === "image" ? IMAGE_MODE_SYSTEM_PROMPT : null,
           slashParsed ? slashSystemPrompt(slashParsed) : null,
+          customSlashBlock,
           customSystemPrompt
             ? buildCustomSystemPromptBlock(customSystemPrompt)
             : null,

@@ -13,6 +13,7 @@ import {
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
+  Archive,
   BarChart3,
   Brain,
   CheckCircle2,
@@ -29,6 +30,7 @@ import {
   MessageSquare,
   MoreHorizontal,
   Pencil,
+  Pin,
   Plus,
   Search,
   Server,
@@ -57,6 +59,8 @@ import {
 } from "./views";
 import { GalleryView } from "./chat/gallery";
 import { MemoryView } from "./chat/memory";
+import { ArchivedView } from "./chat/archived";
+import { CustomCommandsView } from "./chat/custom-commands";
 import { SystemPromptsView } from "./chat/system-prompts";
 import { UsageView } from "./chat/usage";
 import { Logo } from "@/components/ui/Logo";
@@ -86,6 +90,12 @@ type SubItem = {
   deleteLabel?: string;
   /** When set, the ⋯ menu gains a Rename action with inline editing. */
   onRename?: (newLabel: string) => void;
+  /** When set, the ⋯ menu gains a Pin/Unpin action. `pinned` drives the label. */
+  onPin?: () => void;
+  pinned?: boolean;
+  /** When set, the ⋯ menu gains an Archive/Unarchive action. */
+  onArchive?: () => void;
+  archived?: boolean;
   /** When true, this item participates in drag-to-reorder within its section. */
   draggable?: boolean;
 };
@@ -120,6 +130,8 @@ function buildSections(
   onReorderVps?: (orderedIds: string[]) => void,
   streamingConversationIds?: Set<string>,
   showAdminNav = false,
+  onPinConversation?: (id: string) => void,
+  onArchiveConversation?: (id: string) => void,
 ): SubSection[] {
   if (toolId === "settings") {
     const sections: SubSection[] = [
@@ -210,30 +222,49 @@ function buildSections(
       },
     ];
   }
-  return [
-    {
-      title: "Conversations",
+  const toConversationItem = (c: ChatConversationSummary): SubItem => ({
+    id: c.id,
+    label: c.title,
+    streaming: streamingConversationIds?.has(c.id) ?? false,
+    onDelete: onDeleteConversation ? () => onDeleteConversation(c.id) : undefined,
+    deleteLabel: "Delete conversation",
+    onRename: onRenameConversation
+      ? (newTitle: string) => onRenameConversation(c.id, newTitle)
+      : undefined,
+    onPin: onPinConversation ? () => onPinConversation(c.id) : undefined,
+    pinned: c.pinned ?? false,
+    onArchive: onArchiveConversation ? () => onArchiveConversation(c.id) : undefined,
+    archived: c.archived_at != null,
+  });
+
+  const pinned = chatConversations.filter((c) => c.pinned);
+  const unpinned = chatConversations.filter((c) => !c.pinned);
+
+  const conversationSections: SubSection[] = [];
+  if (pinned.length > 0) {
+    conversationSections.push({
+      title: "Pinned",
       searchable: true,
-      scrollable: true,
-      items: chatConversations.map((c) => ({
-        id: c.id,
-        label: c.title,
-        streaming: streamingConversationIds?.has(c.id) ?? false,
-        onDelete: onDeleteConversation
-          ? () => onDeleteConversation(c.id)
-          : undefined,
-        deleteLabel: "Delete conversation",
-        onRename: onRenameConversation
-          ? (newTitle: string) => onRenameConversation(c.id, newTitle)
-          : undefined,
-      })),
-    },
+      items: pinned.map(toConversationItem),
+    });
+  }
+  conversationSections.push({
+    title: "Conversations",
+    searchable: true,
+    scrollable: true,
+    items: unpinned.map(toConversationItem),
+  });
+
+  return [
+    ...conversationSections,
     {
       title: "Configuration",
       items: [
         { id: "chat:prompts", label: "System Prompts" },
+        { id: "chat:commands", label: "Slash Commands" },
         { id: "chat:gallery", label: "Gallery" },
         { id: "chat:memory", label: "Memory" },
+        { id: "chat:archived", label: "Archived" },
       ],
     },
     {
@@ -255,9 +286,11 @@ const PLACEHOLDER_LABELS: Record<string, { title: string; description: string }>
  */
 const CHAT_SEGMENT_TO_ITEM: Record<string, string> = {
   "system-prompts": "chat:prompts",
+  commands: "chat:commands",
   memory: "chat:memory",
   gallery: "chat:gallery",
   usage: "chat:usage",
+  archived: "chat:archived",
 };
 const CHAT_ITEM_TO_SEGMENT: Record<string, string> = Object.fromEntries(
   Object.entries(CHAT_SEGMENT_TO_ITEM).map(([seg, id]) => [id, seg]),
@@ -511,6 +544,61 @@ export function DashboardShell({
     [],
   );
 
+  const handlePinConversation = useCallback(
+    async (id: string) => {
+      // Optimistic toggle. buildSections re-buckets pinned items into their own
+      // section, so flipping the flag here moves the row immediately.
+      let nextPinned = false;
+      setChatConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== id) return c;
+          nextPinned = !c.pinned;
+          return { ...c, pinned: nextPinned };
+        }),
+      );
+      try {
+        const res = await fetch(`/api/conversations/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pinned: nextPinned }),
+        });
+        if (!res.ok) {
+          setChatConversations((prev) =>
+            prev.map((c) => (c.id === id ? { ...c, pinned: !nextPinned } : c)),
+          );
+        }
+      } catch {
+        setChatConversations((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, pinned: !nextPinned } : c)),
+        );
+      }
+    },
+    [],
+  );
+
+  const handleArchiveConversation = useCallback(
+    async (id: string) => {
+      // Archiving removes the row from the active list (listConversations
+      // filters archived out). Optimistically drop it, restore on failure.
+      const prevList = chatConversations;
+      setChatConversations(prevList.filter((c) => c.id !== id));
+      if (chatSegment === id) {
+        router.push("/dashboard/chat");
+      }
+      try {
+        const res = await fetch(`/api/conversations/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ archived: true }),
+        });
+        if (!res.ok) setChatConversations(prevList);
+      } catch {
+        setChatConversations(prevList);
+      }
+    },
+    [chatConversations, chatSegment, router],
+  );
+
   const filteredChatConversations = useMemo(() => {
     if (toolId !== "chat") return chatConversations;
     const q = chatSearch.trim().toLowerCase();
@@ -539,6 +627,8 @@ export function DashboardShell({
         toolId === "vps" ? handleReorderVps : undefined,
         toolId === "chat" ? streamingConversationIds : undefined,
         showAdminNav,
+        toolId === "chat" ? handlePinConversation : undefined,
+        toolId === "chat" ? handleArchiveConversation : undefined,
       ),
     [
       toolId,
@@ -550,6 +640,8 @@ export function DashboardShell({
       handleReorderVps,
       streamingConversationIds,
       showAdminNav,
+      handlePinConversation,
+      handleArchiveConversation,
     ],
   );
 
@@ -1301,8 +1393,16 @@ function renderMain({
     return <MemoryView />;
   }
 
+  if (activeItemId === "chat:archived" && activeTool === "chat") {
+    return <ArchivedView />;
+  }
+
   if (activeItemId === "chat:prompts" && activeTool === "chat") {
     return <SystemPromptsView />;
+  }
+
+  if (activeItemId === "chat:commands" && activeTool === "chat") {
+    return <CustomCommandsView />;
   }
 
   if (activeItemId === "chat:usage" && activeTool === "chat") {
@@ -1955,7 +2055,7 @@ function SubItemButton({
   active: boolean;
   onClick: () => void;
 }) {
-  const hasMenu = Boolean(item.onDelete || item.onRename);
+  const hasMenu = Boolean(item.onDelete || item.onRename || item.onPin || item.onArchive);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const [renaming, setRenaming] = useState(false);
@@ -2116,6 +2216,26 @@ function SubItemButton({
             >
               <Pencil className="h-3 w-3 shrink-0 text-white/40" aria-hidden />
               Rename
+            </button>
+          )}
+          {item.onPin && (
+            <button
+              type="button"
+              onClick={() => { setMenuOpen(false); item.onPin?.(); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-white/75 transition-colors hover:bg-white/[0.05] hover:text-white"
+            >
+              <Pin className="h-3 w-3 shrink-0 text-white/40" aria-hidden />
+              {item.pinned ? "Unpin" : "Pin"}
+            </button>
+          )}
+          {item.onArchive && (
+            <button
+              type="button"
+              onClick={() => { setMenuOpen(false); item.onArchive?.(); }}
+              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[12px] text-white/75 transition-colors hover:bg-white/[0.05] hover:text-white"
+            >
+              <Archive className="h-3 w-3 shrink-0 text-white/40" aria-hidden />
+              {item.archived ? "Unarchive" : "Archive"}
             </button>
           )}
           {item.onDelete && (

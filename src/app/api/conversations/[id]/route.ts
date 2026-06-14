@@ -3,11 +3,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import {
+  computeBranchInfo,
   deleteConversation,
   getConversation,
   getMessages,
   updateConversation,
 } from "@/lib/server/chat-service";
+import { TOOL_CATEGORY_KEYS } from "@/lib/server/chat-tools";
 import { listGeneratedImages } from "@/lib/server/image-service";
 import { createClient } from "@/utils/supabase/server";
 
@@ -19,6 +21,11 @@ const PatchBody = z.object({
   mode: z.enum(["chat", "image"]).optional(),
   // `null` detaches the prompt; a uuid attaches one. Omitted = leave unchanged.
   system_prompt_id: z.string().uuid().nullable().optional(),
+  // Tool categories switched off for this conversation (see TOOL_CATEGORY_KEYS).
+  disabled_tools: z.array(z.enum(TOOL_CATEGORY_KEYS)).optional(),
+  // Organizational state — does not bump updated_at / reorder the list.
+  pinned: z.boolean().optional(),
+  archived: z.boolean().optional(),
 });
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -42,15 +49,34 @@ export async function GET(_request: Request, { params }: RouteContext) {
     listGeneratedImages(supabase, user.id, { conversationId: id }),
   ]);
   const images = imagesResult.images;
+
+  // Branch-navigator metadata: count siblings for each message on the active
+  // path. Computed from the full row set (the active path alone can't see
+  // siblings on other branches).
+  const { data: allRows } = await supabase
+    .from("message")
+    .select("*")
+    .eq("conversation_id", id)
+    .order("created_at", { ascending: true });
+  const branchInfo = computeBranchInfo(allRows ?? [], rawMessages);
+
   // Rename snake_case DB columns to camelCase for the frontend ChatMessage type.
-  const messages = rawMessages.map((m) => ({
-    id: m.id,
-    role: m.role,
-    content: m.content,
-    created_at: m.created_at,
-    ...(m.tool_events?.length ? { toolEvents: m.tool_events } : {}),
-    ...(m.follow_ups?.length ? { followUps: m.follow_ups } : {}),
-  }));
+  const messages = rawMessages.map((m) => {
+    const info = branchInfo.get(m.id);
+    return {
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      created_at: m.created_at,
+      parentId: m.parent_message_id ?? null,
+      ...(info && info.count > 1
+        ? { branchIndex: info.index, branchCount: info.count, siblingIds: info.siblingIds }
+        : {}),
+      ...(m.tool_events?.length ? { toolEvents: m.tool_events } : {}),
+      ...(m.follow_ups?.length ? { followUps: m.follow_ups } : {}),
+      ...(m.stopped_reason ? { stoppedReason: m.stopped_reason } : {}),
+    };
+  });
   return NextResponse.json({ conversation, messages, images });
 }
 
@@ -77,7 +103,10 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     parsed.data.title === undefined &&
     parsed.data.model === undefined &&
     parsed.data.mode === undefined &&
-    parsed.data.system_prompt_id === undefined
+    parsed.data.system_prompt_id === undefined &&
+    parsed.data.disabled_tools === undefined &&
+    parsed.data.pinned === undefined &&
+    parsed.data.archived === undefined
   ) {
     return NextResponse.json(
       { error: "Nothing to update" },
@@ -90,6 +119,9 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     model: parsed.data.model,
     mode: parsed.data.mode,
     systemPromptId: parsed.data.system_prompt_id,
+    disabledTools: parsed.data.disabled_tools,
+    pinned: parsed.data.pinned,
+    archived: parsed.data.archived,
   });
   if (!conversation) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

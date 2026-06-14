@@ -2,15 +2,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type OpenAI from "openai";
 
 import { openai } from "@/lib/openai";
-import { executeTool, getChatTools } from "@/lib/server/chat-tools";
+import { executeTool, getChatTools, isToolDisabled } from "@/lib/server/chat-tools";
 import {
   openContext7Session,
   type Context7Session,
 } from "@/lib/server/mcp/context7";
 import {
   appendMessage,
+  getConversation,
   recordUsageEvent,
-  updateConversation,
+  touchConversation,
 } from "@/lib/server/chat-service";
 import {
   startGeneration,
@@ -221,6 +222,10 @@ async function runGeneration(ctx: {
 
   const messages: ChatMessage[] = [...initialMessages];
   let finalAssistantText = "";
+  // Text the model emitted in tool-executing rounds (before the final answer).
+  // finalAssistantText is reset to "" after each tool round, so without this the
+  // budget-limit path would lose everything the model said while working.
+  let accumulatedRoundText = "";
   // Accumulate all tool call results across every round so they can be
   // persisted alongside the final assistant message.
   const allToolEvents: PersistedToolEvent[] = [];
@@ -236,7 +241,7 @@ async function runGeneration(ctx: {
   const sendDone = () => {};
   const closeStream = () => {};
 
-      const persistFinal = async (followUps?: string[]) => {
+      const persistFinal = async (followUps?: string[], stoppedReason?: string) => {
         if (finalAssistantText.length > 0) {
           try {
             const saved = await appendMessage(supabase, {
@@ -247,6 +252,7 @@ async function runGeneration(ctx: {
               toolEvents: allToolEvents.length > 0 ? allToolEvents : undefined,
               followUps: followUps?.length ? followUps : undefined,
               usage: sawUsage ? usageTotals : undefined,
+              stoppedReason,
             });
             send({ saved: { role: "assistant", id: saved.id } });
             // Append to the immutable usage ledger so consumption survives
@@ -271,7 +277,7 @@ async function runGeneration(ctx: {
           // Bump updated_at even if the model returned nothing so the
           // conversation moves to the top of the list.
           try {
-            await updateConversation(supabase, conversationId, userId, {});
+            await touchConversation(supabase, conversationId);
           } catch {}
         }
       };
@@ -305,6 +311,17 @@ async function runGeneration(ctx: {
       try {
         if (preface) send(preface);
 
+        // Per-conversation tool toggles: load the disabled categories once so
+        // the model never sees (and the forced-tool logic never forces) a tool
+        // the user switched off for this conversation.
+        let disabledTools: string[] = [];
+        try {
+          const conv = await getConversation(supabase, conversationId, userId);
+          disabledTools = conv?.disabled_tools ?? [];
+        } catch {
+          // Best-effort; an empty list just means no tools are disabled.
+        }
+
         // Connect to the Context7 MCP server for this turn. Best-effort: a null
         // session just means the model falls back to the built-in tools.
         mcpSession = await openContext7Session();
@@ -312,12 +329,15 @@ async function runGeneration(ctx: {
         // Questions about install/setup/versions/prices drift over time. Force a
         // web_search on the first round so the model grounds instead of answering
         // from stale memory; subsequent rounds revert to "auto".
-        const forceSearchFirstRound = lastUserNeedsGrounding(messages);
+        const forceSearchFirstRound =
+          !isToolDisabled("web_search", disabledTools) &&
+          lastUserNeedsGrounding(messages);
         // When Context7 is connected and the question names a known library/
         // framework/SDK, force its lookup on round 0. This takes priority over
         // forceSearchFirstRound so e.g. "install next.js latest" routes to
         // Context7 (library docs) instead of web_search (OS install).
         const forceContext7FirstRound =
+          !isToolDisabled("mcp__context7__resolve-library-id", disabledTools) &&
           !!mcpSession &&
           mcpSession.tools.some(
             (t) =>
@@ -341,7 +361,7 @@ async function runGeneration(ctx: {
               temperature: 0.4,
               stream: true,
               stream_options: { include_usage: true },
-              tools: getChatTools(mcpSession),
+              tools: getChatTools(mcpSession, disabledTools),
               tool_choice:
                 round === 0 && forceContext7FirstRound
                   ? {
@@ -539,16 +559,26 @@ async function runGeneration(ctx: {
           }
 
           // Reset the round-local text. We only persist the final round's
-          // assistant content (after no more tool calls).
+          // assistant content (after no more tool calls). Preserve what the
+          // model said this round in the accumulator so the budget-limit path
+          // can still surface it.
+          if (roundText.trim().length > 0) {
+            accumulatedRoundText += (accumulatedRoundText ? "\n\n" : "") + roundText;
+          }
           finalAssistantText = "";
         }
 
-        // Tool-call loop budget exhausted. Emit a graceful note and close.
+        // Tool-call loop budget exhausted. Surface any work-in-progress text the
+        // model emitted, append a note, persist with a marker, and emit a
+        // `stopped` frame so the client can offer a Continue action.
         const note =
           "(Stopped after reaching the tool-call limit. Ask me to continue if you need more.)";
         send({ delta: note });
-        finalAssistantText = note;
-        await persistFinal();  // no follow-ups at budget limit
+        finalAssistantText = accumulatedRoundText
+          ? `${accumulatedRoundText}\n\n${note}`
+          : note;
+        await persistFinal(undefined, "tool_budget");
+        send({ stopped: "tool_budget" });
         sendDone();
         closeStream();
       } catch (err) {

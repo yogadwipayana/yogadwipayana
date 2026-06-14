@@ -19,6 +19,7 @@ import {
 } from "@/lib/server/memory-service";
 import { runChatStream } from "@/lib/server/chat-stream";
 import { getConversationSystemPromptContent } from "@/lib/server/system-prompt-service";
+import { resolveCustomSlashBlock } from "@/lib/server/custom-slash-command-service";
 import {
   checkRateLimit,
   getClientIp,
@@ -134,6 +135,12 @@ export async function POST(request: Request, { params }: RouteContext) {
     // Parse slash command (if any) — original content is kept in DB unchanged
     const slashParsed = parseSlash(content);
 
+    // When no built-in command matched, fall back to a user-defined custom
+    // slash command (built-ins always take precedence).
+    const customSlashBlock = slashParsed
+      ? null
+      : await resolveCustomSlashBlock(supabase, user.id, content);
+
     // For tool-backed slash commands (/word), reframe the text sent to the
     // model so it actually triggers the tool under tool_choice:"auto".
     const modelText =
@@ -153,6 +160,7 @@ export async function POST(request: Request, { params }: RouteContext) {
           memoryBlock,
           conversation.mode === "image" ? IMAGE_MODE_SYSTEM_PROMPT : null,
           slashParsed ? slashSystemPrompt(slashParsed) : null,
+          customSlashBlock,
           // Custom prompt LAST so its override framing wins on recency.
           customSystemPrompt
             ? buildCustomSystemPromptBlock(customSystemPrompt)

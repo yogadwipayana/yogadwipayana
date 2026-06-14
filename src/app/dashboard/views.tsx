@@ -14,6 +14,8 @@ import {
   ArrowUp,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   Clock,
   Copy,
@@ -38,6 +40,7 @@ import {
   Sparkles,
   Terminal,
   Trash2,
+  Wrench,
   X,
 } from "lucide-react";
 import hljs from "highlight.js/lib/common";
@@ -522,6 +525,40 @@ function useSystemPrompts() {
   return { prompts, loading };
 }
 
+type SlashCommandOption = { command: string; description: string };
+
+function useCustomSlashCommands() {
+  const [commands, setCommands] = useState<SlashCommandOption[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/custom-slash-commands");
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          commands: { trigger: string; description: string }[];
+        };
+        if (!cancelled) {
+          setCommands(
+            data.commands.map((c) => ({
+              command: `/${c.trigger}`,
+              description: c.description,
+            })),
+          );
+        }
+      } catch {
+        // Best-effort: the built-in commands still work without these.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return commands;
+}
+
 export function ChatView({
   conversation,
   defaultModel,
@@ -555,7 +592,11 @@ export function ChatView({
   const [promptId, setPromptId] = useState<string | null>(
     conversation.system_prompt_id ?? null,
   );
+  const [disabledTools, setDisabledTools] = useState<string[]>(
+    conversation.disabled_tools ?? [],
+  );
   const { prompts: systemPrompts, loading: promptsLoading } = useSystemPrompts();
+  const customCommands = useCustomSlashCommands();
   const [loaded, setLoaded] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -697,6 +738,7 @@ export function ChatView({
             mode: ChatMode;
             updated_at: string;
             system_prompt_id?: string | null;
+            disabled_tools?: string[];
           };
           messages: ChatMessage[];
           images?: Array<{ url: string; prompt: string }>;
@@ -709,6 +751,7 @@ export function ChatView({
         setModel(data.conversation.model || defaultModel || "");
         setMode(data.conversation.mode ?? "chat");
         setPromptId(data.conversation.system_prompt_id ?? null);
+        setDisabledTools(data.conversation.disabled_tools ?? []);
         // Restore persisted images (oldest first so the tab matches conversation order)
         if (data.images && data.images.length > 0) {
           setLoadedImages([...data.images].reverse());
@@ -889,6 +932,31 @@ export function ChatView({
     [conversation.id, promptId, onConversationUpdated],
   );
 
+  const handleToggleToolCategory = useCallback(
+    async (category: string) => {
+      const previous = disabledTools;
+      const next = previous.includes(category)
+        ? previous.filter((c) => c !== category)
+        : [...previous, category];
+      setDisabledTools(next);
+      try {
+        const res = await fetch(`/api/conversations/${conversation.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ disabled_tools: next }),
+        });
+        if (!res.ok) {
+          setDisabledTools(previous);
+          return;
+        }
+        const data = (await res.json()) as { conversation: ChatConversationSummary };
+        onConversationUpdated?.(data.conversation);
+      } catch {
+        setDisabledTools(previous);
+      }
+    },
+    [conversation.id, disabledTools, onConversationUpdated],
+  );
 
   const consumeStream = useCallback(
     async (
@@ -946,6 +1014,7 @@ export function ChatView({
             delta?: string;
             error?: string;
             follow_ups?: unknown[];
+            stopped?: string;
             saved?: { role: "user" | "assistant"; id: string };
             tool?: {
               name: string;
@@ -956,6 +1025,17 @@ export function ChatView({
             };
           };
           if (parsed.error) throw new Error(parsed.error);
+          if (parsed.stopped) {
+            // The turn was cut off (e.g. tool-call budget). Tag the current
+            // assistant message so the UI can offer a Continue action.
+            const reason = parsed.stopped;
+            applyAndPublish((prev) =>
+              prev.map((m) =>
+                m.id === currentAssistantId ? { ...m, stoppedReason: reason } : m,
+              ),
+            );
+            continue;
+          }
           if (parsed.saved) {
             const saved = parsed.saved;
             // Reconcile local IDs with persisted DB IDs so user-message edits
@@ -1312,6 +1392,76 @@ export function ChatView({
     onConversationUpdated,
   ]);
 
+  const handleContinue = useCallback(async () => {
+    if (isStreaming) return;
+    if (messages.length === 0) return;
+    // Continue keeps the cut-off assistant turn in place and appends a NEW
+    // streaming placeholder (server does not delete the prior turn).
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== "assistant") return;
+
+    const assistantMsg: ChatMessage = {
+      id: `local-assistant-${Date.now()}`,
+      role: "assistant",
+      content: "",
+    };
+
+    pinnedToBottomRef.current = true;
+    const seed = [...messages, assistantMsg];
+    messagesRef.current = seed;
+    setMessages(seed);
+    _publishLive(conversation.id, seed);
+    notifyStreaming(true);
+    setError(null);
+
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    try {
+      const res = await fetch(
+        `/api/conversations/${conversation.id}/messages/continue`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: ctrl.signal,
+        },
+      );
+      await consumeStream(res, assistantMsg.id);
+      onConversationUpdated?.({
+        id: conversation.id,
+        title: conversation.title,
+        model,
+        mode,
+        updated_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      const message =
+        err instanceof Error ? err.message : "Something went wrong.";
+      setError(message);
+      setMessages((prev) => {
+        const lastMsg = prev[prev.length - 1];
+        if (lastMsg && lastMsg.id === assistantMsg.id && lastMsg.content === "") {
+          return prev.slice(0, -1);
+        }
+        return prev;
+      });
+    } finally {
+      if (abortRef.current === ctrl) abortRef.current = null;
+      notifyStreaming(false);
+    }
+  }, [
+    consumeStream,
+    conversation.id,
+    conversation.title,
+    isStreaming,
+    messages,
+    model,
+    mode,
+    notifyStreaming,
+    onConversationUpdated,
+  ]);
+
   const handleFollowUp = useCallback(
     (text: string) => { handleSend(text); },
     [handleSend],
@@ -1381,6 +1531,20 @@ export function ChatView({
           },
         );
         await consumeStream(res, assistantMsg.id);
+        // Branching: the edit created a NEW user message server-side (fresh id)
+        // and changed sibling counts. Refetch the active path so local ids and
+        // branch-navigator counts match the server.
+        try {
+          const r = await fetch(`/api/conversations/${conversation.id}`);
+          if (r.ok) {
+            const d = (await r.json()) as { messages: ChatMessage[] };
+            messagesRef.current = d.messages;
+            setMessages(d.messages);
+            _publishLive(conversation.id, d.messages);
+          }
+        } catch {
+          // Non-fatal: optimistic state already shows the new branch.
+        }
         onConversationUpdated?.({
           id: conversation.id,
           title: conversation.title,
@@ -1427,6 +1591,29 @@ export function ChatView({
     ],
   );
 
+  // Branch navigator: switch the active path to a sibling branch. Calls the
+  // activate endpoint (which descends the sibling to its leaf) and replaces the
+  // rendered messages with the returned path. No generation happens.
+  const handleSwitchBranch = useCallback(
+    async (siblingId: string) => {
+      if (isStreaming) return;
+      try {
+        const res = await fetch(
+          `/api/conversations/${conversation.id}/messages/${siblingId}/activate`,
+          { method: "POST" },
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as { messages: ChatMessage[] };
+        messagesRef.current = data.messages;
+        setMessages(data.messages);
+        _publishLive(conversation.id, data.messages);
+      } catch {
+        // Non-fatal: leave the current branch shown.
+      }
+    },
+    [conversation.id, isStreaming],
+  );
+
   // Slash command: detect when input matches ^\s*\/\w*$
   const checkSlash = useCallback((val: string) => {
     const match = /^\s*\/(\w*)$/.exec(val);
@@ -1442,10 +1629,10 @@ export function ChatView({
 
   const filteredCommands = useMemo(
     () =>
-      SLASH_COMMANDS.filter((c) =>
+      [...SLASH_COMMANDS, ...customCommands].filter((c) =>
         c.command.slice(1).startsWith(slashFilter),
       ),
-    [slashFilter],
+    [slashFilter, customCommands],
   );
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1999,6 +2186,13 @@ export function ChatView({
                 onRegenerate={
                   isLastAssistant && !isStreaming ? handleRegenerate : undefined
                 }
+                onContinue={
+                  isLastAssistant &&
+                  !isStreaming &&
+                  m.stoppedReason === "tool_budget"
+                    ? handleContinue
+                    : undefined
+                }
                 onEdit={
                   isUser && isPersisted && !isStreaming
                     ? (next) => handleEditUser(m.id, next)
@@ -2016,6 +2210,11 @@ export function ChatView({
                 }
                 onFollowUp={
                   isLastAssistant && !isStreaming ? handleFollowUp : undefined
+                }
+                onSwitchBranch={
+                  !isStreaming && (m.branchCount ?? 1) > 1
+                    ? handleSwitchBranch
+                    : undefined
                 }
               />
             );
@@ -2222,6 +2421,10 @@ export function ChatView({
                   selectedId={promptId}
                   onSelect={handleSelectPrompt}
                   loading={promptsLoading}
+                />
+                <ToolsSelector
+                  disabled={disabledTools}
+                  onToggle={handleToggleToolCategory}
                 />
               </div>
 
@@ -2863,23 +3066,27 @@ function ChatBubble({
   prevRole,
   streaming,
   onRegenerate,
+  onContinue,
   onEdit,
   onIterateImage,
   onApproveTerminalCommand,
   onAnswerQuestion,
   questionInteractive,
   onFollowUp,
+  onSwitchBranch,
 }: {
   message: ChatMessage;
   prevRole: ChatMessage["role"] | null;
   streaming?: boolean;
   onRegenerate?: () => void;
+  onContinue?: () => void;
   onEdit?: (nextContent: string) => void;
   onIterateImage?: (url: string) => void;
   onApproveTerminalCommand?: ApproveTerminalCommand;
   onAnswerQuestion?: AnswerQuestion;
   questionInteractive?: boolean;
   onFollowUp?: (text: string) => void;
+  onSwitchBranch?: (siblingId: string) => void;
 }) {
   const isUser = message.role === "user";
   const isFirstInGroup = prevRole !== message.role;
@@ -2914,6 +3121,46 @@ function ChatBubble({
     }
     onEdit?.(next);
   }, [draft, message.content, onEdit]);
+
+  // Branch navigator (‹ idx/count ›). Rendered only when this message has
+  // sibling branches and a switch handler is wired. Prev/next map to adjacent
+  // siblings; switching descends that branch to its leaf server-side.
+  const branchNav =
+    onSwitchBranch &&
+    message.siblingIds &&
+    message.branchCount &&
+    message.branchCount > 1 &&
+    message.branchIndex ? (
+      <span className="inline-flex items-center gap-0.5 text-white/40">
+        <button
+          type="button"
+          aria-label="Previous branch"
+          disabled={message.branchIndex <= 1}
+          onClick={() => {
+            const prev = message.siblingIds?.[message.branchIndex! - 2];
+            if (prev) onSwitchBranch(prev);
+          }}
+          className="inline-flex h-6 w-6 items-center justify-center rounded text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white/70 disabled:opacity-30 disabled:hover:bg-transparent"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" aria-hidden />
+        </button>
+        <span className="text-[11px] tabular-nums">
+          {message.branchIndex}/{message.branchCount}
+        </span>
+        <button
+          type="button"
+          aria-label="Next branch"
+          disabled={message.branchIndex >= message.branchCount}
+          onClick={() => {
+            const next = message.siblingIds?.[message.branchIndex!];
+            if (next) onSwitchBranch(next);
+          }}
+          className="inline-flex h-6 w-6 items-center justify-center rounded text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white/70 disabled:opacity-30 disabled:hover:bg-transparent"
+        >
+          <ChevronRight className="h-3.5 w-3.5" aria-hidden />
+        </button>
+      </span>
+    ) : null;
 
   const cancelEdit = useCallback(() => {
     setDraft(message.content);
@@ -3059,6 +3306,7 @@ function ChatBubble({
                 <Pencil className="h-3.5 w-3.5" aria-hidden />
               </button>
             )}
+            {branchNav}
           </div>
         </div>
       </div>
@@ -3129,6 +3377,19 @@ function ChatBubble({
                 <RefreshCw className="h-3.5 w-3.5" aria-hidden />
               </button>
             )}
+            {onContinue && (
+              <button
+                type="button"
+                onClick={onContinue}
+                title="Continue past the tool-call limit"
+                aria-label="Continue response"
+                className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[#3ecf8e]/30 bg-[#3ecf8e]/[0.08] px-2.5 text-[12px] font-medium text-[#3ecf8e]/90 transition-colors hover:border-[#3ecf8e]/50 hover:text-[#3ecf8e]"
+              >
+                <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                Continue
+              </button>
+            )}
+            {branchNav}
 
             {/* Spacer */}
             <div className="flex-1" />
@@ -3727,6 +3988,100 @@ function PromptSelector({
                   );
                 })
               )}
+            </ul>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Tool category toggle dropdown                                             */
+/* -------------------------------------------------------------------------- */
+
+const TOOL_CATEGORY_OPTIONS: { key: string; label: string; description: string }[] = [
+  { key: "web", label: "Web", description: "Search & fetch pages" },
+  { key: "vps", label: "VPS & terminal", description: "Server control, SSH, terminal" },
+  { key: "media", label: "Images & docs", description: "Generate images and Word files" },
+  { key: "memory", label: "Memory", description: "Save facts about you" },
+  { key: "context7", label: "Library docs", description: "Context7 documentation lookup" },
+];
+
+function ToolsSelector({
+  disabled,
+  onToggle,
+}: {
+  disabled: string[];
+  onToggle: (category: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const offCount = disabled.length;
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title="Tools"
+        className={`group flex items-center gap-1 text-[12px] transition-colors ${
+          offCount > 0 ? "text-[#3ecf8e]/80 hover:text-[#3ecf8e]" : "text-white/50 hover:text-white/80"
+        }`}
+      >
+        <Wrench className="h-3 w-3 shrink-0" aria-hidden />
+        <span className="max-w-[100px] truncate sm:max-w-[130px]">
+          {offCount > 0 ? `Tools (${offCount} off)` : "Tools"}
+        </span>
+        <ChevronDown
+          className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`}
+          aria-hidden
+        />
+      </button>
+
+      {open && (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-10"
+            aria-label="Close tools picker"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute bottom-full left-0 z-20 mb-2 w-[calc(100vw-2rem)] max-w-[280px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30">
+            <div className="border-b border-white/[0.06] px-3 py-2">
+              <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">
+                Tools for this chat
+              </span>
+            </div>
+            <ul className="max-h-64 overflow-y-auto p-1.5">
+              {TOOL_CATEGORY_OPTIONS.map((opt) => {
+                const enabled = !disabled.includes(opt.key);
+                return (
+                  <li key={opt.key}>
+                    <button
+                      type="button"
+                      onClick={() => onToggle(opt.key)}
+                      className="flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left text-white/70 transition-colors hover:bg-white/[0.04] hover:text-white"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px]">{opt.label}</span>
+                        <span className="block truncate text-[11px] text-white/35">
+                          {opt.description}
+                        </span>
+                      </span>
+                      <span
+                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+                          enabled
+                            ? "border-[#3ecf8e] bg-[#3ecf8e]"
+                            : "border-white/20 bg-transparent"
+                        }`}
+                        aria-hidden
+                      >
+                        {enabled && <Check className="h-3 w-3 text-[#0a0a0a]" />}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         </>

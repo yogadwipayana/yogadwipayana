@@ -161,6 +161,16 @@ export type ChatMessage = {
   content: string;
   toolEvents?: ToolEvent[];
   followUps?: string[];
+  /** Set when the turn stopped abnormally (e.g. "tool_budget") — drives Continue. */
+  stoppedReason?: string;
+  /** Parent in the message tree (branching). Null/undefined for the root. */
+  parentId?: string | null;
+  /** 1-based position among sibling branches; only present when branchCount > 1. */
+  branchIndex?: number;
+  /** Number of sibling branches at this point; only present when > 1. */
+  branchCount?: number;
+  /** Sibling message ids in display order, for the branch navigator. */
+  siblingIds?: string[];
 };
 
 export type ChatMode = "chat" | "image";
@@ -174,6 +184,9 @@ export type ChatConversationSummary = {
   is_public?: boolean;
   share_token?: string | null;
   system_prompt_id?: string | null;
+  disabled_tools?: string[];
+  pinned?: boolean;
+  archived_at?: string | null;
 };
 
 export const CHAT_MODES: { slug: ChatMode; name: string; description: string }[] = [

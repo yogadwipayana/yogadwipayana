@@ -18,7 +18,7 @@ const CreateBody = z.object({
   system_prompt_id: z.string().uuid().nullable().optional(),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = createClient(await cookies());
   const {
     data: { user },
@@ -27,7 +27,8 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const conversations = await listConversations(supabase, user.id);
+  const archived = new URL(request.url).searchParams.get("archived") === "1";
+  const conversations = await listConversations(supabase, user.id, { archived });
   return NextResponse.json({ conversations });
 }
 

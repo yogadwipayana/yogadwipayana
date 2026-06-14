@@ -24,11 +24,11 @@ Map of what to improve or add across the codebase, ordered by impact.
 ## 3. New features
 
 ### Chat
-1. Conversation branching (edit already truncates — keep branches instead of discarding).
-2. Stop → resume / "continue" past the tool-round limit.
-3. Per-conversation tool toggles (disable VPS/web tools).
-4. Conversation search / pin / archive in the sidebar.
-5. Custom slash commands stored alongside system prompts.
+1. ~~Conversation branching (edit already truncates — keep branches instead of discarding).~~ **Done** — `parent_message_id` on `message` + `active_leaf_message_id` on `conversation` (backfilled); `getMessages` walks the active path; edit/regenerate branch instead of delete (`branchUserMessage`, retained siblings); `/messages/[id]/activate` switches branch; `‹ idx/count ›` navigator in `views.tsx`.
+2. ~~Stop → resume / "continue" past the tool-round limit.~~ **Done** — budget path now persists accumulated text + a `stopped_reason` marker and emits a `{stopped:"tool_budget"}` frame; a `/messages/continue` route re-streams a NEW assistant message (regenerate minus the delete) with a continuation instruction; client shows a Continue button (live + after reload via `stopped_reason`).
+3. ~~Per-conversation tool toggles (disable VPS/web tools).~~ **Done** — `disabled_tools` jsonb on `conversation`; category-level toggles (web/vps/media/memory/context7) filtered in `getChatTools`; toolbar `ToolsSelector` in `views.tsx`.
+4. ~~Conversation search / pin / archive in the sidebar.~~ **Done** — search was already client-side; added `pinned` + `archived_at` on `conversation`, pin-first ordering in `listConversations` (`?archived=1` for the bin), Pin/Archive in the sidebar ⋯ menu, a "Pinned" section, and an Archived view (`chat/archived.tsx`). Pin/archive don't bump `updated_at`.
+5. ~~Custom slash commands stored alongside system prompts.~~ **Done** — `custom_slash_command` table (per-user `/trigger`, unique, RLS), service + `/api/custom-slash-commands` CRUD, resolved in all three chat routes (`resolveCustomSlashBlock`, built-ins take precedence), management view (`chat/custom-commands.tsx`), and merged into the composer autocomplete.
 
 ### Images
 1. ~~Upscale / variations (reuse the `images` ref flow).~~ ✅ Done. Shipped as ref-generations: **Variations** (re-gen with current image as reference) and **Upscale** (re-gen at the largest matching aspect + "high resolution" prompt suffix). Note: the provider has **no true upscale param** (only discrete `size` values), so Upscale is an honest higher-res re-gen, not lossless upscaling.

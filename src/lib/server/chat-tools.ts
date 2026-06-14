@@ -3,6 +3,11 @@ import type OpenAI from "openai";
 
 import { normalizeAspectInput, presetToSize } from "@/lib/aspect-ratio";
 import {
+  createPresignedDownloadUrl,
+  keyFromProxyUrl,
+  objectExists,
+} from "@/lib/r2";
+import {
   addFirewallRule,
   bindSshKeyToInstance,
   getInstanceDetail,
@@ -16,6 +21,7 @@ import {
 } from "@/lib/server/dashboard-service";
 import { generateImage } from "@/lib/server/image-gen";
 import { generateAndRecord } from "@/lib/server/image-service";
+import { createMemory } from "@/lib/server/memory-service";
 import { generateAndRecord as generateDocAndRecord } from "@/lib/server/docx-service";
 import {
   callContext7Tool,
@@ -515,6 +521,26 @@ export const CHAT_TOOLS: ChatTool[] = [
           },
         },
         required: ["title", "markdown"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "memory_save",
+      description:
+        "Save a durable fact or preference about the user to long-term memory so it carries across all future conversations. Use this SPARINGLY and only for stable, reusable facts the user states about themselves, their tech stack, their environment, or how they want you to respond (e.g. 'I deploy with Docker on Tencent Lighthouse', 'always reply in Bahasa Indonesia', 'my timezone is Asia/Jakarta'). Do NOT save transient task details, one-off questions, secrets/credentials, or anything the user did not actually express as a lasting preference. The saved memory is injected into the system prompt of every future chat. After saving, briefly mention in your reply that you've remembered it.",
+      parameters: {
+        type: "object",
+        properties: {
+          content: {
+            type: "string",
+            description:
+              "The single fact or preference to remember, written as a concise standalone statement in the third person or imperative (e.g. 'Prefers TypeScript over JavaScript', 'Deploys with Docker on Tencent Lighthouse'). Keep it short and self-contained.",
+          },
+        },
+        required: ["content"],
         additionalProperties: false,
       },
     },
@@ -1025,10 +1051,29 @@ export async function executeTool(
         typeof args.image_url === "string" ? args.image_url.trim() : "";
       if (!prompt) return JSON.stringify({ error: "Missing prompt" });
       if (!imageUrl) return JSON.stringify({ error: "Missing image_url" });
-      const validation = await validatePublicHttpUrl(imageUrl);
-      if (!validation.ok) {
-        return JSON.stringify({ error: validation.error });
+
+      // The source image may be one of our own R2-backed files (a private
+      // /api/files proxy URL the external generator can't fetch) or an
+      // external public URL. For our own files, presign a short-lived R2 URL
+      // the provider can reach; for external URLs, keep the SSRF check.
+      let providerImageUrl: string;
+      const ownKey = keyFromProxyUrl(imageUrl);
+      if (ownKey) {
+        if (!(await objectExists(ownKey))) {
+          return JSON.stringify({ error: "Source image not found in storage" });
+        }
+        providerImageUrl = await createPresignedDownloadUrl({
+          key: ownKey,
+          expiresIn: 600,
+        });
+      } else {
+        const validation = await validatePublicHttpUrl(imageUrl);
+        if (!validation.ok) {
+          return JSON.stringify({ error: validation.error });
+        }
+        providerImageUrl = imageUrl;
       }
+
       const size = resolveSize(args);
       const result = await runAndPersist({
         context,
@@ -1036,7 +1081,7 @@ export async function executeTool(
         options: {
           prompt,
           size,
-          image: imageUrl,
+          image: providerImageUrl,
           abortSignal: context.abortSignal,
         },
       });
@@ -1060,6 +1105,26 @@ export async function executeTool(
         options: { markdown, title, tableOfContents, abortSignal: context.abortSignal },
       });
       return JSON.stringify({ url: row.url, title: row.title });
+    }
+
+    if (name === "memory_save") {
+      const content = typeof args.content === "string" ? args.content.trim() : "";
+      if (!content) return JSON.stringify({ error: "Missing content" });
+      if (content.length > 2_000) {
+        return JSON.stringify({ error: "Memory content too long (max 2000 chars)" });
+      }
+      if (!context.supabase) {
+        return JSON.stringify({ error: "Saving memory requires an authenticated session" });
+      }
+      const row = await createMemory(context.supabase, context.userId, {
+        content,
+        source: "ai",
+      });
+      return JSON.stringify({
+        ok: true,
+        saved: row.content,
+        note: "Saved to long-term memory. It will be available in future conversations.",
+      });
     }
 
     return JSON.stringify({ error: `Unknown tool: ${name}` });
@@ -1106,7 +1171,7 @@ async function runAndPersist(args: {
       source: "chat",
       options,
     });
-    return { url: row.url, prompt: row.prompt };
+    return { url: row.url ?? "", prompt: row.prompt };
   }
   return generateImage(options);
 }

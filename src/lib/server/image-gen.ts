@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+
+import { fileProxyUrl, putObject } from "@/lib/r2";
 
 /**
  * Generates an image from a text prompt using the cx/gpt-5.5-image model via
- * the configured OpenAI-compatible endpoint. The image is saved to
- * public/generated-images/ and the public URL path is returned.
+ * the configured OpenAI-compatible endpoint. The image is uploaded to
+ * Cloudflare R2 and a same-origin proxy URL is returned.
  *
  * NOTE: Generation typically takes ~90 seconds. The function uses a 3-minute
  * timeout to accommodate this latency.
@@ -26,6 +26,19 @@ export type GenerateImageOptions = {
   image?: string;
   /** Multiple reference images (style + subject, etc.). Most providers cap at 4. */
   images?: string[];
+  /** Negative prompt — concepts to steer away from. */
+  negativePrompt?: string;
+  /**
+   * Output background. "transparent" requires a PNG/WebP output and powers the
+   * one-click background-removal action. Defaults to "auto".
+   */
+  background?: "auto" | "transparent" | "opaque";
+  /**
+   * Inpaint mask (data URL or remote URL). When set, generation switches to the
+   * `/images/edits` endpoint: fully-transparent (alpha=0) areas of the mask mark
+   * the region to regenerate. Requires `image` to be set as the base image.
+   */
+  mask?: string;
   /** External AbortSignal — cancels both the request and SSE reader. */
   abortSignal?: AbortSignal;
 };
@@ -41,7 +54,10 @@ export async function generateImage(opts: GenerateImageOptions): Promise<{ url: 
     throw new Error("OPENAI_API_KEY environment variable is not set");
   }
 
-  const endpoint = `${baseUrl.replace(/\/$/, "")}/images/generations`;
+  // A mask means inpainting, which the OpenAI-compatible spec serves from the
+  // edits endpoint rather than generations.
+  const isEdit = Boolean(opts.mask);
+  const endpoint = `${baseUrl.replace(/\/$/, "")}/images/${isEdit ? "edits" : "generations"}`;
 
   // Compose an AbortSignal that fires on timeout OR external abort. Older
   // runtimes don't have AbortSignal.any, so wire it manually.
@@ -62,12 +78,14 @@ export async function generateImage(opts: GenerateImageOptions): Promise<{ url: 
     n: 1,
     size: opts.size ?? "auto",
     quality: opts.quality ?? "auto",
-    background: "auto",
+    background: opts.background ?? "auto",
     image_detail: "high",
     output_format: "png",
   };
+  if (opts.negativePrompt) body.negative_prompt = opts.negativePrompt;
   if (opts.image) body.image = opts.image;
   if (opts.images && opts.images.length > 0) body.images = opts.images;
+  if (opts.mask) body.mask = opts.mask;
 
   let res: Response;
   try {
@@ -103,13 +121,11 @@ export async function generateImage(opts: GenerateImageOptions): Promise<{ url: 
     opts.abortSignal?.removeEventListener("abort", onExternalAbort);
   }
 
-  const filename = `${Date.now()}-${randomUUID()}.png`;
-  const outDir = join(process.cwd(), "public", "generated-images");
+  const key = `generated-images/${Date.now()}-${randomUUID()}.png`;
 
-  await mkdir(outDir, { recursive: true });
-  await writeFile(join(outDir, filename), Buffer.from(b64, "base64"));
+  await putObject({ key, body: Buffer.from(b64, "base64"), contentType: "image/png" });
 
-  return { url: `/generated-images/${filename}`, prompt: opts.prompt };
+  return { url: fileProxyUrl(key), prompt: opts.prompt };
 }
 
 /**

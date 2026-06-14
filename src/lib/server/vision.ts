@@ -1,19 +1,40 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import type OpenAI from "openai";
 
+import { getObjectBytes, keyFromProxyUrl, objectExists } from "@/lib/r2";
 import { extractPdfText, extractPdfTextFromBuffer } from "@/lib/server/pdf-parse";
 import { extractDocumentText } from "@/lib/server/document-parse";
+import { validatePublicHttpUrl } from "@/lib/server/safe-fetch";
 
 /**
- * If the URL points to one of our own /uploads/ files, return the absolute
- * filesystem path so we can read it directly. Otherwise return null.
+ * Validate an attachment URL before it reaches the model. Short-circuits for our
+ * own R2-backed files (/api/files/<key>): instead of an SSRF check — which would
+ * reject our own same-origin/localhost proxy URLs — it verifies the object
+ * exists in the bucket. Everything else goes through the SSRF guard.
  */
-function getLocalUploadPath(url: string): string | null {
+export async function validateAttachmentUrl(
+  rawUrl: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const key = keyFromProxyUrl(rawUrl);
+  if (key) {
+    return (await objectExists(key))
+      ? { ok: true }
+      : { ok: false, error: "Uploaded file not found in storage" };
+  }
+  return validatePublicHttpUrl(rawUrl);
+}
+
+/**
+ * If the URL is one of our own R2-backed proxy URLs (/api/files/<key>), fetch
+ * the bytes back from R2 so we can inline/extract them directly — bypassing the
+ * SSRF-guarded fetch, which would block our own same-origin/localhost URLs.
+ * Returns null for anything that isn't our own file.
+ */
+async function getOwnFileBytes(url: string): Promise<Buffer | null> {
+  const key = keyFromProxyUrl(url);
+  if (!key) return null;
   try {
-    const { pathname } = new URL(url);
-    if (!/^\/uploads\/[^/]+$/.test(pathname)) return null;
-    return join(process.cwd(), "public", pathname);
+    const { body } = await getObjectBytes(key);
+    return body;
   } catch {
     return null;
   }
@@ -21,19 +42,14 @@ function getLocalUploadPath(url: string): string | null {
 
 /**
  * Resolve an image attachment to a URL suitable for the model:
- * - Own uploads → base64 data URL (works on localhost and in prod without
- *   requiring the model to make an outbound HTTP request)
+ * - Own uploads → base64 data URL (works without requiring the model to make
+ *   an outbound HTTP request to a private, auth-gated proxy URL)
  * - External URLs → pass through as-is
  */
 async function resolveImageUrl(att: Attachment): Promise<string> {
-  const localPath = getLocalUploadPath(att.url);
-  if (localPath) {
-    try {
-      const buffer = await readFile(localPath);
-      return `data:${att.mime};base64,${buffer.toString("base64")}`;
-    } catch {
-      // Fall back to the original URL if file read fails
-    }
+  const bytes = await getOwnFileBytes(att.url);
+  if (bytes) {
+    return `data:${att.mime};base64,${bytes.toString("base64")}`;
   }
   return att.url;
 }
@@ -93,13 +109,13 @@ export async function buildUserContentWithAttachments(args: {
         image_url: { url: imageUrl },
       });
     } else if (att.kind === "pdf") {
-      // PDF — extract text server-side. For our own uploads, read the bytes
-      // from disk directly: the SSRF-guarded fetch in extractPdfText() blocks
-      // localhost/loopback, so a localhost upload URL would otherwise fail.
+      // PDF — extract text server-side. For our own R2-backed files, fetch the
+      // bytes from R2 directly: the SSRF-guarded fetch in extractPdfText()
+      // blocks our own private proxy URL, so we read the object instead.
       try {
-        const localPath = getLocalUploadPath(att.url);
-        const extracted = localPath
-          ? await extractPdfTextFromBuffer(await readFile(localPath))
+        const ownBytes = await getOwnFileBytes(att.url);
+        const extracted = ownBytes
+          ? await extractPdfTextFromBuffer(ownBytes)
           : await extractPdfText(att.url);
         parts.push({
           type: "text",
@@ -114,15 +130,15 @@ export async function buildUserContentWithAttachments(args: {
       }
     } else {
       // Document (DOCX / XLSX / CSV / TXT / Markdown) — extract text from the
-      // uploaded bytes on disk. Attachments are always our own /uploads/ files,
-      // so we read them directly rather than fetching over HTTP.
+      // uploaded bytes in R2. Attachments are always our own files, so we
+      // fetch them from R2 rather than over HTTP.
       try {
-        const localPath = getLocalUploadPath(att.url);
-        if (!localPath) {
+        const ownBytes = await getOwnFileBytes(att.url);
+        if (!ownBytes) {
           throw new Error("Document must be an uploaded file");
         }
         const extracted = await extractDocumentText(
-          await readFile(localPath),
+          ownBytes,
           att.mime,
           att.name,
         );

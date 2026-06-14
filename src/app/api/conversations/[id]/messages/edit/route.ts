@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { CHAT_SYSTEM_PROMPT, IMAGE_MODE_SYSTEM_PROMPT } from "@/lib/server/chat-prompt";
+import { CHAT_SYSTEM_PROMPT, IMAGE_MODE_SYSTEM_PROMPT, buildCustomSystemPromptBlock, composeSystemMessage } from "@/lib/server/chat-prompt";
 import {
   applyHistoryWindow,
   editUserMessageAndTruncate,
@@ -10,18 +10,25 @@ import {
   getMessages,
 } from "@/lib/server/chat-service";
 import { fail } from "@/lib/server/api-response";
+import {
+  buildMemoryReminder,
+  buildMemorySystemBlock,
+  listActiveMemories,
+} from "@/lib/server/memory-service";
 import { runChatStream } from "@/lib/server/chat-stream";
+import { stopAndWait } from "@/lib/server/chat-registry";
+import { getConversationSystemPromptContent } from "@/lib/server/system-prompt-service";
 import {
   checkRateLimit,
   getClientIp,
   getRateLimitIdentifier,
   ratelimits,
 } from "@/lib/server/rate-limit";
-import { validatePublicHttpUrl } from "@/lib/server/safe-fetch";
 import { parseSlash, slashSystemPrompt, slashRewriteUserContent } from "@/lib/server/slash-commands";
 import {
   buildAttachmentFooter,
   buildUserContentWithAttachments,
+  validateAttachmentUrl,
   type Attachment,
 } from "@/lib/server/vision";
 import { createClient } from "@/utils/supabase/server";
@@ -83,8 +90,21 @@ export async function POST(request: Request, { params }: RouteContext) {
 
     const { content, attachments } = parsed.data;
 
+    // Custom system prompt attached to this conversation (if any).
+    const customSystemPrompt = await getConversationSystemPromptContent(
+      supabase,
+      conversationId,
+      user.id,
+    );
+
+    // Active long-term memory — same injection as the send route so edits keep
+    // honoring the user's standing preferences.
+    const activeMemories = await listActiveMemories(supabase, user.id);
+    const memoryBlock = buildMemorySystemBlock(activeMemories);
+    const memoryReminder = buildMemoryReminder(activeMemories);
+
     for (const att of attachments ?? []) {
-      const validation = await validatePublicHttpUrl(att.url);
+      const validation = await validateAttachmentUrl(att.url);
       if (!validation.ok) {
         return NextResponse.json(
           { error: `Attachment URL rejected: ${validation.error}` },
@@ -96,6 +116,10 @@ export async function POST(request: Request, { params }: RouteContext) {
     // Build the DB-persisted content: user text + optional attachment footer
     const footer = buildAttachmentFooter((attachments ?? []) as Attachment[]);
     const persistedContent = content + footer;
+
+    // Tear down any in-flight generation and wait for it to persist before we
+    // edit + truncate history, so a stale runner can't write after the branch.
+    await stopAndWait(conversationId);
 
     const edited = await editUserMessageAndTruncate(supabase, {
       conversationId,
@@ -142,14 +166,22 @@ export async function POST(request: Request, { params }: RouteContext) {
     );
 
     const messagesForModel = [
-      { role: "system" as const, content: CHAT_SYSTEM_PROMPT },
-      ...(conversation.mode === "image"
-        ? [{ role: "system" as const, content: IMAGE_MODE_SYSTEM_PROMPT }]
-        : []),
-      ...(slashParsed
-        ? [{ role: "system" as const, content: slashSystemPrompt(slashParsed) }]
-        : []),
+      {
+        role: "system" as const,
+        content: composeSystemMessage([
+          CHAT_SYSTEM_PROMPT,
+          memoryBlock,
+          conversation.mode === "image" ? IMAGE_MODE_SYSTEM_PROMPT : null,
+          slashParsed ? slashSystemPrompt(slashParsed) : null,
+          customSystemPrompt
+            ? buildCustomSystemPromptBlock(customSystemPrompt)
+            : null,
+        ]),
+      },
       ...historyForModel,
+      ...(memoryReminder
+        ? [{ role: "system" as const, content: memoryReminder }]
+        : []),
       { role: "user" as const, content: userContentForModel },
     ];
 
@@ -159,7 +191,6 @@ export async function POST(request: Request, { params }: RouteContext) {
       userId: user.id,
       model: conversation.model,
       messages: messagesForModel,
-      abortSignal: request.signal,
     });
   } catch (err) {
     return fail(err);

@@ -8,7 +8,7 @@ import { isAuthApiError } from "@supabase/supabase-js";
 import { z } from "zod";
 
 import { createClient } from "@/utils/supabase/server";
-import { rateLimit, rateLimitReset } from "@/lib/rate-limit";
+import { rateLimit, rateLimitReset } from "@/lib/server/rate-limit";
 
 export type ActionResult =
   | { ok: true }
@@ -197,6 +197,9 @@ function sanitizeRedirectPath(input: string): string {
   if (typeof input !== "string") return "/dashboard";
   if (!input.startsWith("/")) return "/dashboard";
   if (input.startsWith("//") || input.startsWith("/\\")) return "/dashboard";
+  // A legitimate single path never contains whitespace or commas. Duplicate
+  // `next` params get coerced to "/a, /a", which would 404 — reject those.
+  if (/[\s,]/.test(input)) return "/dashboard";
   return input;
 }
 

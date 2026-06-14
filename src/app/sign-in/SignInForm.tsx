@@ -16,6 +16,7 @@ import { FormError } from "@/components/ui/FormError";
 function safeNext(input: string | null): string {
   if (!input || !input.startsWith("/")) return "/dashboard";
   if (input.startsWith("//") || input.startsWith("/\\")) return "/dashboard";
+  if (/[\s,]/.test(input)) return "/dashboard";
   return input;
 }
 

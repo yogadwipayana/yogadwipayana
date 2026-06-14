@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { extname } from "node:path";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { fail } from "@/lib/server/api-response";
+import { fileProxyUrl, putObject } from "@/lib/r2";
 import {
   checkRateLimit,
   getClientIp,
@@ -36,8 +36,8 @@ const MAX_BYTES = 50 * 1024 * 1024; // 50 MB
 
 /**
  * POST /api/upload  (multipart/form-data, field: "file")
- * Saves the file to public/uploads/ and returns its public URL.
- * No external storage required — mirrors how generated images are stored.
+ * Streams the file to Cloudflare R2 under u/{user_id}/ and returns a
+ * same-origin proxy URL (/api/files/<key>) that streams it back from R2.
  */
 export async function POST(request: Request) {
   try {
@@ -75,13 +75,15 @@ export async function POST(request: Request) {
     }
 
     const ext = extname(file.name) || (file.type === "application/pdf" ? ".pdf" : ".png");
-    const filename = `${Date.now()}-${randomUUID()}${ext}`;
-    const outDir = join(process.cwd(), "public", "uploads");
+    const key = `u/${user.id}/${Date.now()}-${randomUUID()}${ext}`;
 
-    await mkdir(outDir, { recursive: true });
-    await writeFile(join(outDir, filename), Buffer.from(await file.arrayBuffer()));
+    await putObject({
+      key,
+      body: Buffer.from(await file.arrayBuffer()),
+      contentType: file.type,
+    });
 
-    return NextResponse.json({ publicUrl: `/uploads/${filename}` });
+    return NextResponse.json({ publicUrl: fileProxyUrl(key) });
   } catch (err) {
     return fail(err);
   }

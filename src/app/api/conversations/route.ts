@@ -15,6 +15,7 @@ const CreateBody = z.object({
   model: z.string().min(1).max(120).optional(),
   mode: z.enum(["chat", "image"]).optional(),
   title: z.string().min(1).max(200).optional(),
+  system_prompt_id: z.string().uuid().nullable().optional(),
 });
 
 export async function GET() {
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
     model: parsed.data.model ?? DEFAULT_MODEL,
     mode: parsed.data.mode,
     title: parsed.data.title,
+    systemPromptId: parsed.data.system_prompt_id,
   });
 
   return NextResponse.json({ conversation }, { status: 201 });

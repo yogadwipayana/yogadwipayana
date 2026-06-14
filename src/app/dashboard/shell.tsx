@@ -13,27 +13,35 @@ import {
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
+  BarChart3,
+  Brain,
   CheckCircle2,
+  CornerDownLeft,
   ExternalLink,
+  FileText,
   HelpCircle,
   Home,
+  Image as ImageIcon,
+  ImagePlus,
   Loader2,
   LogOut,
   Menu,
+  MessageSquare,
   MoreHorizontal,
   Pencil,
   Plus,
   Search,
   Server,
   Settings,
+  Terminal,
   Trash2,
+  Waypoints,
   X,
   XCircle,
 } from "lucide-react";
 import type { ChatConversationSummary, ChatMode, ToolId } from "./data";
 import type { GeneratedImageRow } from "@/lib/server/image-service";
-import type { AspectRatioPreset } from "@/lib/aspect-ratio";
-import type { GenerateArgs, Quality } from "./image/workspace";
+import type { GenerateArgs } from "./image/workspace";
 import { ImageWorkspace } from "./image/workspace";
 
 import { SETTINGS_TOOL, TOOLS } from "./data";
@@ -48,6 +56,9 @@ import {
   type AttachmentPayload,
 } from "./views";
 import { GalleryView } from "./chat/gallery";
+import { MemoryView } from "./chat/memory";
+import { SystemPromptsView } from "./chat/system-prompts";
+import { UsageView } from "./chat/usage";
 import { Logo } from "@/components/ui/Logo";
 import { vpsApi, type VpsInstance as ApiVpsInstance } from "@/lib/client/vps-api";
 import { normalizeStatus, toUiInstance } from "@/lib/client/vps-mappers";
@@ -89,16 +100,6 @@ type SubSection = {
   scrollable?: boolean;
 };
 
-type PendingImage = {
-  id: string;
-  prompt: string;
-  negativePrompt?: string;
-  aspect: AspectRatioPreset;
-  quality: Quality;
-  imageUrls?: string[];
-  createdAt: string; // ISO — used to compute elapsed time in the workspace
-};
-
 type AppToast = {
   id: string;
   type: "success" | "error";
@@ -114,7 +115,6 @@ function buildSections(
   chatConversations: ChatConversationSummary[],
   vpsInstances: readonly ApiVpsInstance[],
   images: GeneratedImageRow[],
-  pendingImages: PendingImage[],
   onDeleteConversation?: (id: string) => void,
   onRenameConversation?: (id: string, title: string) => void,
   onReorderVps?: (orderedIds: string[]) => void,
@@ -200,18 +200,13 @@ function buildSections(
       {
         title: "Generations",
         searchable: true,
-        items: [
-          // Pending (in-flight) generations appear at the top with a spinner
-          ...pendingImages.map((p) => ({
-            id: p.id,
-            label: truncatePrompt(p.prompt),
-            streaming: true,
-          })),
-          ...images.map((img) => ({
-            id: img.id,
-            label: truncatePrompt(img.prompt),
-          })),
-        ],
+        items: images.map((img) => ({
+          id: img.id,
+          label: truncatePrompt(img.prompt),
+          // Pending (in-flight) generations show a spinner; derived from the
+          // DB row status so it survives reloads and cross-tool navigation.
+          streaming: img.status === "pending",
+        })),
       },
     ];
   }
@@ -250,10 +245,23 @@ function buildSections(
 
 const PLACEHOLDER_LABELS: Record<string, { title: string; description: string }> = {
   "ai:fallbacks": { title: "Fallbacks", description: "Per-route fallback chain when the primary model fails." },
-  "chat:prompts": { title: "System Prompts", description: "Reusable prompt blocks pinned across conversations." },
-  "chat:memory": { title: "Memory", description: "Long-term memory entries the assistant references." },
-  "chat:usage": { title: "Usage", description: "Tokens and conversation activity over time." },
 };
+
+/**
+ * Chat config items that have their own static route under /dashboard/chat/*.
+ * These reserved URL segments take precedence over the [id] dynamic route, so
+ * selecting them navigates rather than holding selection in local state.
+ * Conversation ids are UUIDs, so they never collide with these words.
+ */
+const CHAT_SEGMENT_TO_ITEM: Record<string, string> = {
+  "system-prompts": "chat:prompts",
+  memory: "chat:memory",
+  gallery: "chat:gallery",
+  usage: "chat:usage",
+};
+const CHAT_ITEM_TO_SEGMENT: Record<string, string> = Object.fromEntries(
+  Object.entries(CHAT_SEGMENT_TO_ITEM).map(([seg, id]) => [id, seg]),
+);
 
 /* -------------------------------------------------------------------------- */
 /*  Shell                                                                     */
@@ -299,10 +307,13 @@ export function DashboardShell({
     setImages(initialImagesProp ?? []);
   }
 
-  // Pending (in-flight) image generations — optimistic entries added immediately
-  // when Generate is clicked, replaced by real rows on success.
-  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
-  const pendingAbortRef = useRef(new Map<string, AbortController>());
+  // Pending generations are server-side jobs persisted as rows with
+  // status='pending'. They live in `images`, so they survive reload and
+  // cross-tool navigation. We poll while any pending row exists.
+  const hasPendingImage = useMemo(
+    () => images.some((img) => img.status === "pending"),
+    [images],
+  );
 
   // Toast notifications
   const [toasts, setToasts] = useState<AppToast[]>([]);
@@ -333,10 +344,23 @@ export function DashboardShell({
         : vpsInstances[0]?.id ?? "",
     ai: "ai:usage",
     chat: chatConversations[0]?.id ?? "",
-    image: toolId === "image" ? (initialImagesProp?.[0]?.id ?? "") : "",
+    image: "",
     settings: initialActiveId ?? "settings:account",
   }));
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Global ⌘K / Ctrl+K toggles the command palette.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   // Tracks which conversation IDs have a streaming response in-flight so the
   // sub-sidebar can show a spinner even after the user navigates away.
@@ -371,19 +395,24 @@ export function DashboardShell({
 
   // ── Route-based chat selection ────────────────────────────────────────────
   // The active conversation lives in the URL: /dashboard/chat/[id]. The layout
-  // segment is the conversation id, or null on the bare /dashboard/chat landing.
-  // Config items (chat:gallery, chat:prompts, …) have no route, so they're held
-  // in local state and only meaningful while no conversation segment is active.
+  // segment is the conversation id, a reserved config word (system-prompts /
+  // memory / gallery / usage), or null on the bare /dashboard/chat landing.
+  // Routed config items resolve straight from the URL; the chatConfigItem
+  // local state remains as a fallback for any item without its own route.
   const chatSegment = useSelectedLayoutSegment();
+  const routedConfigItem = chatSegment ? CHAT_SEGMENT_TO_ITEM[chatSegment] : undefined;
+  // A real conversation id is any segment that isn't one of the reserved words.
+  const conversationSegment =
+    chatSegment && !routedConfigItem ? chatSegment : null;
   const [chatConfigItem, setChatConfigItem] = useState("");
-  // When the user navigates into a conversation, drop any stale config selection
-  // so returning to the landing shows the composer, not the old config view.
+  // When the URL changes, drop any stale local config selection so it doesn't
+  // shadow a conversation or routed config view.
   const [lastChatSegment, setLastChatSegment] = useState(chatSegment);
   if (chatSegment !== lastChatSegment) {
     setLastChatSegment(chatSegment);
     if (chatSegment !== null && chatConfigItem) setChatConfigItem("");
   }
-  const activeChatId = chatSegment ?? chatConfigItem;
+  const activeChatId = routedConfigItem ?? conversationSegment ?? chatConfigItem;
   // Effective active sub-sidebar item for the current tool. Chat is URL-driven;
   // every other tool still reads from local `activeItems` state.
   const activeItemId = toolId === "chat" ? activeChatId : activeItems[toolId];
@@ -391,7 +420,13 @@ export function DashboardShell({
   const handleSelectItem = useCallback(
     (id: string) => {
       if (toolId === "chat") {
-        if (id.startsWith("chat:")) {
+        const segment = CHAT_ITEM_TO_SEGMENT[id];
+        if (segment) {
+          // Routed config item — navigate to its own URL.
+          setChatConfigItem("");
+          router.push(`/dashboard/chat/${segment}`);
+        } else if (id.startsWith("chat:")) {
+          // Config item without its own route — held in local state.
           setChatConfigItem(id);
           if (chatSegment !== null) router.push("/dashboard/chat");
         } else {
@@ -492,13 +527,6 @@ export function DashboardShell({
     return images.filter((img) => img.prompt.toLowerCase().includes(q));
   }, [images, imageSearch, toolId]);
 
-  const filteredPendingImages = useMemo(() => {
-    if (toolId !== "image") return pendingImages;
-    const q = imageSearch.trim().toLowerCase();
-    if (!q) return pendingImages;
-    return pendingImages.filter((p) => p.prompt.toLowerCase().includes(q));
-  }, [pendingImages, imageSearch, toolId]);
-
   const sections = useMemo(
     () =>
       buildSections(
@@ -506,7 +534,6 @@ export function DashboardShell({
         filteredChatConversations,
         vpsInstances,
         filteredImages,
-        filteredPendingImages,
         toolId === "chat" ? handleDeleteConversation : undefined,
         toolId === "chat" ? handleRenameConversation : undefined,
         toolId === "vps" ? handleReorderVps : undefined,
@@ -518,7 +545,6 @@ export function DashboardShell({
       filteredChatConversations,
       vpsInstances,
       filteredImages,
-      filteredPendingImages,
       handleDeleteConversation,
       handleRenameConversation,
       handleReorderVps,
@@ -544,7 +570,7 @@ export function DashboardShell({
   const handleStartChat = useCallback(
     async (
       text: string,
-      opts: { model: string; mode: ChatMode; attachments?: AttachmentPayload[] },
+      opts: { model: string; mode: ChatMode; attachments?: AttachmentPayload[]; systemPromptId?: string | null },
     ) => {
       if (creatingConversation) return;
       setCreatingConversation(true);
@@ -552,7 +578,11 @@ export function DashboardShell({
         const res = await fetch("/api/conversations", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: opts.model, mode: opts.mode }),
+          body: JSON.stringify({
+            model: opts.model,
+            mode: opts.mode,
+            ...(opts.systemPromptId ? { system_prompt_id: opts.systemPromptId } : {}),
+          }),
         });
         if (!res.ok) {
           return;
@@ -596,37 +626,23 @@ export function DashboardShell({
       aspect,
       quality,
       imageUrls,
+      background,
+      maskUrl,
     }: GenerateArgs) => {
-      const tempId = crypto.randomUUID();
-      const pending: PendingImage = {
-        id: tempId,
-        prompt,
-        negativePrompt,
-        aspect,
-        quality,
-        imageUrls,
-        createdAt: new Date().toISOString(),
-      };
-
-      // Add optimistic entry to sidebar immediately and navigate to it
-      setPendingImages((prev) => [pending, ...prev]);
-      setActiveItems((prev) => ({ ...prev, image: tempId }));
-
-      const ctrl = new AbortController();
-      pendingAbortRef.current.set(tempId, ctrl);
-
       try {
         const res = await fetch("/api/images", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             prompt,
+            negative_prompt: negativePrompt,
             aspect_ratio: aspect,
             quality,
             image_urls: imageUrls,
+            background,
+            mask_url: maskUrl,
             source: "workspace",
           }),
-          signal: ctrl.signal,
         });
 
         if (!res.ok) {
@@ -642,41 +658,83 @@ export function DashboardShell({
           throw new Error(errMsg);
         }
 
+        // 202: the server inserted a pending row and is generating in the
+        // background. Add the pending row to state and navigate to it; polling
+        // flips it to completed/failed.
         const data = (await res.json()) as { image: GeneratedImageRow };
-
-        // Replace pending entry with the real generated image
-        setPendingImages((prev) => prev.filter((p) => p.id !== tempId));
         setImages((prev) => [data.image, ...prev]);
-        // Navigate to the real image only if still viewing this pending item
-        setActiveItems((prev) => ({
-          ...prev,
-          image: prev.image === tempId ? data.image.id : prev.image,
-        }));
-        addToast({ type: "success", message: "Image generated successfully" });
+        setActiveItems((prev) => ({ ...prev, image: data.image.id }));
       } catch (err) {
-        // Always clean up the pending entry, even on cancel (AbortError)
-        setPendingImages((prev) => prev.filter((p) => p.id !== tempId));
-        setActiveItems((prev) => ({
-          ...prev,
-          image: prev.image === tempId ? "" : prev.image,
-        }));
-        if (!(err instanceof Error && err.name === "AbortError")) {
-          addToast({
-            type: "error",
-            message: err instanceof Error ? err.message : "Generation failed",
-          });
-        }
-      } finally {
-        pendingAbortRef.current.delete(tempId);
+        addToast({
+          type: "error",
+          message: err instanceof Error ? err.message : "Generation failed",
+        });
       }
     },
     [addToast],
   );
 
-  const handleCancelPending = useCallback((tempId: string) => {
-    pendingAbortRef.current.get(tempId)?.abort();
-    // Cleanup is handled in handleStartGeneration's catch block
-  }, []);
+  // Poll for in-flight jobs. While any pending row exists, re-fetch the list
+  // every 3s and reconcile. Surfaces completion/failure even after a reload or
+  // navigating between tools.
+  useEffect(() => {
+    if (!hasPendingImage) return;
+    let cancelled = false;
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch("/api/images?limit=60");
+        if (!res.ok) return;
+        const data = (await res.json()) as { images: GeneratedImageRow[] };
+        if (cancelled) return;
+        const fetched = data.images;
+        const prevById = new Map(images.map((img) => [img.id, img]));
+        for (const img of fetched) {
+          const before = prevById.get(img.id);
+          if (before?.status === "pending" && img.status === "completed") {
+            addToast({ type: "success", message: "Image generated successfully" });
+          } else if (before?.status === "pending" && img.status === "failed") {
+            addToast({
+              type: "error",
+              message: img.error || "Generation failed",
+            });
+          }
+        }
+        setImages(fetched);
+      } catch {
+        // transient — try again next tick
+      }
+    }, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [hasPendingImage, images, addToast]);
+
+  const handleDeleteImage = useCallback(
+    async (id: string) => {
+      try {
+        const res = await fetch(`/api/images?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok && res.status !== 204) {
+          const json = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(json.error || `HTTP ${res.status}`);
+        }
+        setImages((prev) => prev.filter((img) => img.id !== id));
+        setActiveItems((prev) => ({
+          ...prev,
+          image: prev.image === id ? "" : prev.image,
+        }));
+        addToast({ type: "success", message: "Image deleted" });
+      } catch (err) {
+        addToast({
+          type: "error",
+          message: err instanceof Error ? err.message : "Delete failed",
+        });
+      }
+    },
+    [addToast],
+  );
 
   const onCreate =
     toolId === "chat"
@@ -690,6 +748,7 @@ export function DashboardShell({
       <TopBar
         tool={tool}
         onMenuOpen={() => setDrawerOpen(true)}
+        onSearchOpen={() => setPaletteOpen(true)}
       />
 
       <div className="flex min-h-0 flex-1">
@@ -741,9 +800,8 @@ export function DashboardShell({
               onDeleteConversation: handleDeleteConversation,
               vpsInstances,
               images,
-              pendingImages,
               onGenerate: handleStartGeneration,
-              onCancelPending: handleCancelPending,
+              onDeleteImage: handleDeleteImage,
             });
             // Chat content is fully URL-segment-driven through renderMain (its
             // page files render nothing), so ignore `children` for chat. Other
@@ -797,8 +855,364 @@ export function DashboardShell({
         />
       ) : null}
 
+      {paletteOpen ? (
+        <CommandPalette
+          onClose={() => setPaletteOpen(false)}
+          chatConversations={chatConversations}
+          onCreateConversation={handleCreateConversation}
+          onNewGeneration={handleNewGeneration}
+        />
+      ) : null}
+
       <ToastContainer toasts={toasts} />
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Command palette (⌘K) — cross-tool search + navigation                     */
+/* -------------------------------------------------------------------------- */
+
+type PaletteGroup =
+  | "Actions"
+  | "Navigate"
+  | "Conversations"
+  | "System prompts"
+  | "Memory"
+  | "Images";
+
+type PaletteItem = {
+  id: string;
+  group: PaletteGroup;
+  label: string;
+  sublabel?: string;
+  icon: typeof Search;
+  /** Extra terms folded into the match (model names, tags, etc.). */
+  keywords?: string;
+  run: () => void;
+};
+
+// Order groups appear in the results list.
+const PALETTE_GROUP_ORDER: PaletteGroup[] = [
+  "Actions",
+  "Navigate",
+  "Conversations",
+  "System prompts",
+  "Memory",
+  "Images",
+];
+
+type PaletteEntity = { id: string; label: string; sublabel?: string };
+
+function CommandPalette({
+  onClose,
+  chatConversations,
+  onCreateConversation,
+  onNewGeneration,
+}: {
+  onClose: () => void;
+  chatConversations: ChatConversationSummary[];
+  onCreateConversation: () => void;
+  onNewGeneration: () => void;
+}) {
+  const router = useRouter();
+  const [query, setQuery] = useState("");
+  // Tracks the user's keyboard/hover hover intent. The effective active row is
+  // derived during render by clamping this against the current result count, so
+  // a shrinking list never needs a state-syncing effect.
+  const [activeIndex, setActiveIndex] = useState(0);
+  const listRef = useRef<HTMLDivElement | null>(null);
+
+  // Lazily-fetched entities that aren't in the shell's client state. Fetched
+  // once when the palette opens; the component unmounts on close.
+  const [prompts, setPrompts] = useState<PaletteEntity[] | null>(null);
+  const [memories, setMemories] = useState<PaletteEntity[] | null>(null);
+  const [images, setImages] = useState<PaletteEntity[] | null>(null);
+
+  // Focus the input on mount via a ref callback (no setState-in-effect).
+  const focusInput = useCallback((el: HTMLInputElement | null) => {
+    el?.focus();
+  }, []);
+
+  // One-shot fetch of cross-tool entities not already in memory.
+  useEffect(() => {
+    let cancelled = false;
+    const get = async <T,>(url: string, pick: (json: unknown) => T) => {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        return pick(await res.json());
+      } catch {
+        return null;
+      }
+    };
+    get("/api/system-prompts", (j) => {
+      const list = (j as { prompts?: { id: string; name: string }[] }).prompts ?? [];
+      return list.map((p) => ({ id: p.id, label: p.name }));
+    }).then((v) => {
+      if (!cancelled && v) setPrompts(v);
+    });
+    get("/api/memory", (j) => {
+      const list = (j as { memories?: { id: string; content: string }[] }).memories ?? [];
+      return list.map((m) => ({ id: m.id, label: m.content }));
+    }).then((v) => {
+      if (!cancelled && v) setMemories(v);
+    });
+    get("/api/images?limit=120", (j) => {
+      const list = (j as { images?: { id: string; prompt: string; model: string }[] }).images ?? [];
+      return list.map((img) => ({ id: img.id, label: img.prompt, sublabel: img.model }));
+    }).then((v) => {
+      if (!cancelled && v) setImages(v);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const go = useCallback(
+    (run: () => void) => {
+      onClose();
+      run();
+    },
+    [onClose],
+  );
+
+  // The full candidate list, independent of the query.
+  const items = useMemo<PaletteItem[]>(() => {
+    const out: PaletteItem[] = [];
+
+    // Actions
+    out.push({
+      id: "action:new-conversation",
+      group: "Actions",
+      label: "New conversation",
+      icon: Plus,
+      keywords: "chat create start",
+      run: onCreateConversation,
+    });
+    out.push({
+      id: "action:new-generation",
+      group: "Actions",
+      label: "New image generation",
+      icon: ImagePlus,
+      keywords: "image create generate",
+      run: onNewGeneration,
+    });
+
+    // Navigation — tools and their sub-views (all real routes).
+    const nav: { label: string; href: string; icon: typeof Search; keywords?: string }[] = [
+      { label: "Chat AI", href: "/dashboard/chat", icon: MessageSquare, keywords: "assistant conversation" },
+      { label: "VPS Control", href: "/dashboard/vps", icon: Server, keywords: "infrastructure server instance" },
+      { label: "AI Router", href: "/dashboard/ai", icon: Waypoints, keywords: "models routes" },
+      { label: "Image Studio", href: "/dashboard/image", icon: ImagePlus, keywords: "media generate" },
+      { label: "Settings", href: "/dashboard/settings", icon: Settings, keywords: "account preferences" },
+      { label: "System prompts", href: "/dashboard/chat/system-prompts", icon: FileText, keywords: "chat instructions" },
+      { label: "Memory", href: "/dashboard/chat/memory", icon: Brain, keywords: "chat facts" },
+      { label: "Gallery", href: "/dashboard/chat/gallery", icon: ImageIcon, keywords: "chat images" },
+      { label: "Chat usage", href: "/dashboard/chat/usage", icon: BarChart3, keywords: "tokens cost" },
+      { label: "AI usage", href: "/dashboard/ai/usage", icon: BarChart3, keywords: "router metrics" },
+      { label: "API keys", href: "/dashboard/ai/keys", icon: Waypoints, keywords: "router byok" },
+      { label: "AI billing", href: "/dashboard/ai/billing", icon: BarChart3, keywords: "router cost" },
+      { label: "AI models", href: "/dashboard/ai/models", icon: Waypoints, keywords: "router catalogue" },
+      { label: "VPS terminal", href: "/dashboard/vps/terminal", icon: Terminal, keywords: "ssh console" },
+      { label: "Account", href: "/dashboard/settings/account", icon: Settings },
+      { label: "Security", href: "/dashboard/settings/security", icon: Settings },
+    ];
+    for (const n of nav) {
+      out.push({
+        id: `nav:${n.href}`,
+        group: "Navigate",
+        label: n.label,
+        sublabel: n.href,
+        icon: n.icon,
+        keywords: n.keywords,
+        run: () => router.push(n.href),
+      });
+    }
+
+    // Conversations — already in the shell's client state.
+    for (const c of chatConversations) {
+      out.push({
+        id: `conv:${c.id}`,
+        group: "Conversations",
+        label: c.title || "Untitled conversation",
+        sublabel: c.model,
+        icon: MessageSquare,
+        run: () => router.push(`/dashboard/chat/${c.id}`),
+      });
+    }
+
+    // System prompts — lazily fetched.
+    for (const p of prompts ?? []) {
+      out.push({
+        id: `prompt:${p.id}`,
+        group: "System prompts",
+        label: p.label,
+        icon: FileText,
+        run: () => router.push("/dashboard/chat/system-prompts"),
+      });
+    }
+
+    // Memory facts — lazily fetched.
+    for (const m of memories ?? []) {
+      out.push({
+        id: `mem:${m.id}`,
+        group: "Memory",
+        label: m.label,
+        icon: Brain,
+        run: () => router.push("/dashboard/chat/memory"),
+      });
+    }
+
+    // Generated images — lazily fetched.
+    for (const img of images ?? []) {
+      out.push({
+        id: `img:${img.id}`,
+        group: "Images",
+        label: img.label || "Untitled generation",
+        sublabel: img.sublabel,
+        icon: ImageIcon,
+        run: () => router.push("/dashboard/chat/gallery"),
+      });
+    }
+
+    return out;
+  }, [chatConversations, prompts, memories, images, router, onCreateConversation, onNewGeneration]);
+
+  // Filter + cap per group so one entity type can't crowd out the rest.
+  const filtered = useMemo<PaletteItem[]>(() => {
+    const q = query.trim().toLowerCase();
+    const matches = q
+      ? items.filter((it) =>
+          `${it.label} ${it.sublabel ?? ""} ${it.keywords ?? ""}`
+            .toLowerCase()
+            .includes(q),
+        )
+      : items;
+    const perGroup = q ? 6 : 4;
+    const counts: Partial<Record<PaletteGroup, number>> = {};
+    const capped: PaletteItem[] = [];
+    for (const group of PALETTE_GROUP_ORDER) {
+      for (const it of matches) {
+        if (it.group !== group) continue;
+        const n = counts[group] ?? 0;
+        if (n >= perGroup) continue;
+        counts[group] = n + 1;
+        capped.push(it);
+      }
+    }
+    return capped;
+  }, [items, query]);
+
+  // Effective row, clamped during render so a shrinking list never points past
+  // the end (avoids a state-syncing effect).
+  const activeRow = filtered.length === 0 ? 0 : Math.min(activeIndex, filtered.length - 1);
+
+  // Keep the active row scrolled into view. No setState — safe inside an effect.
+  useEffect(() => {
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-idx="${activeRow}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [activeRow]);
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) => (filtered.length ? (i + 1) % filtered.length : 0));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => (filtered.length ? (i - 1 + filtered.length) % filtered.length : 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const item = filtered[activeRow];
+      if (item) go(item.run);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      onClose();
+    }
+  };
+
+  let renderedGroup: PaletteGroup | null = null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[10000] flex items-start justify-center px-4 pt-[12vh]"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Command palette"
+    >
+      <button
+        type="button"
+        aria-label="Close search"
+        className="absolute inset-0 cursor-default bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div className="relative w-full max-w-xl overflow-hidden rounded-xl border border-white/[0.1] bg-[#161616] shadow-2xl">
+        <div className="flex items-center gap-2 border-b border-white/[0.08] px-3">
+          <Search className="h-4 w-4 shrink-0 text-white/40" aria-hidden />
+          <input
+            ref={focusInput}
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setActiveIndex(0);
+            }}
+            onKeyDown={onKeyDown}
+            placeholder="Search conversations, tools, memory…"
+            className="h-12 w-full bg-transparent text-[14px] text-white placeholder:text-white/35 focus:outline-none"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <kbd className="hidden shrink-0 rounded border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] text-white/40 sm:inline-block">
+            Esc
+          </kbd>
+        </div>
+
+        <div ref={listRef} className="max-h-[55vh] overflow-y-auto py-1">
+          {filtered.length === 0 ? (
+            <p className="px-4 py-8 text-center text-[13px] text-white/40">
+              No matches for “{query}”.
+            </p>
+          ) : (
+            filtered.map((item, idx) => {
+              const showHeader = item.group !== renderedGroup;
+              renderedGroup = item.group;
+              const active = idx === activeRow;
+              const Icon = item.icon;
+              return (
+                <div key={item.id}>
+                  {showHeader ? (
+                    <p className="px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-white/35">
+                      {item.group}
+                    </p>
+                  ) : null}
+                  <button
+                    type="button"
+                    data-idx={idx}
+                    onClick={() => go(item.run)}
+                    onMouseMove={() => setActiveIndex(idx)}
+                    className={`flex w-full items-center gap-3 px-3 py-2 text-left text-[13px] transition-colors ${
+                      active ? "bg-white/[0.07] text-white" : "text-white/70"
+                    }`}
+                  >
+                    <Icon className="h-3.5 w-3.5 shrink-0 text-white/45" aria-hidden />
+                    <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                    {item.sublabel ? (
+                      <span className="shrink-0 truncate font-mono text-[11px] text-white/35">
+                        {item.sublabel}
+                      </span>
+                    ) : null}
+                    {active ? (
+                      <CornerDownLeft className="h-3.5 w-3.5 shrink-0 text-white/40" aria-hidden />
+                    ) : null}
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -859,9 +1273,8 @@ function renderMain({
   onDeleteConversation,
   vpsInstances,
   images,
-  pendingImages,
   onGenerate,
-  onCancelPending,
+  onDeleteImage,
 }: {
   activeTool: ToolId;
   activeItemId: string;
@@ -877,12 +1290,23 @@ function renderMain({
   onDeleteConversation?: (id: string) => void;
   vpsInstances: readonly ApiVpsInstance[];
   images: GeneratedImageRow[];
-  pendingImages: PendingImage[];
   onGenerate: (args: GenerateArgs) => void;
-  onCancelPending: (tempId: string) => void;
+  onDeleteImage: (id: string) => void;
 }): React.ReactNode {
   if (activeItemId === "chat:gallery" && activeTool === "chat") {
     return <GalleryView />;
+  }
+
+  if (activeItemId === "chat:memory" && activeTool === "chat") {
+    return <MemoryView />;
+  }
+
+  if (activeItemId === "chat:prompts" && activeTool === "chat") {
+    return <SystemPromptsView />;
+  }
+
+  if (activeItemId === "chat:usage" && activeTool === "chat") {
+    return <UsageView />;
   }
 
   // Configuration / Platform pages use prefixed IDs (e.g. "vps:ssh-keys")
@@ -899,18 +1323,18 @@ function renderMain({
   }
 
   if (activeTool === "image") {
-    const pendingItem = pendingImages.find((p) => p.id === activeItemId);
-    const isPending = Boolean(pendingItem);
+    const activeRow = images.find((img) => img.id === activeItemId);
+    const isPending = activeRow?.status === "pending";
     return (
       <ImageWorkspace
-        key={activeItemId || "new"}
+        key={`${activeItemId || "new"}:${activeRow?.status ?? ""}`}
         initialImages={images}
         selectedImageId={!isPending ? (activeItemId || undefined) : undefined}
         isPending={isPending}
-        pendingPrompt={pendingItem?.prompt}
-        pendingCreatedAt={pendingItem?.createdAt}
+        pendingPrompt={activeRow?.prompt}
+        pendingCreatedAt={activeRow?.created_at}
         onGenerate={onGenerate}
-        onCancelPending={isPending ? () => onCancelPending(activeItemId) : undefined}
+        onDeleteImage={onDeleteImage}
       />
     );
   }
@@ -1017,9 +1441,11 @@ function VpsEmptyState() {
 function TopBar({
   tool,
   onMenuOpen,
+  onSearchOpen,
 }: {
   tool: Tool;
   onMenuOpen: () => void;
+  onSearchOpen: () => void;
 }) {
   return (
     <header className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.08] bg-[#0c0c0c] px-2 sm:px-3">
@@ -1052,6 +1478,7 @@ function TopBar({
       <div className="flex shrink-0 items-center gap-1">
         <button
           type="button"
+          onClick={onSearchOpen}
           className="hidden h-8 items-center gap-2 rounded-md border border-white/[0.08] bg-white/[0.03] pr-1.5 pl-2.5 text-[12px] text-white/55 transition-colors hover:border-white/[0.12] hover:bg-white/[0.06] hover:text-white/80 md:inline-flex"
         >
           <Search className="h-3 w-3" aria-hidden />
@@ -1064,6 +1491,7 @@ function TopBar({
         <button
           type="button"
           aria-label="Search"
+          onClick={onSearchOpen}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md text-white/60 transition-colors hover:bg-white/5 hover:text-white md:hidden"
         >
           <Search className="h-4 w-4" aria-hidden />
@@ -1293,7 +1721,7 @@ function SubSidebar({
   searchPlaceholder?: string;
 }) {
   return (
-    <aside className="hidden w-[200px] shrink-0 flex-col border-r border-white/[0.08] bg-[#171717] sm:flex md:w-[220px]">
+    <aside className="hidden min-h-0 w-[200px] shrink-0 flex-col border-r border-white/[0.08] bg-[#171717] sm:flex md:w-[220px]">
       <SubSidebarHeader tool={tool} onCreate={onCreate} />
       {onSearchChange ? (
         <SubSidebarSearch
@@ -1445,7 +1873,7 @@ function SubSidebarSection({
   const scrollable = section.scrollable;
 
   return (
-    <div className={`px-2 ${scrollable ? "flex shrink flex-col pb-1 pt-2" : "shrink-0 border-t border-white/[0.06] px-0 py-2"}`}>
+    <div className={`px-2 ${scrollable ? "flex min-h-0 flex-1 flex-col pb-1 pt-2" : "shrink-0 border-t border-white/[0.06] px-0 py-2"}`}>
       <h3 className="mb-1 px-2.5 text-[10px] font-medium uppercase tracking-[0.12em] text-white/35">
         {section.title}
       </h3>
@@ -1454,7 +1882,7 @@ function SubSidebarSection({
           {searching && section.searchable ? "No matches." : "No items yet."}
         </p>
       ) : (
-        <ul className={`flex flex-col gap-px ${scrollable ? "max-h-[280px] overflow-y-auto" : ""}`}>
+        <ul className={`flex flex-col gap-px ${scrollable ? "min-h-0 flex-1 overflow-y-auto" : ""}`}>
           {section.items.map((item) => {
             const draggable = reorderable && item.draggable !== false;
             const isDragging = draggingId === item.id;
@@ -1823,7 +2251,7 @@ function MobileDrawer({
         </div>
 
         {/* Sub-sidebar */}
-        <div className="flex min-w-0 flex-1 flex-col bg-[#171717]">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-[#171717]">
           <div className="flex h-12 items-center justify-between border-b border-white/[0.08] px-2">
             <Link
               href="/"

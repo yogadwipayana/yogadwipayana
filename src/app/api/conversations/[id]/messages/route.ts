@@ -1,10 +1,8 @@
-import { access } from "node:fs/promises";
-import { join } from "node:path";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { CHAT_SYSTEM_PROMPT, IMAGE_MODE_SYSTEM_PROMPT } from "@/lib/server/chat-prompt";
+import { CHAT_SYSTEM_PROMPT, IMAGE_MODE_SYSTEM_PROMPT, buildCustomSystemPromptBlock, composeSystemMessage } from "@/lib/server/chat-prompt";
 import {
   appendMessage,
   applyHistoryWindow,
@@ -14,55 +12,27 @@ import {
   updateConversation,
 } from "@/lib/server/chat-service";
 import { fail } from "@/lib/server/api-response";
+import {
+  buildMemoryReminder,
+  buildMemorySystemBlock,
+  listActiveMemories,
+} from "@/lib/server/memory-service";
 import { runChatStream } from "@/lib/server/chat-stream";
+import { getConversationSystemPromptContent } from "@/lib/server/system-prompt-service";
 import {
   checkRateLimit,
   getClientIp,
   getRateLimitIdentifier,
   ratelimits,
 } from "@/lib/server/rate-limit";
-import { validatePublicHttpUrl } from "@/lib/server/safe-fetch";
 import { parseSlash, slashSystemPrompt, slashRewriteUserContent } from "@/lib/server/slash-commands";
 import {
   buildAttachmentFooter,
   buildUserContentWithAttachments,
+  validateAttachmentUrl,
   type Attachment,
 } from "@/lib/server/vision";
 import { createClient } from "@/utils/supabase/server";
-
-/**
- * Returns the local filesystem path if the URL points to one of our own
- * /uploads/ files, or null otherwise.
- * Rejects any path that contains traversal segments.
- */
-function getOwnUploadPath(rawUrl: string): string | null {
-  try {
-    const { pathname } = new URL(rawUrl);
-    if (!/^\/uploads\/[^/]+$/.test(pathname)) return null;
-    return join(process.cwd(), "public", pathname);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Like validatePublicHttpUrl but short-circuits for our own uploaded files:
- * instead of an SSRF check, it simply verifies the file exists on disk.
- */
-async function validateAttachmentUrl(
-  rawUrl: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  const localPath = getOwnUploadPath(rawUrl);
-  if (localPath) {
-    try {
-      await access(localPath);
-      return { ok: true };
-    } catch {
-      return { ok: false, error: "Uploaded file not found on server" };
-    }
-  }
-  return validatePublicHttpUrl(rawUrl);
-}
 
 export const runtime = "nodejs";
 
@@ -117,6 +87,21 @@ export async function POST(request: Request, { params }: RouteContext) {
 
     const priorMessages = await getMessages(supabase, conversationId, user.id);
 
+    // Active long-term memory, injected into the system prompt so the assistant
+    // honors the user's standing facts/preferences across every conversation.
+    const activeMemories = await listActiveMemories(supabase, user.id);
+    const memoryBlock = buildMemorySystemBlock(activeMemories);
+    const memoryReminder = buildMemoryReminder(activeMemories);
+
+    // Custom system prompt attached to this conversation (if any), injected
+    // LAST in the system block (with override framing) so the user's
+    // instructions take precedence over the base prompt's defaults.
+    const customSystemPrompt = await getConversationSystemPromptContent(
+      supabase,
+      conversationId,
+      user.id,
+    );
+
     const { content, attachments } = parsed.data;
 
     for (const att of attachments ?? []) {
@@ -161,17 +146,27 @@ export async function POST(request: Request, { params }: RouteContext) {
     });
 
     const messagesForModel = [
-      { role: "system" as const, content: CHAT_SYSTEM_PROMPT },
-      ...(conversation.mode === "image"
-        ? [{ role: "system" as const, content: IMAGE_MODE_SYSTEM_PROMPT }]
-        : []),
-      // Inject slash-command system message after the base system prompt(s)
-      ...(slashParsed
-        ? [{ role: "system" as const, content: slashSystemPrompt(slashParsed) }]
-        : []),
+      {
+        role: "system" as const,
+        content: composeSystemMessage([
+          CHAT_SYSTEM_PROMPT,
+          memoryBlock,
+          conversation.mode === "image" ? IMAGE_MODE_SYSTEM_PROMPT : null,
+          slashParsed ? slashSystemPrompt(slashParsed) : null,
+          // Custom prompt LAST so its override framing wins on recency.
+          customSystemPrompt
+            ? buildCustomSystemPromptBlock(customSystemPrompt)
+            : null,
+        ]),
+      },
       ...applyHistoryWindow(
         priorMessages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
       ),
+      // Restate memory adjacent to the newest turn so recency beats any
+      // language/style momentum from prior assistant turns in this thread.
+      ...(memoryReminder
+        ? [{ role: "system" as const, content: memoryReminder }]
+        : []),
       { role: "user" as const, content: userContentForModel },
     ];
 
@@ -182,7 +177,6 @@ export async function POST(request: Request, { params }: RouteContext) {
       model: conversation.model,
       messages: messagesForModel,
       preface: { saved: { role: "user", id: savedUserMessage.id } },
-      abortSignal: request.signal,
     });
   } catch (err) {
     return fail(err);

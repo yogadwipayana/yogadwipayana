@@ -32,7 +32,6 @@ import {
   Pencil,
   Plus,
   RefreshCw,
-  RotateCw,
   Server,
   Share2,
   Square,
@@ -46,17 +45,17 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
+import { GraphvizDiagram } from "@/components/ui/GraphvizDiagram";
 import type { InlineSshTerminalHandle } from "./chat/inline-terminal";
 import { InlineSshTerminal } from "./chat/inline-terminal";
 
 import type {
-  AiRoute,
   ChatConversationSummary,
   ChatMessage,
   ChatMode,
   ToolEvent,
 } from "./data";
-import { AI_MODELS, AI_RECENT_CALLS, CHAT_MODES } from "./data";
+import { AI_MODELS, CHAT_MODES } from "./data";
 import { deriveConversationTitle } from "@/lib/chat-title";
 import { copyToClipboard, normalizeMarkdownLists, stripMarkdown } from "@/lib/utils";
 
@@ -226,158 +225,6 @@ export function AiOverview() {
         </div>
       </div>
     </div>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/*  AI Router                                                                 */
-/* -------------------------------------------------------------------------- */
-
-export function AiRouterView({ route }: { route: AiRoute }) {
-  return (
-    <div className="flex flex-col gap-6 p-6 sm:p-8">
-      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <span
-              aria-hidden
-              className={`inline-block h-2 w-2 rounded-full ${
-                route.active
-                  ? "bg-[#3ecf8e] shadow-[0_0_10px_#3ecf8e]"
-                  : "bg-white/30"
-              }`}
-            />
-            <h2 className="font-mono text-[22px] font-medium tracking-[-0.01em] text-white">
-              {route.name}
-            </h2>
-            <span className="rounded-full border border-[#3ecf8e]/20 bg-[#3ecf8e]/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.1em] text-[#3ecf8e]">
-              live
-            </span>
-          </div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[13px] text-white/55">
-            <span className="font-mono">{route.path}</span>
-            <span className="text-white/20">·</span>
-            <span>
-              <span className="text-white/70">{route.model}</span> ·{" "}
-              <span className="text-white/40">fallback</span>{" "}
-              <span className="text-white/70">{route.fallback}</span>
-            </span>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Action icon={RotateCw} label="Replay last" />
-          <Action icon={Activity} label="Test call" primary />
-        </div>
-      </header>
-
-      {/* Metrics */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <MetricCard label="p50" value={route.p50} bar={0.4} />
-        <MetricCard label="p95" value={route.p95} bar={0.75} />
-        <MetricCard label="Errors" value={route.errors} bar={0.08} />
-        <MetricCard
-          label="Requests · 24h"
-          value={route.requests24h.toLocaleString()}
-          bar={0.6}
-        />
-      </div>
-
-      {/* Recent calls */}
-      <Panel title="Recent calls">
-        <ul className="divide-y divide-white/[0.04] font-mono text-[12px]">
-          {AI_RECENT_CALLS.map((c, i) => (
-            <li
-              key={i}
-              className="flex items-center gap-3 px-4 py-2"
-            >
-              <span className="w-16 shrink-0 text-white/40">{c.ts}</span>
-              <span className="shrink-0 rounded bg-[#3ecf8e]/15 px-1.5 py-0.5 text-[9px] font-semibold text-[#3ecf8e]">
-                {c.method}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-white/80">{c.path}</span>
-              <span className="hidden truncate text-white/50 md:inline">
-                {c.model}
-              </span>
-              <span
-                className={`w-12 shrink-0 text-right ${
-                  c.status === 200
-                    ? "text-white/60"
-                    : c.status === 429
-                      ? "text-yellow-300"
-                      : "text-red-300"
-                }`}
-              >
-                {c.status}
-              </span>
-              <span className="w-16 shrink-0 text-right text-white/40">{c.ms}</span>
-            </li>
-          ))}
-        </ul>
-      </Panel>
-
-      {/* Config snippet */}
-      <CodeBlock
-        title="Request"
-        lines={[
-          `curl https://yoga.dev${route.path} \\`,
-          `  -H "Authorization: Bearer $YOGA_KEY" \\`,
-          `  -H "Content-Type: application/json" \\`,
-          `  -d '{`,
-          `    "route": "${route.name}",`,
-          `    "messages": [{"role":"user","content":"Hi"}]`,
-          `  }'`,
-        ]}
-      />
-    </div>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  bar,
-}: {
-  label: string;
-  value: string;
-  bar: number;
-}) {
-  return (
-    <div className="rounded-lg border border-white/[0.08] bg-[#171717] p-4">
-      <div className="text-[11px] uppercase tracking-[0.1em] text-white/40">
-        {label}
-      </div>
-      <div className="mt-2 text-[22px] font-medium tracking-tight text-white">
-        {value}
-      </div>
-      <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-white/[0.06]">
-        <div
-          className="h-full rounded-full bg-[#3ecf8e]"
-          style={{ width: `${Math.round(bar * 100)}%` }}
-        />
-      </div>
-    </div>
-  );
-}
-
-function Action({
-  icon: Icon,
-  label,
-  primary,
-}: {
-  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
-  label: string;
-  primary?: boolean;
-}) {
-  const base =
-    "inline-flex h-9 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium transition-colors";
-  const style = primary
-    ? "bg-[#3ecf8e] text-[#171717] hover:bg-[#24b47e]"
-    : "border border-white/[0.1] bg-white/[0.03] text-white/85 hover:border-white/20 hover:bg-white/[0.06]";
-  return (
-    <button type="button" className={`${base} ${style}`}>
-      <Icon className="h-3.5 w-3.5" aria-hidden />
-      {label}
-    </button>
   );
 }
 
@@ -646,14 +493,42 @@ function buildLocalAttachmentFooter(
     .join("\n");
 }
 
+/**
+ * Loads the user's saved system prompts for the picker, shared by the landing
+ * composer and the in-conversation header. Fetched once per mount; the list is
+ * small and rarely changes within a session.
+ */
+function useSystemPrompts() {
+  const [prompts, setPrompts] = useState<PromptOption[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/system-prompts");
+        if (!res.ok) return;
+        const data = (await res.json()) as { prompts: PromptOption[] };
+        if (!cancelled) setPrompts(data.prompts);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { prompts, loading };
+}
+
 export function ChatView({
   conversation,
   defaultModel,
   onConversationUpdated,
   onStreamingChange,
   onDelete,
-}: {
-  conversation: ChatConversationSummary;
+}: {  conversation: ChatConversationSummary;
   defaultModel?: string;
   onConversationUpdated?: (c: ChatConversationSummary) => void;
   onStreamingChange?: (conversationId: string, streaming: boolean) => void;
@@ -677,6 +552,10 @@ export function ChatView({
   const [input, setInput] = useState(() => _draftCache.get(conversation.id) ?? "");
   const [model, setModel] = useState(conversation.model || defaultModel || "");
   const [mode, setMode] = useState<ChatMode>(conversation.mode ?? "chat");
+  const [promptId, setPromptId] = useState<string | null>(
+    conversation.system_prompt_id ?? null,
+  );
+  const { prompts: systemPrompts, loading: promptsLoading } = useSystemPrompts();
   const [loaded, setLoaded] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -817,6 +696,7 @@ export function ChatView({
             model: string;
             mode: ChatMode;
             updated_at: string;
+            system_prompt_id?: string | null;
           };
           messages: ChatMessage[];
           images?: Array<{ url: string; prompt: string }>;
@@ -828,11 +708,53 @@ export function ChatView({
         setMessages((prev) => (prev.length === 0 ? data.messages : prev));
         setModel(data.conversation.model || defaultModel || "");
         setMode(data.conversation.mode ?? "chat");
+        setPromptId(data.conversation.system_prompt_id ?? null);
         // Restore persisted images (oldest first so the tab matches conversation order)
         if (data.images && data.images.length > 0) {
           setLoadedImages([...data.images].reverse());
         }
         setLoaded(true);
+
+        // The local live cache is process-local to a single tab. After a full
+        // page reload or in a new tab it's empty, but a generation may still be
+        // running on the server (it outlives the original request now). Probe
+        // the server-side stream: if a generation is in flight, re-attach so
+        // the user sees live tokens resume instead of a frozen partial reply.
+        let streamRes: Response | null = null;
+        try {
+          streamRes = await fetch(`/api/conversations/${conversation.id}/stream`);
+        } catch {
+          // Network hiccup probing reconnect — the DB messages already render.
+        }
+        if (cancelled) return;
+        if (streamRes && streamRes.ok && streamRes.body) {
+          // Seed an assistant placeholder to receive the replayed + live deltas.
+          const assistantId = `local-assistant-reconnect-${Date.now()}`;
+          const seed: ChatMessage[] = [
+            ...(data.messages ?? []),
+            { id: assistantId, role: "assistant", content: "" },
+          ];
+          messagesRef.current = seed;
+          setMessages(seed);
+          notifyStreaming(true);
+          try {
+            await consumeStream(streamRes, assistantId);
+          } catch {
+            // Reconnect stream failed mid-flight; final state still loads below.
+          } finally {
+            if (!cancelled) notifyStreaming(false);
+          }
+          // Pull the canonical persisted turn (real ids, tool events, follow-ups).
+          if (!cancelled) {
+            fetch(`/api/conversations/${conversation.id}`)
+              .then((r) => (r.ok ? r.json() : null))
+              .then((d) => {
+                if (cancelled || !d) return;
+                setMessages((d as { messages: ChatMessage[] }).messages);
+              })
+              .catch(() => {/* already showing the streamed result */});
+          }
+        }
       } catch {
         if (!cancelled) setError("Failed to load conversation.");
       }
@@ -944,8 +866,30 @@ export function ChatView({
     [conversation.id, mode, onConversationUpdated],
   );
 
-  // Shared streaming consumer for both initial sends and regenerate. Mutates
-  // the assistant placeholder message in place.
+  const handleSelectPrompt = useCallback(
+    async (nextId: string | null) => {
+      const previous = promptId;
+      setPromptId(nextId);
+      try {
+        const res = await fetch(`/api/conversations/${conversation.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ system_prompt_id: nextId }),
+        });
+        if (!res.ok) {
+          setPromptId((current) => (current === nextId ? previous : current));
+          return;
+        }
+        const data = (await res.json()) as { conversation: ChatConversationSummary };
+        onConversationUpdated?.(data.conversation);
+      } catch {
+        setPromptId((current) => (current === nextId ? previous : current));
+      }
+    },
+    [conversation.id, promptId, onConversationUpdated],
+  );
+
+
   const consumeStream = useCallback(
     async (
       res: Response,
@@ -1116,8 +1060,19 @@ export function ChatView({
   );
 
   const handleStop = useCallback(() => {
+    // Generation is owned by the server and survives client disconnect, so
+    // aborting the local fetch alone would only detach this tab while the model
+    // kept running. Tell the server to stop; the stream then closes naturally
+    // with whatever partial text was persisted. We also abort the local fetch
+    // so the UI's streaming state settles immediately.
+    void fetch(`/api/conversations/${conversation.id}/stream/stop`, {
+      method: "POST",
+    }).catch(() => {
+      // Best-effort: if the stop call fails, the local abort below still
+      // detaches this client.
+    });
     abortRef.current?.abort();
-  }, []);
+  }, [conversation.id]);
 
   const handleSend = useCallback(
     async (overrideText?: string, pendingAttachments?: AttachmentPayload[]) => {
@@ -2262,6 +2217,12 @@ export function ChatView({
                   <Plus className="h-4 w-4" aria-hidden />
                 </button>
                 <ModeSelector mode={mode} onSelect={handleSelectMode} />
+                <PromptSelector
+                  prompts={systemPrompts}
+                  selectedId={promptId}
+                  onSelect={handleSelectPrompt}
+                  loading={promptsLoading}
+                />
               </div>
 
               {/* Right — model + send */}
@@ -2604,7 +2565,7 @@ export function ChatLanding({
 }: {
   onStart: (
     text: string,
-    opts: { model: string; mode: ChatMode; attachments: AttachmentPayload[] },
+    opts: { model: string; mode: ChatMode; attachments: AttachmentPayload[]; systemPromptId: string | null },
   ) => void;
   starting: boolean;
   defaultModel?: string;
@@ -2614,6 +2575,8 @@ export function ChatLanding({
     defaultModel || CHAT_MODELS[0]?.slug || "",
   );
   const [mode, setMode] = useState<ChatMode>("chat");
+  const [promptId, setPromptId] = useState<string | null>(null);
+  const { prompts, loading: promptsLoading } = useSystemPrompts();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const {
     attachments,
@@ -2637,7 +2600,7 @@ export function ChatLanding({
 
   const submit = () => {
     if (!canSend) return;
-    onStart(trimmed, { model, mode, attachments: readyAttachmentPayloads() });
+    onStart(trimmed, { model, mode, attachments: readyAttachmentPayloads(), systemPromptId: promptId });
   };
 
   // Auto-grow the textarea up to a cap, mirroring the in-conversation composer.
@@ -2758,6 +2721,12 @@ export function ChatLanding({
                 <Plus className="h-4 w-4" aria-hidden />
               </button>
               <ModeSelector mode={mode} onSelect={setMode} />
+              <PromptSelector
+                prompts={prompts}
+                selectedId={promptId}
+                onSelect={setPromptId}
+                loading={promptsLoading}
+              />
             </div>
             <div className="flex items-center gap-2">
               <ModelSelector model={model} onSelect={setModel} />
@@ -3645,6 +3614,128 @@ function EditableTitle({
 }
 
 /* -------------------------------------------------------------------------- */
+/*  System prompt selector dropdown                                           */
+/* -------------------------------------------------------------------------- */
+
+type PromptOption = { id: string; name: string };
+
+function PromptSelector({
+  prompts,
+  selectedId,
+  onSelect,
+  loading,
+}: {
+  prompts: PromptOption[];
+  selectedId: string | null;
+  onSelect: (id: string | null) => void;
+  loading?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = prompts.find((p) => p.id === selectedId) ?? null;
+  const buttonLabel = selected ? selected.name : "No prompt";
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title="System prompt"
+        className={`group flex items-center gap-1 text-[12px] transition-colors ${
+          selected ? "text-[#3ecf8e]/80 hover:text-[#3ecf8e]" : "text-white/50 hover:text-white/80"
+        }`}
+      >
+        <FileText className="h-3 w-3 shrink-0" aria-hidden />
+        <span className="max-w-[100px] truncate sm:max-w-[130px]">{buttonLabel}</span>
+        <ChevronDown
+          className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`}
+          aria-hidden
+        />
+      </button>
+
+      {open && (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-10"
+            aria-label="Close prompt picker"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute bottom-full left-0 z-20 mb-2 w-[calc(100vw-2rem)] max-w-[280px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30">
+            <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
+              <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">
+                System prompt
+              </span>
+              <Link
+                href="/dashboard/chat/system-prompts"
+                onClick={() => setOpen(false)}
+                className="text-[10px] text-white/35 transition-colors hover:text-white/70"
+              >
+                Manage
+              </Link>
+            </div>
+            <ul className="max-h-64 overflow-y-auto p-1.5">
+              {/* None option — detaches any attached prompt */}
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSelect(null);
+                    setOpen(false);
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
+                    !selectedId
+                      ? "bg-[#3ecf8e]/[0.08] text-white"
+                      : "text-white/70 hover:bg-white/[0.04] hover:text-white"
+                  }`}
+                >
+                  <span className="min-w-0 flex-1 truncate text-[13px]">No prompt</span>
+                  {!selectedId && (
+                    <Check className="h-3.5 w-3.5 shrink-0 text-[#3ecf8e]" aria-hidden />
+                  )}
+                </button>
+              </li>
+              {loading ? (
+                <li className="px-2.5 py-2 text-[12px] text-white/30">Loading…</li>
+              ) : prompts.length === 0 ? (
+                <li className="px-2.5 py-2 text-[11px] leading-relaxed text-white/30">
+                  No saved prompts yet.
+                </li>
+              ) : (
+                prompts.map((p) => {
+                  const isSel = p.id === selectedId;
+                  return (
+                    <li key={p.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSelect(p.id);
+                          setOpen(false);
+                        }}
+                        className={`flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
+                          isSel
+                            ? "bg-[#3ecf8e]/[0.08] text-white"
+                            : "text-white/70 hover:bg-white/[0.04] hover:text-white"
+                        }`}
+                      >
+                        <FileText className="h-3.5 w-3.5 shrink-0 text-white/35" aria-hidden />
+                        <span className="min-w-0 flex-1 truncate text-[13px]">{p.name}</span>
+                        {isSel && (
+                          <Check className="h-3.5 w-3.5 shrink-0 text-[#3ecf8e]" aria-hidden />
+                        )}
+                      </button>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
 /*  Model selector dropdown                                                   */
 /* -------------------------------------------------------------------------- */
 
@@ -3773,7 +3864,6 @@ function ModelSelector({
 /* -------------------------------------------------------------------------- */
 /*  Mode selector dropdown                                                    */
 /* -------------------------------------------------------------------------- */
-
 function ModeSelector({
   mode,
   onSelect,
@@ -4198,6 +4288,20 @@ function CodeBubble({
     return <MermaidDiagram code={code} />;
   }
 
+  if (lang === "dot" || lang === "graphviz") {
+    // Same streaming concern as mermaid: partial DOT fails to parse, so hold
+    // off until the stream settles before handing it to Graphviz.
+    if (streaming) {
+      return (
+        <div className="my-2 flex items-center gap-2 rounded-lg border border-white/[0.07] bg-[#0f0f0f] px-3 py-4 text-[12px] text-white/30">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+          Building diagram…
+        </div>
+      );
+    }
+    return <GraphvizDiagram code={code} />;
+  }
+
   if (isSingleLine) {
     return (
       <code className="mx-0.5 rounded border border-white/[0.08] bg-white/[0.05] px-1.5 py-0.5 font-mono text-[12px] text-[#3ecf8e]/75">
@@ -4245,46 +4349,6 @@ function CodeBubble({
 /* -------------------------------------------------------------------------- */
 /*  Shared                                                                    */
 /* -------------------------------------------------------------------------- */
-
-function Panel({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="overflow-hidden rounded-lg border border-white/[0.08] bg-[#171717]">
-      <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2.5">
-        <span className="text-[11px] uppercase tracking-[0.1em] text-white/40">
-          {title}
-        </span>
-      </header>
-      {children}
-    </section>
-  );
-}
-
-function CodeBlock({ title, lines }: { title: string; lines: string[] }) {
-  return (
-    <section className="overflow-hidden rounded-lg border border-white/[0.08] bg-[#0f0f0f]">
-      <header className="flex items-center justify-between border-b border-white/[0.06] px-4 py-2.5">
-        <span className="text-[11px] uppercase tracking-[0.1em] text-white/40">
-          {title}
-        </span>
-        <button
-          type="button"
-          className="text-[11px] text-white/40 transition-colors hover:text-white/80"
-        >
-          Copy
-        </button>
-      </header>
-      <pre className="overflow-x-auto px-4 py-3 font-mono text-[12px] leading-relaxed text-white/90">
-        <code>{lines.join("\n")}</code>
-      </pre>
-    </section>
-  );
-}
 
 /* -------------------------------------------------------------------------- */
 /*  Placeholder — config / platform pages we haven't built yet                */

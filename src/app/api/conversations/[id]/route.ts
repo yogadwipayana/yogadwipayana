@@ -17,6 +17,8 @@ const PatchBody = z.object({
   title: z.string().min(1).max(200).optional(),
   model: z.string().min(1).max(120).optional(),
   mode: z.enum(["chat", "image"]).optional(),
+  // `null` detaches the prompt; a uuid attaches one. Omitted = leave unchanged.
+  system_prompt_id: z.string().uuid().nullable().optional(),
 });
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -35,10 +37,11 @@ export async function GET(_request: Request, { params }: RouteContext) {
   if (!conversation) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const [rawMessages, images] = await Promise.all([
+  const [rawMessages, imagesResult] = await Promise.all([
     getMessages(supabase, id, user.id),
     listGeneratedImages(supabase, user.id, { conversationId: id }),
   ]);
+  const images = imagesResult.images;
   // Rename snake_case DB columns to camelCase for the frontend ChatMessage type.
   const messages = rawMessages.map((m) => ({
     id: m.id,
@@ -73,7 +76,8 @@ export async function PATCH(request: Request, { params }: RouteContext) {
   if (
     parsed.data.title === undefined &&
     parsed.data.model === undefined &&
-    parsed.data.mode === undefined
+    parsed.data.mode === undefined &&
+    parsed.data.system_prompt_id === undefined
   ) {
     return NextResponse.json(
       { error: "Nothing to update" },
@@ -81,7 +85,12 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     );
   }
 
-  const conversation = await updateConversation(supabase, id, user.id, parsed.data);
+  const conversation = await updateConversation(supabase, id, user.id, {
+    title: parsed.data.title,
+    model: parsed.data.model,
+    mode: parsed.data.mode,
+    systemPromptId: parsed.data.system_prompt_id,
+  });
   if (!conversation) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

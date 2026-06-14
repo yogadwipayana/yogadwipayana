@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { CHAT_SYSTEM_PROMPT, IMAGE_MODE_SYSTEM_PROMPT } from "@/lib/server/chat-prompt";
+import { CHAT_SYSTEM_PROMPT, IMAGE_MODE_SYSTEM_PROMPT, buildCustomSystemPromptBlock, composeSystemMessage } from "@/lib/server/chat-prompt";
 import {
   applyHistoryWindow,
   deleteLastAssistantMessage,
@@ -9,7 +9,14 @@ import {
   getMessages,
 } from "@/lib/server/chat-service";
 import { fail } from "@/lib/server/api-response";
+import {
+  buildMemoryReminder,
+  buildMemorySystemBlock,
+  listActiveMemories,
+} from "@/lib/server/memory-service";
 import { runChatStream } from "@/lib/server/chat-stream";
+import { stopAndWait } from "@/lib/server/chat-registry";
+import { getConversationSystemPromptContent } from "@/lib/server/system-prompt-service";
 import {
   checkRateLimit,
   getClientIp,
@@ -52,6 +59,11 @@ export async function POST(request: Request, { params }: RouteContext) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // Tear down any in-flight generation for this conversation and wait for it
+    // to persist its partial turn BEFORE mutating history. Without this, a stale
+    // generation could write a stale assistant message after the delete below.
+    await stopAndWait(conversationId);
+
     // Drop trailing assistant turn (if present) so the model regenerates from
     // the prior user message. If the last message is a user message, just
     // re-run the completion against the existing history.
@@ -70,6 +82,19 @@ export async function POST(request: Request, { params }: RouteContext) {
     const lastUserMessage = [...history].reverse().find((m) => m.role === "user");
     const slashParsed = lastUserMessage ? parseSlash(lastUserMessage.content) : null;
 
+    // Custom system prompt attached to this conversation (if any).
+    const customSystemPrompt = await getConversationSystemPromptContent(
+      supabase,
+      conversationId,
+      user.id,
+    );
+
+    // Active long-term memory — same injection as the send route so regenerate
+    // keeps honoring the user's standing preferences.
+    const activeMemories = await listActiveMemories(supabase, user.id);
+    const memoryBlock = buildMemorySystemBlock(activeMemories);
+    const memoryReminder = buildMemoryReminder(activeMemories);
+
     // For tool-backed slash commands (/word), reframe the last user turn sent
     // to the model so it triggers the tool under tool_choice:"auto". The DB
     // copy keeps the original `/word …` text.
@@ -77,19 +102,29 @@ export async function POST(request: Request, { params }: RouteContext) {
     const lastUserId = rewritten ? lastUserMessage?.id : undefined;
 
     const messagesForModel = [
-      { role: "system" as const, content: CHAT_SYSTEM_PROMPT },
-      ...(conversation.mode === "image"
-        ? [{ role: "system" as const, content: IMAGE_MODE_SYSTEM_PROMPT }]
-        : []),
-      ...(slashParsed
-        ? [{ role: "system" as const, content: slashSystemPrompt(slashParsed) }]
-        : []),
+      {
+        role: "system" as const,
+        content: composeSystemMessage([
+          CHAT_SYSTEM_PROMPT,
+          memoryBlock,
+          conversation.mode === "image" ? IMAGE_MODE_SYSTEM_PROMPT : null,
+          slashParsed ? slashSystemPrompt(slashParsed) : null,
+          customSystemPrompt
+            ? buildCustomSystemPromptBlock(customSystemPrompt)
+            : null,
+        ]),
+      },
       ...applyHistoryWindow(
         history.map((m) => ({
           role: m.role as "user" | "assistant",
           content: rewritten && m.id === lastUserId ? rewritten : m.content,
         })),
       ),
+      // Restate memory after the history so recency beats prior-turn language
+      // momentum (history here ends with the user turn being regenerated).
+      ...(memoryReminder
+        ? [{ role: "system" as const, content: memoryReminder }]
+        : []),
     ];
 
     return runChatStream({
@@ -98,7 +133,6 @@ export async function POST(request: Request, { params }: RouteContext) {
       userId: user.id,
       model: conversation.model,
       messages: messagesForModel,
-      abortSignal: request.signal,
     });
   } catch (err) {
     return fail(err);

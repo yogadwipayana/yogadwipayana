@@ -1,6 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 
 import { marked, type Token, type Tokens } from "marked";
 import {
@@ -23,6 +21,7 @@ import {
   type IRunOptions,
 } from "docx";
 
+import { fileProxyUrl, putObject } from "@/lib/r2";
 import { safeFetch } from "@/lib/server/safe-fetch";
 
 /**
@@ -34,9 +33,9 @@ import { safeFetch } from "@/lib/server/safe-fetch";
  * (bold/italic/strikethrough/inline-code/links) all map to real Word
  * formatting rather than being flattened to plain text.
  *
- * The resulting bytes are written to public/generated-documents/ and the
- * public URL path is returned, mirroring image-gen.ts so the chat tool and
- * persistence layer behave identically to image generation.
+ * The resulting bytes are uploaded to Cloudflare R2 and a same-origin proxy
+ * URL is returned, mirroring image-gen.ts so the chat tool and persistence
+ * layer behave identically to image generation.
  *
  * Inline Markdown images (`![alt](url)`) are pre-fetched (http(s) via the SSRF
  * guard, or decoded from `data:` URIs) and embedded as native Word images,
@@ -224,13 +223,16 @@ export async function generateDocx(
     throw new Error("Document generation aborted");
   }
 
-  const filename = `${Date.now()}-${randomUUID()}.docx`;
-  const outDir = join(process.cwd(), "public", "generated-documents");
+  const key = `generated-documents/${Date.now()}-${randomUUID()}.docx`;
 
-  await mkdir(outDir, { recursive: true });
-  await writeFile(join(outDir, filename), buffer);
+  await putObject({
+    key,
+    body: buffer,
+    contentType:
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  });
 
-  return { url: `/generated-documents/${filename}`, title };
+  return { url: fileProxyUrl(key), title };
 }
 
 /**

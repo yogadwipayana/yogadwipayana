@@ -33,6 +33,14 @@ export const SETTINGS_TOOL: Tool = {
 
 export const TOOLS: readonly Tool[] = [
   {
+    id: "chat",
+    name: "Chat AI",
+    tag: "Assistants",
+    icon: MessageSquare,
+    createLabel: "New conversation",
+    searchLabel: "Search conversations",
+  },
+  {
     id: "vps",
     name: "VPS Control",
     tag: "Infrastructure",
@@ -47,14 +55,6 @@ export const TOOLS: readonly Tool[] = [
     icon: Waypoints,
     createLabel: "New route",
     searchLabel: "Search routes",
-  },
-  {
-    id: "chat",
-    name: "Chat AI",
-    tag: "Assistants",
-    icon: MessageSquare,
-    createLabel: "New conversation",
-    searchLabel: "Search conversations",
   },
   {
     id: "image",
@@ -122,42 +122,6 @@ export type SshKey = {
 };
 
 /* -------------------------------------------------------------------------- */
-/*  AI Router routes                                                          */
-/* -------------------------------------------------------------------------- */
-
-export type AiRoute = {
-  id: string;
-  name: string;
-  path: string;
-  model: string;
-  fallback: string;
-  provider: "anthropic" | "openai" | "voyage";
-  p50: string;
-  p95: string;
-  errors: string;
-  requests24h: number;
-  active: boolean;
-};
-
-export type AiCall = {
-  ts: string;
-  method: "POST";
-  path: string;
-  model: string;
-  ms: string;
-  status: 200 | 429 | 500;
-};
-
-export const AI_RECENT_CALLS: AiCall[] = [
-  { ts: "19:02:14", method: "POST", path: "/v1/chat/completions", model: "claude-opus-4", ms: "312ms", status: 200 },
-  { ts: "19:02:12", method: "POST", path: "/v1/chat/completions", model: "gpt-5", ms: "214ms", status: 200 },
-  { ts: "19:02:09", method: "POST", path: "/v1/embed", model: "voyage-3", ms: "89ms", status: 200 },
-  { ts: "19:02:05", method: "POST", path: "/v1/chat/completions", model: "claude-opus-4", ms: "441ms", status: 200 },
-  { ts: "19:01:58", method: "POST", path: "/v1/chat/completions", model: "gpt-5", ms: "—", status: 429 },
-  { ts: "19:01:51", method: "POST", path: "/v1/chat/completions", model: "claude-opus-4", ms: "287ms", status: 200 },
-];
-
-/* -------------------------------------------------------------------------- */
 /*  AI — Model catalog                                                        */
 /* -------------------------------------------------------------------------- */
 
@@ -209,6 +173,7 @@ export type ChatConversationSummary = {
   updated_at: string;
   is_public?: boolean;
   share_token?: string | null;
+  system_prompt_id?: string | null;
 };
 
 export const CHAT_MODES: { slug: ChatMode; name: string; description: string }[] = [

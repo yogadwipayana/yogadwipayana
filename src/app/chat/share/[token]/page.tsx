@@ -27,6 +27,8 @@ async function loadShared(token: string) {
       id: m.id,
       role: m.role as "user" | "assistant",
       content: m.content,
+      toolEvents: m.tool_events ?? undefined,
+      followUps: m.follow_ups ?? undefined,
     }));
   return { conversation, messages };
 }

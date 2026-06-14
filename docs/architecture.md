@@ -65,10 +65,16 @@ and ready to wire up. Sessions live in HTTP-only cookies managed by
 - Postgres FTS uses a generated `tsvector` column with weights and a GIN
   index; queries go through a `search_documents` RPC for ranked snippets.
 
-### 8. File / blob storage — AWS S3
-Browser → `POST /api/upload` to get a presigned URL → `PUT` the bytes
-directly to S3. Files are namespaced under `u/{user_id}/...`.
-`NEXT_PUBLIC_S3_PUBLIC_URL` can point at CloudFront for public reads.
+### 8. File / blob storage — Cloudflare R2
+Uploads and generated files (images, .docx) are stored in a **private** R2
+bucket (S3-compatible, via the AWS SDK in `src/lib/r2.ts`). Uploads are
+namespaced under `u/{user_id}/...`; generated assets under
+`generated-images/...` and `generated-documents/...`. The browser never talks
+to R2 directly — reads go through an authenticated same-origin proxy,
+`GET /api/files/<key>`, which streams the object back after an R2 GetObject. No
+public bucket access is required. For server-to-provider hops (e.g. handing an
+uploaded image to the external image-edit model), `createPresignedDownloadUrl`
+mints a short-lived signed R2 URL.
 
 ### 9. AI / LLM — OpenAI
 Single client in `src/lib/openai.ts`. Streaming uses the OpenAI SDK's async

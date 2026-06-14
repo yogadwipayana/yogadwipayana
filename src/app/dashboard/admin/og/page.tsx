@@ -26,7 +26,7 @@ export default async function OgAdminPage() {
     redirect("/dashboard");
   }
 
-  const all = await listGeneratedImages(supabase, user.id, { limit: 30 });
+  const { images: all } = await listGeneratedImages(supabase, user.id, { limit: 30 });
   const initialImages = all.filter((img) => img.source === "admin");
 
   return <OgAdminClient initialImages={initialImages} />;

@@ -3,11 +3,17 @@
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Copy,
+  Download,
   Loader2,
+  Maximize2,
   Paperclip,
   Plus,
+  ScanText,
+  Scissors,
   Sparkles,
-  Square,
+  Trash2,
+  Wand2,
   X,
 } from "lucide-react";
 
@@ -25,6 +31,8 @@ export type GenerateArgs = {
   aspect: AspectRatioPreset;
   quality: Quality;
   imageUrls?: string[]; // up to 4 reference images
+  background?: "auto" | "transparent" | "opaque"; // transparent = bg removal
+  maskUrl?: string; // inpaint mask; requires exactly one imageUrl
 };
 
 const MAX_REFS = 4;
@@ -41,6 +49,49 @@ const ASPECT_VISUALS: Record<string, { w: number; h: number; ratio: string }> = 
 const ACCEPTED_IMAGE_MIME = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const MAX_REF_BYTES = 50 * 1024 * 1024;
 
+// Style presets append a modifier to the prompt at generate time. Client-only:
+// the backend just receives the composed prompt string. `id` "none" means no
+// modifier (free-form prompt).
+type StylePreset = { id: string; label: string; modifier: string };
+const STYLE_PRESETS: StylePreset[] = [
+  { id: "none", label: "None", modifier: "" },
+  { id: "photo", label: "Photorealistic", modifier: "photorealistic, ultra-detailed, sharp focus, natural lighting, 50mm lens, high dynamic range" },
+  { id: "anime", label: "Anime", modifier: "anime style, vibrant cel shading, clean line art, expressive, studio-quality" },
+  { id: "3d", label: "3D Render", modifier: "3D render, octane render, physically based materials, soft global illumination, high detail" },
+  { id: "digital", label: "Digital Art", modifier: "digital painting, concept art, dramatic lighting, rich color, trending on artstation" },
+  { id: "oil", label: "Oil Painting", modifier: "oil painting, visible brush strokes, textured canvas, classical fine-art lighting" },
+  { id: "watercolor", label: "Watercolor", modifier: "watercolor painting, soft washes, bleeding pigments, delicate paper texture" },
+  { id: "minimal", label: "Minimalist", modifier: "minimalist, clean composition, flat design, lots of negative space, limited palette" },
+  { id: "cyberpunk", label: "Cyberpunk", modifier: "cyberpunk, neon-lit, futuristic, moody atmosphere, high contrast, cinematic" },
+];
+
+/** Compose the final prompt sent to the model from the raw prompt + style. */
+function composePrompt(rawPrompt: string, styleId: string): string {
+  const preset = STYLE_PRESETS.find((s) => s.id === styleId);
+  if (!preset || !preset.modifier) return rawPrompt;
+  return `${rawPrompt}. Style: ${preset.modifier}`;
+}
+
+/**
+ * Pick the highest-resolution aspect preset matching an image's orientation.
+ * Used by "Upscale" to re-generate at the largest size for the same shape.
+ * Falls back to the supplied current aspect when dimensions are unknown.
+ */
+function largestPresetForImage(
+  size: string | null,
+  fallback: AspectRatioPreset,
+): AspectRatioPreset {
+  const match = size?.match(/^(\d+)\s*[x×]\s*(\d+)$/i);
+  if (!match) return fallback;
+  const w = Number(match[1]);
+  const h = Number(match[2]);
+  if (!w || !h) return fallback;
+  if (w === h) return "square";
+  return h > w ? "tall" : "wide";
+}
+
+const UPSCALE_PHRASE = "high resolution, ultra-detailed, sharp";
+
 function formatRelative(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60_000);
@@ -51,6 +102,16 @@ function formatRelative(iso: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
+function slugifyPrompt(prompt: string): string {
+  const slug = prompt
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 50)
+    .replace(/-+$/g, "");
+  return slug || "image";
+}
+
 export function ImageWorkspace({
   initialImages,
   selectedImageId,
@@ -58,7 +119,7 @@ export function ImageWorkspace({
   pendingPrompt,
   pendingCreatedAt,
   onGenerate,
-  onCancelPending,
+  onDeleteImage,
 }: {
   initialImages: GeneratedImageRow[];
   /** When set, the workspace pre-selects this image on mount. */
@@ -71,8 +132,8 @@ export function ImageWorkspace({
   pendingCreatedAt?: string;
   /** Called when the user clicks Generate — shell owns the actual fetch. */
   onGenerate: (args: GenerateArgs) => void;
-  /** Called when the user cancels an in-flight generation. */
-  onCancelPending?: () => void;
+  /** Called when the user deletes the selected image. */
+  onDeleteImage?: (id: string) => void;
 }) {
   const initialSelected = selectedImageId
     ? (initialImages.find((i) => i.id === selectedImageId) ?? initialImages[0] ?? null)
@@ -80,6 +141,12 @@ export function ImageWorkspace({
   const [prompt, setPrompt] = useState(initialSelected?.prompt ?? "");
   const [negativePrompt, setNegativePrompt] = useState("");
   const [showNegative, setShowNegative] = useState(false);
+  const [style, setStyle] = useState<string>("none");
+  const [enhancing, setEnhancing] = useState(false);
+  const [enhanceError, setEnhanceError] = useState<string | null>(null);
+  const [describing, setDescribing] = useState(false);
+  // True while the hidden file input is awaiting a pick that should feed describe.
+  const [describeQueued, setDescribeQueued] = useState(false);
   const [aspect, setAspect] = useState<AspectRatioPreset>("square");
   const [quality, setQuality] = useState<Quality>("auto");
   // Multiple reference images (up to MAX_REFS). Pre-populated with the viewed
@@ -92,7 +159,6 @@ export function ImageWorkspace({
   const [refUploading, setRefUploading] = useState(false);
   const [refError, setRefError] = useState<string | null>(null);
   const [current, setCurrent] = useState<GeneratedImageRow | null>(initialSelected);
-  const [images, setImages] = useState<GeneratedImageRow[]>(initialImages);
 
   // Elapsed seconds for the pending-generation overlay
   const [elapsed, setElapsed] = useState(0);
@@ -105,7 +171,7 @@ export function ImageWorkspace({
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
   }, [prompt]);
 
   // Tick elapsed seconds while this item is pending
@@ -127,14 +193,133 @@ export function ImageWorkspace({
     const trimmed = prompt.trim();
     if (!trimmed || isPending) return;
     onGenerate({
-      prompt: trimmed,
+      prompt: composePrompt(trimmed, style),
       negativePrompt: negativePrompt.trim() || undefined,
       aspect,
       quality,
       imageUrls: referenceUrls.length > 0 ? referenceUrls : undefined,
     });
     setPrompt("");
-  }, [prompt, negativePrompt, isPending, aspect, quality, referenceUrls, onGenerate]);
+  }, [prompt, style, negativePrompt, isPending, aspect, quality, referenceUrls, onGenerate]);
+
+  // Generate a fresh variation of the current image, reusing it as a reference
+  // alongside the prompt/aspect/quality already in state. Pure ref-gen.
+  const handleVariation = useCallback(
+    (img: GeneratedImageRow) => {
+      if (!img.url || isPending) return;
+      const base = prompt.trim() || img.prompt;
+      onGenerate({
+        prompt: composePrompt(base, style),
+        negativePrompt: negativePrompt.trim() || undefined,
+        aspect,
+        quality,
+        imageUrls: [img.url],
+      });
+    },
+    [prompt, style, negativePrompt, isPending, aspect, quality, onGenerate],
+  );
+
+  // "Upscale" = re-generate from the current image at the largest preset for its
+  // orientation with a detail-boosting phrase. Not a lossless upscale.
+  const handleUpscale = useCallback(
+    (img: GeneratedImageRow) => {
+      if (!img.url || isPending) return;
+      const base = prompt.trim() || img.prompt;
+      const composed = composePrompt(base, style);
+      onGenerate({
+        prompt: `${composed}. ${UPSCALE_PHRASE}`,
+        negativePrompt: negativePrompt.trim() || undefined,
+        aspect: largestPresetForImage(img.size, aspect),
+        quality: "hd",
+        imageUrls: [img.url],
+      });
+    },
+    [prompt, style, negativePrompt, isPending, aspect, onGenerate],
+  );
+
+  // One-click background removal via the transparent-background ref-gen path.
+  const handleRemoveBackground = useCallback(
+    (img: GeneratedImageRow) => {
+      if (!img.url || isPending) return;
+      onGenerate({
+        prompt:
+          "Keep the main subject exactly as-is and remove the background entirely, making it fully transparent. Clean cutout, preserve fine edges.",
+        aspect,
+        quality,
+        imageUrls: [img.url],
+        background: "transparent",
+      });
+    },
+    [isPending, aspect, quality, onGenerate],
+  );
+
+  // Describe a given image URL via the enhance route and load it into the prompt.
+  const describeFromUrl = useCallback(
+    async (imageUrl: string) => {
+      setDescribing(true);
+      setEnhanceError(null);
+      try {
+        const res = await fetch("/api/images/enhance", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image_url: imageUrl }),
+        });
+        if (!res.ok) {
+          const json = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(json.error || `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as { prompt?: string };
+        if (data.prompt) {
+          setPrompt(data.prompt);
+          textareaRef.current?.focus();
+        } else {
+          throw new Error("No description returned");
+        }
+      } catch (err) {
+        setEnhanceError(err instanceof Error ? err.message : "Describe failed");
+      } finally {
+        setDescribing(false);
+      }
+    },
+    [],
+  );
+
+  // Describe button: use the first reference if present, otherwise prompt the
+  // user to upload an image which is then described once the upload resolves.
+  const handleDescribe = useCallback(() => {
+    if (describing || enhancing) return;
+    const existing = referenceUrls[0];
+    if (existing) {
+      void describeFromUrl(existing);
+      return;
+    }
+    setDescribeQueued(true);
+    fileInputRef.current?.click();
+  }, [describing, enhancing, referenceUrls, describeFromUrl]);
+
+  const handleEnhance = useCallback(async () => {
+    const trimmed = prompt.trim();
+    if (!trimmed || enhancing) return;
+    setEnhancing(true);
+    setEnhanceError(null);
+    try {
+      const res = await fetch("/api/images/enhance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: trimmed }),
+      });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(json.error || `HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as { prompt: string };
+      if (data.prompt) setPrompt(data.prompt);
+    } catch (err) {
+      setEnhanceError(err instanceof Error ? err.message : "Enhance failed");
+    } finally {
+      setEnhancing(false);
+    }
+  }, [prompt, enhancing]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -150,14 +335,45 @@ export function ImageWorkspace({
     setCurrent(img);
     setPrompt(img.prompt);
     // Replace references with the selected image so further edits stay on-style
-    setReferenceUrls([img.url]);
+    setReferenceUrls(img.url ? [img.url] : []);
   }, []);
 
   const handleIterate = useCallback((img: GeneratedImageRow) => {
-    setReferenceUrls([img.url]);
+    setReferenceUrls(img.url ? [img.url] : []);
     setPrompt("");
     textareaRef.current?.focus();
   }, []);
+
+  const handleDownload = useCallback(async (img: GeneratedImageRow) => {
+    if (!img.url) return;
+    try {
+      const res = await fetch(img.url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      const ext = (blob.type.split("/")[1] || "png").split("+")[0];
+      a.download = `${slugifyPrompt(img.prompt)}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch {
+      // Fallback: open in a new tab so the user can save manually
+      window.open(img.url ?? "#", "_blank", "noopener,noreferrer");
+    }
+  }, []);
+
+  const handleDelete = useCallback(
+    (img: GeneratedImageRow) => {
+      if (!onDeleteImage) return;
+      const ok = window.confirm("Delete this image? This can't be undone.");
+      if (!ok) return;
+      onDeleteImage(img.id);
+    },
+    [onDeleteImage],
+  );
 
   const addReference = useCallback((url: string) => {
     setReferenceUrls((prev) =>
@@ -193,12 +409,17 @@ export function ImageWorkspace({
       const { publicUrl } = (await res.json()) as { publicUrl: string };
       addReference(publicUrl);
       setShowAddInput(false);
+      if (describeQueued) {
+        setDescribeQueued(false);
+        void describeFromUrl(publicUrl);
+      }
     } catch (err) {
       setRefError(err instanceof Error ? err.message : "Upload failed.");
+      setDescribeQueued(false);
     } finally {
       setRefUploading(false);
     }
-  }, [addReference]);
+  }, [addReference, describeQueued, describeFromUrl]);
 
   const handleAddUrlCommit = useCallback(() => {
     const trimmed = addUrlInput.trim();
@@ -218,7 +439,7 @@ export function ImageWorkspace({
         {/* Canvas */}
         <div className="relative flex-1">
           <div className="relative flex h-[360px] w-full items-center justify-center overflow-hidden rounded-xl border border-white/[0.08] bg-[#171717] sm:h-[440px] md:h-[min(560px,calc(100svh-12rem))]">
-            {current ? (
+            {current?.url ? (
               <Image
                 src={current.url}
                 alt={current.prompt}
@@ -226,13 +447,22 @@ export function ImageWorkspace({
                 className="object-contain"
                 sizes="(max-width: 768px) 100vw, 50vw"
                 priority
+                unoptimized
               />
-            ) : (
+            ) : current?.status === "failed" ? (
+              <div className="flex max-w-sm flex-col items-center gap-3 px-6 text-center text-white/40">
+                <X className="h-10 w-10 text-red-400/70" aria-hidden />
+                <p className="text-[13px] text-red-400/90">Generation failed</p>
+                {current.error && (
+                  <p className="text-[12px] text-white/35">{current.error}</p>
+                )}
+              </div>
+            ) : !isPending ? (
               <div className="flex flex-col items-center gap-3 text-white/25">
                 <Sparkles className="h-10 w-10" aria-hidden />
                 <p className="text-[13px]">Your generation will appear here</p>
               </div>
-            )}
+            ) : null}
 
             {isPending && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#171717]/80 backdrop-blur-sm">
@@ -240,6 +470,58 @@ export function ImageWorkspace({
                 <p className="text-[13px] tabular-nums text-white/60">
                   {elapsed}s
                 </p>
+              </div>
+            )}
+
+            {current?.url && !isPending && (
+              <div className="absolute right-3 top-3 flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleVariation(current)}
+                  title="Generate a variation from this image"
+                  aria-label="Generate variation"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.12] bg-black/50 text-white/70 backdrop-blur-sm transition-colors hover:border-[#3ecf8e]/50 hover:text-[#3ecf8e]"
+                >
+                  <Copy className="h-4 w-4" aria-hidden />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleUpscale(current)}
+                  title="Regenerate at higher resolution"
+                  aria-label="Upscale (regenerate at higher resolution)"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.12] bg-black/50 text-white/70 backdrop-blur-sm transition-colors hover:border-[#3ecf8e]/50 hover:text-[#3ecf8e]"
+                >
+                  <Maximize2 className="h-4 w-4" aria-hidden />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveBackground(current)}
+                  title="Remove background (make transparent)"
+                  aria-label="Remove background"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.12] bg-black/50 text-white/70 backdrop-blur-sm transition-colors hover:border-[#3ecf8e]/50 hover:text-[#3ecf8e]"
+                >
+                  <Scissors className="h-4 w-4" aria-hidden />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownload(current)}
+                  title="Download image"
+                  aria-label="Download image"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.12] bg-black/50 text-white/70 backdrop-blur-sm transition-colors hover:border-[#3ecf8e]/50 hover:text-[#3ecf8e]"
+                >
+                  <Download className="h-4 w-4" aria-hidden />
+                </button>
+                {onDeleteImage && (
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(current)}
+                    title="Delete image"
+                    aria-label="Delete image"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.12] bg-black/50 text-white/70 backdrop-blur-sm transition-colors hover:border-red-400/50 hover:text-red-400"
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden />
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -278,18 +560,47 @@ export function ImageWorkspace({
                   onKeyDown={handleKeyDown}
                   placeholder="Describe the image…"
                   rows={3}
-                  className="w-full resize-none rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2.5 text-[13px] leading-relaxed text-white placeholder:text-white/20 outline-none transition-colors focus:border-white/[0.16] focus:bg-white/[0.05]"
-                  style={{ minHeight: "80px" }}
+                  className="w-full resize-none overflow-y-auto rounded-lg border border-white/[0.07] bg-white/[0.03] px-3 py-2.5 text-[13px] leading-relaxed text-white placeholder:text-white/20 outline-none transition-colors focus:border-white/[0.16] focus:bg-white/[0.05]"
+                  style={{ minHeight: "80px", maxHeight: "240px" }}
                 />
-                {/* Negative prompt toggle */}
-                <button
-                  type="button"
-                  onClick={() => setShowNegative((v) => !v)}
-                  className="mt-1.5 flex items-center gap-1 text-[11px] text-white/30 transition-colors hover:text-white/60"
-                >
-                  <Plus className={`h-3 w-3 transition-transform ${showNegative ? "rotate-45" : ""}`} aria-hidden />
-                  {showNegative ? "Remove negative prompt" : "Add negative prompt"}
-                </button>
+                {/* Negative prompt toggle + Enhance */}
+                <div className="mt-1.5 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setShowNegative((v) => !v)}
+                    className="flex items-center gap-1 text-[11px] text-white/30 transition-colors hover:text-white/60"
+                  >
+                    <Plus className={`h-3 w-3 transition-transform ${showNegative ? "rotate-45" : ""}`} aria-hidden />
+                    {showNegative ? "Remove negative prompt" : "Add negative prompt"}
+                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleDescribe}
+                      disabled={describing || enhancing}
+                      title={
+                        referenceUrls.length > 0
+                          ? "Describe the reference image into a prompt"
+                          : "Upload an image to describe into a prompt"
+                      }
+                      className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.02] px-2 py-1 text-[11px] text-white/50 transition-colors hover:border-[#3ecf8e]/40 hover:text-[#3ecf8e] disabled:opacity-40 disabled:hover:border-white/[0.08] disabled:hover:text-white/50"
+                    >
+                      {describing ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <ScanText className="h-3 w-3" aria-hidden />}
+                      {describing ? "Describing…" : "Describe"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleEnhance}
+                      disabled={!prompt.trim() || enhancing}
+                      title="Rewrite your prompt with more detail"
+                      className="inline-flex items-center gap-1 rounded-md border border-white/[0.08] bg-white/[0.02] px-2 py-1 text-[11px] text-white/50 transition-colors hover:border-[#3ecf8e]/40 hover:text-[#3ecf8e] disabled:opacity-40 disabled:hover:border-white/[0.08] disabled:hover:text-white/50"
+                    >
+                      {enhancing ? <Loader2 className="h-3 w-3 animate-spin" aria-hidden /> : <Wand2 className="h-3 w-3" aria-hidden />}
+                      {enhancing ? "Enhancing…" : "Enhance"}
+                    </button>
+                  </div>
+                </div>
+                {enhanceError && <p className="mt-1 text-[11px] text-red-400">{enhanceError}</p>}
                 {showNegative && (
                   <textarea
                     value={negativePrompt}
@@ -299,6 +610,32 @@ export function ImageWorkspace({
                     className="mt-1.5 w-full resize-none rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[12px] leading-relaxed text-white/70 placeholder:text-white/20 outline-none transition-colors focus:border-white/[0.14]"
                   />
                 )}
+              </div>
+
+              {/* Style presets */}
+              <div>
+                <span className="mb-2 block text-[10px] font-semibold uppercase tracking-[0.12em] text-white/35">
+                  Style
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {STYLE_PRESETS.map((preset) => {
+                    const active = style === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => setStyle(preset.id)}
+                        className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                          active
+                            ? "border-[#3ecf8e]/40 bg-[#3ecf8e]/10 text-[#3ecf8e]"
+                            : "border-white/[0.07] bg-white/[0.02] text-white/40 hover:border-white/[0.14] hover:text-white/70"
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Aspect ratio — visual proportional boxes */}
@@ -442,17 +779,16 @@ export function ImageWorkspace({
 
             </div>{/* end scrollable body */}
 
-            {/* ── Generate / Cancel — pinned bottom ── */}
+            {/* ── Generate — pinned bottom ── */}
             <div className="shrink-0 border-t border-white/[0.06] px-4 pb-4 pt-3">
               {isPending ? (
-                <button
-                  type="button"
-                  onClick={onCancelPending}
-                  className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-white/[0.1] bg-white/[0.03] text-[13px] font-medium text-white/60 transition-colors hover:border-white/[0.18] hover:text-white"
+                <div
+                  className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-white/[0.1] bg-white/[0.03] text-[13px] font-medium text-white/50"
+                  title="Generation runs in the background — you can leave this page"
                 >
-                  <Square className="h-3.5 w-3.5" aria-hidden />
-                  Cancel generation
-                </button>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                  Generating in background…
+                </div>
               ) : (
                 <button
                   type="button"
@@ -471,13 +807,13 @@ export function ImageWorkspace({
       </div>
 
       {/* History grid */}
-      {images.length > 0 && (
+      {initialImages.length > 0 && (
         <section>
           <h2 className="mb-3 text-[11px] font-medium uppercase tracking-[0.1em] text-white/35">
             History
           </h2>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8">
-            {images.map((img) => (
+            {initialImages.map((img) => (
               <HistoryThumb
                 key={img.id}
                 img={img}
@@ -535,30 +871,43 @@ function HistoryThumb({
         }
       }}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={img.url}
-        alt={img.prompt}
-        className="h-full w-full object-cover"
-        loading="lazy"
-      />
+      {img.url ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={img.url}
+            alt={img.prompt}
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
 
-      {/* Hover overlay */}
-      <div className="absolute inset-0 flex flex-col items-start justify-end gap-1 bg-gradient-to-t from-black/70 via-black/20 to-transparent p-1.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100">
-        <p className="line-clamp-1 w-full text-[10px] text-white/70">
-          {formatRelative(img.created_at)}
-        </p>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onIterate(img);
-          }}
-          className="rounded bg-white/[0.12] px-1.5 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-[#3ecf8e]/20 hover:text-[#3ecf8e]"
-        >
-          Iterate
-        </button>
-      </div>
+          {/* Hover overlay */}
+          <div className="absolute inset-0 flex flex-col items-start justify-end gap-1 bg-gradient-to-t from-black/70 via-black/20 to-transparent p-1.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100">
+            <p className="line-clamp-1 w-full text-[10px] text-white/70">
+              {formatRelative(img.created_at)}
+            </p>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onIterate(img);
+              }}
+              className="rounded bg-white/[0.12] px-1.5 py-0.5 text-[10px] font-medium text-white transition-colors hover:bg-[#3ecf8e]/20 hover:text-[#3ecf8e]"
+            >
+              Iterate
+            </button>
+          </div>
+        </>
+      ) : img.status === "failed" ? (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-1 bg-white/[0.02] text-red-400/70">
+          <X className="h-5 w-5" aria-hidden />
+          <span className="text-[9px]">Failed</span>
+        </div>
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-white/[0.02]">
+          <Loader2 className="h-5 w-5 animate-spin text-[#3ecf8e]" aria-hidden />
+        </div>
+      )}
     </div>
   );
 }

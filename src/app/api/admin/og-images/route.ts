@@ -70,7 +70,7 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const all = await listGeneratedImages(supabase, user.id, { limit: 30 });
+  const { images: all } = await listGeneratedImages(supabase, user.id, { limit: 30 });
   const images = all.filter((img) => img.source === "admin");
   return NextResponse.json({ images });
 }

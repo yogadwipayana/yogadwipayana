@@ -45,9 +45,12 @@ export function slashSystemPrompt(p: NonNullable<SlashParse>): string {
 
     case "diagram":
       return (
-        "The user typed `/diagram`. You MUST output a Mermaid diagram as plain text — do NOT call `image_generate` or any other tool. " +
-        "Produce a valid Mermaid diagram inside a ```mermaid code block that represents the supplied subject. " +
-        "Pick the most appropriate diagram type (flowchart, sequenceDiagram, classDiagram, erDiagram, stateDiagram-v2, gantt). " +
+        "The user typed `/diagram`. You MUST output a text-based diagram as plain text — do NOT call `image_generate` or any other tool. " +
+        "Choose the rendering syntax that best fits the subject:\n" +
+        "- Mermaid (default for most cases) inside a ```mermaid code block. Pick the most appropriate Mermaid type: " +
+        "flowchart, sequenceDiagram, classDiagram, erDiagram, stateDiagram-v2, gantt, mindmap, pie, timeline, journey, gitGraph, or quadrantChart.\n" +
+        "- Graphviz DOT inside a ```dot code block — prefer this for dense node-and-edge graphs, dependency trees, network/topology maps, and finite-state machines where Graphviz's automatic layout is clearer than Mermaid.\n" +
+        "Output a single valid diagram in exactly one of these two syntaxes that represents the supplied subject. " +
         "Add a 1-sentence caption above the code block. Output only the caption and the code block — no other prose."
       );
 

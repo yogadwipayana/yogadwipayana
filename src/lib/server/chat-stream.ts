@@ -9,8 +9,14 @@ import {
 } from "@/lib/server/mcp/context7";
 import {
   appendMessage,
+  recordUsageEvent,
   updateConversation,
 } from "@/lib/server/chat-service";
+import {
+  startGeneration,
+  type Frame,
+  type Generation,
+} from "@/lib/server/chat-registry";
 
 type ChatMessage = OpenAI.Chat.Completions.ChatCompletionMessageParam;
 
@@ -100,9 +106,108 @@ export function runChatStream(args: {
   messages: ChatMessage[];
   /** Optional frame emitted before any model output (e.g. saved user id). */
   preface?: SsePreface;
-  /** Optional AbortSignal — aborts the OpenAI stream when the client disconnects. */
-  abortSignal?: AbortSignal;
 }): Response {
+  // Start the generation in the registry — or attach to one already running for
+  // this conversation. The generation is owned by the server process, not this
+  // request, so it keeps running and persisting even if the client disconnects.
+  const gen = startGeneration(args.conversationId, (push, signal) =>
+    runGeneration({
+      supabase: args.supabase,
+      conversationId: args.conversationId,
+      userId: args.userId,
+      model: args.model,
+      messages: args.messages,
+      preface: args.preface,
+      push,
+      signal,
+    }),
+  );
+  return streamResponse(gen);
+}
+
+/**
+ * Build an SSE Response that first replays every frame buffered for a
+ * generation, then streams live frames as they arrive. Any number of clients
+ * can call this for the same generation (the original sender plus reconnecting
+ * tabs after a refresh or navigation).
+ */
+export function streamResponse(gen: Generation): Response {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      let closed = false;
+      const write = (frame: Frame) => {
+        if (closed) return;
+        try {
+          if ((frame as { __done?: true }).__done) {
+            controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+            closed = true;
+            try {
+              controller.close();
+            } catch {
+              // already closed
+            }
+            return;
+          }
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify(frame)}\n\n`),
+          );
+        } catch {
+          // This subscriber's controller is gone (client disconnected); ignore.
+          // The generation itself is unaffected.
+        }
+      };
+
+      // Replay the backlog. There is no `await` between snapshotting the buffer
+      // and subscribing, so the runner (a separate async task) cannot push in
+      // between — no frame is missed or double-delivered.
+      const backlog = gen.buffer.slice();
+      for (const frame of backlog) write(frame);
+
+      if (closed) return; // backlog already contained the done sentinel
+      if (gen.done) {
+        try {
+          controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+        } catch {}
+        try {
+          controller.close();
+        } catch {}
+        return;
+      }
+
+      const unsub = gen.subscribe((frame) => {
+        write(frame);
+        if (closed) unsub();
+      });
+    },
+  });
+
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
+  });
+}
+
+/**
+ * The OpenAI tool-calling loop, run as a registry generation. Pushes SSE frames
+ * via `push`; aborts only when `signal` fires (explicit user stop, never client
+ * disconnect). Resolves when the turn is fully done and the final assistant
+ * message has been persisted. Each round streams `delta.content`, accumulates
+ * tool calls, executes them server-side, and feeds results back to the model.
+ */
+async function runGeneration(ctx: {
+  supabase: SupabaseClient;
+  conversationId: string;
+  userId: string;
+  model: string;
+  messages: ChatMessage[];
+  preface?: SsePreface;
+  push: (frame: Frame) => void;
+  signal: AbortSignal;
+}): Promise<void> {
   const {
     supabase,
     conversationId,
@@ -110,42 +215,26 @@ export function runChatStream(args: {
     model,
     messages: initialMessages,
     preface,
-    abortSignal,
-  } = args;
+    push,
+    signal: abortSignal,
+  } = ctx;
 
-  const encoder = new TextEncoder();
   const messages: ChatMessage[] = [...initialMessages];
   let finalAssistantText = "";
   // Accumulate all tool call results across every round so they can be
   // persisted alongside the final assistant message.
   const allToolEvents: PersistedToolEvent[] = [];
+  // Token usage from the model, summed across rounds (each tool-call round is a
+  // separate completion with its own usage). Persisted with the final message.
+  const usageTotals = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  let sawUsage = false;
 
-  const body = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const send = (payload: unknown) => {
-        try {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
-          );
-        } catch {
-          // Client disconnected; silently ignore — generation continues in the
-          // background and the result is still persisted via persistFinal().
-        }
-      };
-      const sendDone = () => {
-        try {
-          controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
-        } catch {
-          // ignore
-        }
-      };
-      const closeStream = () => {
-        try {
-          controller.close();
-        } catch {
-          // Already closed; ignore.
-        }
-      };
+  const send = (payload: Record<string, unknown>) => push(payload);
+  // The DONE sentinel and stream close are owned by streamResponse (via the
+  // registry's finish()), so these are no-ops now. Kept as named calls to keep
+  // the loop body below unchanged.
+  const sendDone = () => {};
+  const closeStream = () => {};
 
       const persistFinal = async (followUps?: string[]) => {
         if (finalAssistantText.length > 0) {
@@ -157,8 +246,24 @@ export function runChatStream(args: {
               content: finalAssistantText,
               toolEvents: allToolEvents.length > 0 ? allToolEvents : undefined,
               followUps: followUps?.length ? followUps : undefined,
+              usage: sawUsage ? usageTotals : undefined,
             });
             send({ saved: { role: "assistant", id: saved.id } });
+            // Append to the immutable usage ledger so consumption survives
+            // conversation deletion. Independent best-effort write.
+            if (sawUsage) {
+              try {
+                await recordUsageEvent(supabase, userId, {
+                  model,
+                  promptTokens: usageTotals.promptTokens,
+                  completionTokens: usageTotals.completionTokens,
+                  totalTokens: usageTotals.totalTokens,
+                  toolCalls: allToolEvents.length,
+                });
+              } catch {
+                // Ledger write is best-effort; never break the stream.
+              }
+            }
           } catch {
             // Persisting is best-effort; the stream itself should still close cleanly.
           }
@@ -261,6 +366,10 @@ export function runChatStream(args: {
 
             // Emit usage if present (typically on the final chunk)
             if (chunk.usage) {
+              sawUsage = true;
+              usageTotals.promptTokens += chunk.usage.prompt_tokens ?? 0;
+              usageTotals.completionTokens += chunk.usage.completion_tokens ?? 0;
+              usageTotals.totalTokens += chunk.usage.total_tokens ?? 0;
               send({
                 usage: {
                   prompt_tokens: chunk.usage.prompt_tokens,
@@ -463,16 +572,6 @@ export function runChatStream(args: {
         // or returned early (ask_user, abort, budget limit).
         if (mcpSession) await mcpSession.close();
       }
-    },
-  });
-
-  return new Response(body, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-    },
-  });
 }
 
 /**

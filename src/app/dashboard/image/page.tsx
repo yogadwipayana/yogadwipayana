@@ -21,7 +21,7 @@ export default async function ImagePage() {
     redirect("/sign-in");
   }
 
-  const images = await listGeneratedImages(supabase, user.id, { limit: 60 });
+  const { images } = await listGeneratedImages(supabase, user.id, { limit: 60 });
 
   return <DashboardShell toolId="image" initialImages={images} />;
 }

@@ -11,6 +11,7 @@ function safePath(input: string | null): string {
   if (!input || typeof input !== "string") return "/dashboard";
   if (!input.startsWith("/")) return "/dashboard";
   if (input.startsWith("//") || input.startsWith("/\\")) return "/dashboard";
+  if (/[\s,]/.test(input)) return "/dashboard";
   return input;
 }
 

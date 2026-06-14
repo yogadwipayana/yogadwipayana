@@ -1,38 +1,51 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import mermaid from "mermaid";
+import { useEffect, useState } from "react";
+import type { Mermaid } from "mermaid";
 import { Loader2 } from "lucide-react";
+import { DiagramViewer } from "@/components/ui/DiagramViewer";
 
-let _initialized = false;
-function ensureInit() {
-  if (_initialized) return;
-  _initialized = true;
-  mermaid.initialize({
-    startOnLoad: false,
-    theme: "dark",
-    darkMode: true,
-    themeVariables: {
-      background: "#0f0f0f",
-      primaryColor: "#3ecf8e",
-      primaryTextColor: "#e5e5e5",
-      lineColor: "#ffffff40",
-      edgeLabelBackground: "#1a1a1a",
-      tertiaryColor: "#1a1a1a",
-    },
-  });
+// Lazy, module-level singleton import so the (heavy) mermaid bundle is only
+// fetched the first time a diagram actually renders, and reused thereafter.
+let _mermaidPromise: Promise<Mermaid> | null = null;
+function getMermaid(): Promise<Mermaid> {
+  if (!_mermaidPromise) {
+    _mermaidPromise = import("mermaid").then((mod) => {
+      const mermaid = mod.default;
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: "dark",
+        darkMode: true,
+        // Render labels as native SVG <text> rather than foreignObject HTML, so
+        // the diagram rasterizes cleanly when copied as PNG via canvas.
+        htmlLabels: false,
+        flowchart: { htmlLabels: false },
+        themeVariables: {
+          background: "#0f0f0f",
+          primaryColor: "#3ecf8e",
+          primaryTextColor: "#e5e5e5",
+          lineColor: "#ffffff40",
+          edgeLabelBackground: "#1a1a1a",
+          tertiaryColor: "#1a1a1a",
+        },
+      });
+      return mermaid;
+    });
+  }
+  return _mermaidPromise;
 }
 
 export function MermaidDiagram({ code }: { code: string }) {
-  const containerRef = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    ensureInit();
 
     (async () => {
+      const mermaid = await getMermaid();
+      if (cancelled) return;
+
       // Pre-validate with `suppressErrors` so an invalid (often still-
       // streaming or truncated) diagram doesn't fall through to the default
       // mermaid render path that injects the giant "Syntax error in text"
@@ -85,12 +98,5 @@ export function MermaidDiagram({ code }: { code: string }) {
     );
   }
 
-  return (
-    <div
-      ref={containerRef}
-      className="my-2 overflow-x-auto rounded-lg border border-white/[0.07] bg-[#0f0f0f] p-4 [&_svg]:max-w-full"
-      // eslint-disable-next-line react/no-danger
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
-  );
+  return <DiagramViewer svg={svg} kind="mermaid" />;
 }

@@ -104,7 +104,7 @@ function HistoryGrid({ images }: { images: GeneratedImageRow[] }) {
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={img.url}
+            src={img.url ?? ""}
             alt={img.prompt}
             title={img.prompt}
             className="aspect-video w-full object-cover"
@@ -115,9 +115,9 @@ function HistoryGrid({ images }: { images: GeneratedImageRow[] }) {
               {img.size ?? "auto"}
             </span>
             <div className="flex shrink-0 items-center gap-1">
-              <CopyButton text={img.url} label="Copy URL" />
+              <CopyButton text={img.url ?? ""} label="Copy URL" />
               <a
-                href={img.url}
+                href={img.url ?? "#"}
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Open image"
@@ -279,7 +279,7 @@ function GenerateCard({
           </p>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={lastResult.url}
+            src={lastResult.url ?? ""}
             alt={lastResult.prompt}
             className="w-full rounded-md object-cover"
           />
@@ -287,9 +287,9 @@ function GenerateCard({
             <code className="min-w-0 flex-1 truncate rounded bg-white/[0.04] px-2 py-1 font-mono text-[11px] text-white/60">
               {lastResult.url}
             </code>
-            <CopyButton text={lastResult.url} label="Copy URL" />
+            <CopyButton text={lastResult.url ?? ""} label="Copy URL" />
             <a
-              href={lastResult.url}
+              href={lastResult.url ?? "#"}
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Open image"

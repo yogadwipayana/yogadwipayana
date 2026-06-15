@@ -78,7 +78,7 @@ export default async function AiKeysPage() {
               <Key className="h-8 w-8 text-white/10" />
               <p className="text-[13px] text-white/30">
                 {isLoggedIn
-                  ? "No API keys yet. Use the admin API to create one."
+                  ? "No API keys yet. Use “New key” above to create one."
                   : "Sign in to see your API keys."}
               </p>
             </div>

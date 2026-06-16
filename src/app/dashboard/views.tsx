@@ -661,10 +661,15 @@ export function ChatView({
   const [headerRenameDraft, setHeaderRenameDraft] = useState("");
   const headerRenameRef = useRef<HTMLInputElement | null>(null);
 
-  // Keep shareConv in sync when conversation prop changes (e.g. after sidebar update)
-  useEffect(() => {
+  // Keep shareConv in sync when the conversation prop changes (e.g. after a
+  // sidebar update). Adjust during render via the previous-prop pattern instead
+  // of a mirror effect, so there's no extra commit/flash. shareConv still
+  // diverges locally via setShareConv in handleToggleShare.
+  const [prevConversation, setPrevConversation] = useState(conversation);
+  if (prevConversation !== conversation) {
+    setPrevConversation(conversation);
     setShareConv(conversation);
-  }, [conversation]);
+  }
 
   // Hydrate messages once per mount. The parent shell remounts this view on
   // conversation change via `key={conversation.id}`, so we don't need to reset
@@ -2552,12 +2557,12 @@ function LinksTabView({ sources }: { sources: Source[] }) {
           {sources.length} {sources.length === 1 ? "source" : "sources"}
         </p>
         <div className="grid gap-2.5 sm:grid-cols-2">
-          {sources.map((s, i) => {
+          {sources.map((s) => {
             let hostname = "";
             try { hostname = new URL(s.url).hostname; } catch {}
             return (
               <a
-                key={i}
+                key={s.url}
                 href={s.url}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -2623,9 +2628,9 @@ function ImagesTabView({
           {images.length} {images.length === 1 ? "image" : "images"}
         </p>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {images.map((img, i) => (
+          {images.map((img) => (
             <div
-              key={i}
+              key={img.url}
               className="group relative aspect-square overflow-hidden rounded-xl border border-white/[0.08] bg-[#181818]"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -3028,8 +3033,8 @@ function SourcesButton({ events }: { events: ToolEvent[] }) {
             {sources.length} {sources.length === 1 ? "source" : "sources"}
           </p>
           <ul className="max-h-64 overflow-y-auto py-1">
-            {sources.map((s, i) => (
-              <li key={i}>
+            {sources.map((s) => (
+              <li key={s.url}>
                 <a
                   href={s.url}
                   target="_blank"

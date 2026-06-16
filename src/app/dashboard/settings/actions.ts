@@ -50,6 +50,13 @@ export async function updateDisplayName(
   }
 
   const supabase = createClient(await cookies());
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { ok: false, error: "You're not signed in." };
+  }
+
   const { error } = await supabase.auth.updateUser({
     data: { display_name: parsed.data },
   });

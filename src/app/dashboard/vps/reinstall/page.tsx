@@ -942,7 +942,7 @@ function ReinstallContent() {
           <div className="w-full max-w-md rounded-xl border border-white/[0.1] bg-[#171717] p-6">
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-[15px] font-medium text-white">Confirm reinstall</h3>
-              <button onClick={() => setConfirmOpen(false)} className="text-white/35 hover:text-white/60">
+              <button type="button" onClick={() => setConfirmOpen(false)} className="text-white/35 hover:text-white/60">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -959,12 +959,14 @@ function ReinstallContent() {
             </p>
             <div className="flex gap-3">
               <button
+                type="button"
                 onClick={() => setConfirmOpen(false)}
                 className="flex-1 rounded-md border border-white/[0.08] py-2 text-[13px] text-white/55 hover:bg-white/[0.04] transition-colors"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={doReinstall}
                 disabled={loading}
                 className="flex-1 rounded-md border border-red-500/30 bg-red-500/10 py-2 text-[13px] font-medium text-red-400 hover:bg-red-500/15 transition-colors disabled:opacity-50"

@@ -65,7 +65,7 @@ export async function POST(request: Request) {
 
 const PatchBody = z
   .object({
-    id: z.string().uuid(),
+    id: z.uuid(),
     content: z.string().trim().min(1).max(2_000).optional(),
     is_active: z.boolean().optional(),
   })
@@ -105,7 +105,7 @@ export async function PATCH(request: Request) {
   }
 }
 
-const DeleteQuery = z.object({ id: z.string().uuid() });
+const DeleteQuery = z.object({ id: z.uuid() });
 
 export async function DELETE(request: Request) {
   const supabase = createClient(await cookies());

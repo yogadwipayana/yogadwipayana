@@ -101,59 +101,78 @@ export async function buildUserContentWithAttachments(args: {
 
   const parts: ContentPart[] = [{ type: "text", text: textWithUrls }];
 
-  for (const att of attachments) {
-    if (att.kind === "image") {
-      const imageUrl = await resolveImageUrl(att);
-      parts.push({
-        type: "image_url",
-        image_url: { url: imageUrl },
-      });
-    } else if (att.kind === "pdf") {
-      // PDF — extract text server-side. For our own R2-backed files, fetch the
-      // bytes from R2 directly: the SSRF-guarded fetch in extractPdfText()
-      // blocks our own private proxy URL, so we read the object instead.
-      try {
-        const ownBytes = await getOwnFileBytes(att.url);
-        const extracted = ownBytes
-          ? await extractPdfTextFromBuffer(ownBytes)
-          : await extractPdfText(att.url);
-        parts.push({
-          type: "text",
-          text: `[Attached PDF: ${att.name}]\n\n${extracted}\n`,
-        });
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        parts.push({
-          type: "text",
-          text: `[Attached PDF: ${att.name} — could not extract text: ${reason}]`,
-        });
-      }
-    } else {
-      // Document (DOCX / XLSX / CSV / TXT / Markdown) — extract text from the
-      // uploaded bytes in R2. Attachments are always our own files, so we
-      // fetch them from R2 rather than over HTTP.
-      try {
-        const ownBytes = await getOwnFileBytes(att.url);
-        if (!ownBytes) {
-          throw new Error("Document must be an uploaded file");
+  // Each attachment resolves independently (R2 fetch / PDF / doc extraction),
+  // so process them in parallel. Promise.all preserves array order, so the
+  // appended parts keep the same order as a sequential loop would produce.
+  const attachmentParts = await Promise.all(
+    attachments.map(async (att): Promise<ContentPart[]> => {
+      if (att.kind === "image") {
+        const imageUrl = await resolveImageUrl(att);
+        return [
+          {
+            type: "image_url",
+            image_url: { url: imageUrl },
+          },
+        ];
+      } else if (att.kind === "pdf") {
+        // PDF — extract text server-side. For our own R2-backed files, fetch the
+        // bytes from R2 directly: the SSRF-guarded fetch in extractPdfText()
+        // blocks our own private proxy URL, so we read the object instead.
+        try {
+          const ownBytes = await getOwnFileBytes(att.url);
+          const extracted = ownBytes
+            ? await extractPdfTextFromBuffer(ownBytes)
+            : await extractPdfText(att.url);
+          return [
+            {
+              type: "text",
+              text: `[Attached PDF: ${att.name}]\n\n${extracted}\n`,
+            },
+          ];
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          return [
+            {
+              type: "text",
+              text: `[Attached PDF: ${att.name} — could not extract text: ${reason}]`,
+            },
+          ];
         }
-        const extracted = await extractDocumentText(
-          ownBytes,
-          att.mime,
-          att.name,
-        );
-        parts.push({
-          type: "text",
-          text: `[Attached document: ${att.name}]\n\n${extracted}\n`,
-        });
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        parts.push({
-          type: "text",
-          text: `[Attached document: ${att.name} — could not extract text: ${reason}]`,
-        });
+      } else {
+        // Document (DOCX / XLSX / CSV / TXT / Markdown) — extract text from the
+        // uploaded bytes in R2. Attachments are always our own files, so we
+        // fetch them from R2 rather than over HTTP.
+        try {
+          const ownBytes = await getOwnFileBytes(att.url);
+          if (!ownBytes) {
+            throw new Error("Document must be an uploaded file");
+          }
+          const extracted = await extractDocumentText(
+            ownBytes,
+            att.mime,
+            att.name,
+          );
+          return [
+            {
+              type: "text",
+              text: `[Attached document: ${att.name}]\n\n${extracted}\n`,
+            },
+          ];
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          return [
+            {
+              type: "text",
+              text: `[Attached document: ${att.name} — could not extract text: ${reason}]`,
+            },
+          ];
+        }
       }
-    }
+    }),
+  );
+
+  for (const group of attachmentParts) {
+    parts.push(...group);
   }
 
   return parts;

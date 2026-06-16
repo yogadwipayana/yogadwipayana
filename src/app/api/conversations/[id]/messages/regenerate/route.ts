@@ -83,21 +83,16 @@ export async function POST(request: Request, { params }: RouteContext) {
     const lastUserMessage = [...history].reverse().find((m) => m.role === "user");
     const slashParsed = lastUserMessage ? parseSlash(lastUserMessage.content) : null;
 
-    // Fall back to a user-defined custom slash command when no built-in matched.
-    const customSlashBlock = slashParsed || !lastUserMessage
-      ? null
-      : await resolveCustomSlashBlock(supabase, user.id, lastUserMessage.content);
+    // The slash-command fallback, custom system prompt, and active memory are
+    // independent reads — fetch them in parallel.
+    const [customSlashBlock, customSystemPrompt, activeMemories] = await Promise.all([
+      slashParsed || !lastUserMessage
+        ? Promise.resolve(null)
+        : resolveCustomSlashBlock(supabase, user.id, lastUserMessage.content),
+      getConversationSystemPromptContent(supabase, conversationId, user.id),
+      listActiveMemories(supabase, user.id),
+    ]);
 
-    // Custom system prompt attached to this conversation (if any).
-    const customSystemPrompt = await getConversationSystemPromptContent(
-      supabase,
-      conversationId,
-      user.id,
-    );
-
-    // Active long-term memory — same injection as the send route so regenerate
-    // keeps honoring the user's standing preferences.
-    const activeMemories = await listActiveMemories(supabase, user.id);
     const memoryBlock = buildMemorySystemBlock(activeMemories);
     const memoryReminder = buildMemoryReminder(activeMemories);
 

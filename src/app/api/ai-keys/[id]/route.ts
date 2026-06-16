@@ -11,8 +11,6 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-
   if (!aiAdminConfigured()) {
     return NextResponse.json(
       { error: "AI router not configured" },
@@ -29,6 +27,7 @@ export async function PATCH(
   }
   const email = user.email;
 
+  const { id } = await params;
   const key = await aiDb.apiKeys
     .findUnique({ where: { id }, select: { id: true, owner: true } })
     .catch(() => null);
@@ -125,8 +124,6 @@ export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params;
-
   if (!aiAdminConfigured()) {
     return NextResponse.json(
       { error: "AI router not configured" },
@@ -143,6 +140,7 @@ export async function DELETE(
   }
   const email = user.email;
 
+  const { id } = await params;
   // Ownership check — query DB directly to avoid an extra upstream round-trip.
   // Return 404 for both true-not-found and ownership-mismatch so we don't
   // reveal the existence of keys belonging to other users.

@@ -34,6 +34,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "docx": "^9.7.1",
+    "dompurify": "^3.4.10",
     "gray-matter": "^4.0.3",
     "highlight.js": "^11.10.0",
     "lucide-react": "^1.14.0",

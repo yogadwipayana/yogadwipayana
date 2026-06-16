@@ -47,18 +47,19 @@ export async function POST(_request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const [rawMessages, imagesResult] = await Promise.all([
+  // listChildren under each path message gives the navigator counts; compute it
+  // from the full row set the same way GET does. The full-row query is
+  // independent of the path/image fetches, so run all three in parallel.
+  const [rawMessages, imagesResult, allRowsResult] = await Promise.all([
     getMessages(supabase, id, user.id),
     listGeneratedImages(supabase, user.id, { conversationId: id }),
+    supabase
+      .from("message")
+      .select("*")
+      .eq("conversation_id", id)
+      .order("created_at", { ascending: true }),
   ]);
-
-  // listChildren under each path message gives the navigator counts; compute it
-  // from the full row set the same way GET does.
-  const { data: allRows } = await supabase
-    .from("message")
-    .select("*")
-    .eq("conversation_id", id)
-    .order("created_at", { ascending: true });
+  const { data: allRows } = allRowsResult;
   const branchInfo = computeBranchInfo(allRows ?? [], rawMessages);
 
   const messages = rawMessages.map((m) => {

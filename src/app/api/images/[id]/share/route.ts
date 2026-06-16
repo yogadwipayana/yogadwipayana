@@ -7,7 +7,7 @@ import { createClient } from "@/utils/supabase/server";
 
 export const runtime = "nodejs";
 
-const ParamId = z.string().uuid();
+const ParamId = z.uuid();
 
 type ImageShareRow = { url: string | null; user_id: string };
 

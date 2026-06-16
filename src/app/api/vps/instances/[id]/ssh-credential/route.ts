@@ -69,8 +69,10 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await requireUser();
-    const { id } = await context.params;
+    const [user, { id }] = await Promise.all([
+      requireUser(),
+      context.params,
+    ]);
     await deleteSshCredential(user.id, id);
     return ok({ deleted: true });
   } catch (err) {

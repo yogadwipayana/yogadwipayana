@@ -16,13 +16,15 @@ export async function POST(
   context: { params: Promise<{ id: string; action: string }> },
 ) {
   try {
-    const user = await requireUser();
+    const [user, { id, action }] = await Promise.all([
+      requireUser(),
+      context.params,
+    ]);
     await checkRateLimit(
       ratelimits.vpsAction,
       getRateLimitIdentifier(user.id, getClientIp(request.headers)),
       "VPS power action",
     );
-    const { id, action } = await context.params;
     if (!["start", "stop", "reboot"].includes(action)) {
       throw new ApiError(400, "INVALID_ACTION", "Action must be start, stop, or reboot");
     }

@@ -50,7 +50,7 @@ const PostBody = z.object({
   target: z.enum(["avatar", "og-default", "og-page"]),
   page: z.string().optional(),
   prompt: z.string().optional(),
-  reference_image_url: z.string().url().optional(),
+  reference_image_url: z.url().optional(),
 });
 
 /* -------------------------------------------------------------------------- */

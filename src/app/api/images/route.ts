@@ -48,7 +48,7 @@ const PostBody = z.object({
    * region to regenerate; requires a single base image in image_url/image_urls.
    */
   mask_url: z.string().min(1).max(2048).optional(),
-  conversation_id: z.string().uuid().optional(),
+  conversation_id: z.uuid().optional(),
   source: z.enum(["chat", "workspace", "admin"]).optional(),
 });
 
@@ -108,8 +108,8 @@ export async function POST(request: Request) {
   ].slice(0, 4);
 
   const resolvedImages: string[] = [];
-  for (const raw of rawUrls) {
-    const result = await resolveOne(raw);
+  const resolveResults = await Promise.all(rawUrls.map((raw) => resolveOne(raw)));
+  for (const result of resolveResults) {
     if (typeof result !== "string") {
       return NextResponse.json({ error: result.error }, { status: 400 });
     }
@@ -238,9 +238,9 @@ export async function POST(request: Request) {
 }
 
 const ListQuery = z.object({
-  conversation_id: z.string().uuid().optional(),
+  conversation_id: z.uuid().optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
-  before: z.string().datetime().optional(),
+  before: z.iso.datetime().optional(),
 });
 
 export async function GET(request: Request) {
@@ -273,7 +273,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ images, nextCursor, hasMore });
 }
 
-const DeleteQuery = z.object({ id: z.string().uuid() });
+const DeleteQuery = z.object({ id: z.uuid() });
 
 export async function DELETE(request: Request) {
   const supabase = createClient(await cookies());

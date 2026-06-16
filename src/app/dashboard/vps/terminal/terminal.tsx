@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 
 interface Config {
   instanceId: string;
@@ -23,6 +23,16 @@ interface Props {
 
 export function SshTerminal({ config, onStatus }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Read the latest config / status callback without retriggering the
+  // mount-once connection effect below.
+  const getConfig = useEffectEvent(() => config);
+  const reportStatus = useEffectEvent(
+    (
+      status: "connecting" | "ready" | "error" | "closed",
+      message?: string,
+    ) => onStatus(status, message),
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -117,27 +127,28 @@ export function SshTerminal({ config, onStatus }: Props) {
           ws?.close();
           return;
         }
+        const cfg = getConfig();
         const { cols, rows } = term;
         ws!.send(
           JSON.stringify({
             type: "connect",
-            instanceId: config.instanceId,
-            authMethod: config.authMethod,
-            host: config.host,
-            port: config.port,
-            username: config.username,
-            ...(config.password !== undefined && { password: config.password }),
-            ...(config.privateKey !== undefined && {
-              privateKey: config.privateKey,
+            instanceId: cfg.instanceId,
+            authMethod: cfg.authMethod,
+            host: cfg.host,
+            port: cfg.port,
+            username: cfg.username,
+            ...(cfg.password !== undefined && { password: cfg.password }),
+            ...(cfg.privateKey !== undefined && {
+              privateKey: cfg.privateKey,
             }),
-            ...(config.passphrase !== undefined && {
-              passphrase: config.passphrase,
+            ...(cfg.passphrase !== undefined && {
+              passphrase: cfg.passphrase,
             }),
             cols,
             rows,
           }),
         );
-        onStatus("connecting");
+        reportStatus("connecting");
       };
 
       ws.onmessage = (event) => {
@@ -152,7 +163,7 @@ export function SshTerminal({ config, onStatus }: Props) {
               message?: string;
             };
             if (msg.type === "status") {
-              onStatus(
+              reportStatus(
                 msg.status as "connecting" | "ready" | "error" | "closed",
                 msg.message,
               );
@@ -166,18 +177,18 @@ export function SshTerminal({ config, onStatus }: Props) {
 
       ws.onerror = () => {
         if (!mounted) return;
-        onStatus("error", "WebSocket connection failed.");
+        reportStatus("error", "WebSocket connection failed.");
       };
 
       ws.onclose = (e) => {
         if (!mounted) return;
         if (e.code !== 1000 && e.code !== 1001) {
-          onStatus(
+          reportStatus(
             "error",
             e.reason || `Connection closed unexpectedly (code ${e.code}).`,
           );
         } else {
-          onStatus("closed");
+          reportStatus("closed");
         }
       };
 
@@ -214,8 +225,6 @@ export function SshTerminal({ config, onStatus }: Props) {
       if (resizeListener) window.removeEventListener("resize", resizeListener);
       if (ws && ws.readyState < WebSocket.CLOSING) ws.close(1000, "unmount");
     };
-    // config is stable for the lifetime of a connection — intentional
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

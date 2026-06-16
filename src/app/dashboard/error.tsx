@@ -28,6 +28,7 @@ export default function ErrorBoundary({
           <p className="font-mono text-[10px] text-white/20">Ref: {error.digest}</p>
         )}
         <button
+          type="button"
           onClick={reset}
           className="mt-2 flex items-center gap-2 rounded-md bg-[#3ecf8e] px-4 py-2 text-[13px] font-medium text-[#171717] transition-colors hover:bg-[#24b47e]"
         >

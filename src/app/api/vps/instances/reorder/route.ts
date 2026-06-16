@@ -7,7 +7,7 @@ import { reorderUserInstances } from "@/lib/server/dashboard-service";
 export const runtime = "nodejs";
 
 const payloadSchema = z.object({
-  orderedIds: z.array(z.string().uuid()).min(1).max(200),
+  orderedIds: z.array(z.uuid()).min(1).max(200),
 });
 
 export async function POST(request: Request) {

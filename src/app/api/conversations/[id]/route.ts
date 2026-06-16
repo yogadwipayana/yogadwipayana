@@ -20,7 +20,7 @@ const PatchBody = z.object({
   model: z.string().min(1).max(120).optional(),
   mode: z.enum(["chat", "image"]).optional(),
   // `null` detaches the prompt; a uuid attaches one. Omitted = leave unchanged.
-  system_prompt_id: z.string().uuid().nullable().optional(),
+  system_prompt_id: z.uuid().nullable().optional(),
   // Tool categories switched off for this conversation (see TOOL_CATEGORY_KEYS).
   disabled_tools: z.array(z.enum(TOOL_CATEGORY_KEYS)).optional(),
   // Organizational state — does not bump updated_at / reorder the list.
@@ -89,8 +89,10 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { id } = await params;
-  const json = await request.json().catch(() => ({}));
+  const [{ id }, json] = await Promise.all([
+    params,
+    request.json().catch(() => ({})),
+  ]);
   const parsed = PatchBody.safeParse(json);
   if (!parsed.success) {
     return NextResponse.json(

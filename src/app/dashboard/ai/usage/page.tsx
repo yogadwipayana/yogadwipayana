@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { cookies } from "next/headers";
 
 import { aiDb } from "@/lib/db/ai";
@@ -249,7 +250,13 @@ export default async function AiUsagePage({
                 Usage and credit balance for the selected window.
               </p>
             </div>
-            <RangeFilter />
+            <Suspense
+              fallback={
+                <div className="h-[30px] w-[140px] rounded-md border border-white/[0.08] bg-[#171717]" />
+              }
+            >
+              <RangeFilter />
+            </Suspense>
           </div>
 
           {/* Sign-in banner */}

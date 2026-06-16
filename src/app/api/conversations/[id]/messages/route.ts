@@ -39,7 +39,7 @@ export const runtime = "nodejs";
 
 const AttachmentSchema = z.object({
   kind: z.enum(["image", "pdf", "document"]),
-  url: z.string().url(),
+  url: z.url(),
   name: z.string().min(1).max(255),
   mime: z.string().min(1).max(127),
   size: z.number().int().positive().max(50 * 1024 * 1024),
@@ -65,8 +65,10 @@ export async function POST(request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { id: conversationId } = await params;
-  const json = await request.json().catch(() => null);
+  const [{ id: conversationId }, json] = await Promise.all([
+    params,
+    request.json().catch(() => null),
+  ]);
   const parsed = Body.safeParse(json);
   if (!parsed.success) {
     return NextResponse.json(
@@ -105,14 +107,17 @@ export async function POST(request: Request, { params }: RouteContext) {
 
     const { content, attachments } = parsed.data;
 
-    for (const att of attachments ?? []) {
-      const validation = await validateAttachmentUrl(att.url);
-      if (!validation.ok) {
-        return NextResponse.json(
-          { error: `Attachment URL rejected: ${validation.error}` },
-          { status: 400 },
-        );
-      }
+    // Validate all attachment URLs in parallel, then report the first failure
+    // in array order (preserving the original early-return error response).
+    const attachmentValidations = await Promise.all(
+      (attachments ?? []).map((att) => validateAttachmentUrl(att.url)),
+    );
+    const failedAttachment = attachmentValidations.find((v) => !v.ok);
+    if (failedAttachment && !failedAttachment.ok) {
+      return NextResponse.json(
+        { error: `Attachment URL rejected: ${failedAttachment.error}` },
+        { status: 400 },
+      );
     }
 
     // Build the DB-persisted content: user text + optional attachment footer

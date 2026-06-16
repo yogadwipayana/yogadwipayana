@@ -102,8 +102,8 @@ function ToolEventsBlock({ events }: { events: PublicToolEvent[] }) {
             {sources.length} {sources.length === 1 ? "source" : "sources"}
           </p>
           <ul className="flex flex-col gap-0.5">
-            {sources.map((s, i) => (
-              <li key={i} className="min-w-0">
+            {sources.map((s) => (
+              <li key={s.url} className="min-w-0">
                 <a
                   href={s.url}
                   target="_blank"

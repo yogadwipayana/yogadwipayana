@@ -506,7 +506,12 @@ export async function performReinstall(input: {
   password?: string;
   keyId?: string;
 }) {
-  const { instance, creds } = await resolveInstanceWithCreds(input.userId, input.instanceId);
+  // Creating the Supabase client is independent of resolving instance creds,
+  // so kick both off together. The reinstall→update ordering below is preserved.
+  const [{ instance, creds }, client] = await Promise.all([
+    resolveInstanceWithCreds(input.userId, input.instanceId),
+    sb(),
+  ]);
   const requestId = await reinstallInstance(
     creds,
     instance.external_instance_id,
@@ -516,7 +521,6 @@ export async function performReinstall(input: {
   );
   // Reinstall changes the SSH host key — clear the pinned fingerprint so the
   // next connect re-pins instead of being rejected.
-  const client = await sb();
   await client
     .from("instance")
     .update({ host_fingerprint_sha256: null })

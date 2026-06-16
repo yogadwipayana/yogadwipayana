@@ -5,6 +5,7 @@ import { useRouter, useSelectedLayoutSegment } from "next/navigation";
 import {
   useCallback,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -769,6 +770,25 @@ export function DashboardShell({
   // Poll for in-flight jobs. While any pending row exists, re-fetch the list
   // every 3s and reconcile. Surfaces completion/failure even after a reload or
   // navigating between tools.
+  // Reconciliation reads the latest `images`/`addToast` without making the
+  // interval reactive to them — otherwise the timer would be torn down and
+  // recreated on every 3s `setImages`, resetting the poll cadence.
+  const reconcilePending = useEffectEvent((fetched: GeneratedImageRow[]) => {
+    const prevById = new Map(images.map((img) => [img.id, img]));
+    for (const img of fetched) {
+      const before = prevById.get(img.id);
+      if (before?.status === "pending" && img.status === "completed") {
+        addToast({ type: "success", message: "Image generated successfully" });
+      } else if (before?.status === "pending" && img.status === "failed") {
+        addToast({
+          type: "error",
+          message: img.error || "Generation failed",
+        });
+      }
+    }
+    setImages(fetched);
+  });
+
   useEffect(() => {
     if (!hasPendingImage) return;
     let cancelled = false;
@@ -778,20 +798,7 @@ export function DashboardShell({
         if (!res.ok) return;
         const data = (await res.json()) as { images: GeneratedImageRow[] };
         if (cancelled) return;
-        const fetched = data.images;
-        const prevById = new Map(images.map((img) => [img.id, img]));
-        for (const img of fetched) {
-          const before = prevById.get(img.id);
-          if (before?.status === "pending" && img.status === "completed") {
-            addToast({ type: "success", message: "Image generated successfully" });
-          } else if (before?.status === "pending" && img.status === "failed") {
-            addToast({
-              type: "error",
-              message: img.error || "Generation failed",
-            });
-          }
-        }
-        setImages(fetched);
+        reconcilePending(data.images);
       } catch {
         // transient — try again next tick
       }
@@ -800,7 +807,7 @@ export function DashboardShell({
       cancelled = true;
       clearInterval(id);
     };
-  }, [hasPendingImage, images, addToast]);
+  }, [hasPendingImage]);
 
   const handleDeleteImage = useCallback(
     async (id: string) => {

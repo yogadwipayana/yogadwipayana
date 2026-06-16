@@ -24,7 +24,6 @@ const headerSafe = (max: number) =>
 const BodySchema = z.object({
   name: headerSafe(120),
   email: z
-    .string()
     .email()
     .max(254)
     .refine((v) => !/[\r\n\u0000]/.test(v), {

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -36,6 +37,8 @@ export default async function VpsLayout({
   const instances = (error ? [] : (rows ?? [])) as unknown as ApiVpsInstance[];
 
   return (
-    <VpsDashboardShell instances={instances}>{children}</VpsDashboardShell>
+    <Suspense fallback={null}>
+      <VpsDashboardShell instances={instances}>{children}</VpsDashboardShell>
+    </Suspense>
   );
 }

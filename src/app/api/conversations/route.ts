@@ -15,7 +15,7 @@ const CreateBody = z.object({
   model: z.string().min(1).max(120).optional(),
   mode: z.enum(["chat", "image"]).optional(),
   title: z.string().min(1).max(200).optional(),
-  system_prompt_id: z.string().uuid().nullable().optional(),
+  system_prompt_id: z.uuid().nullable().optional(),
 });
 
 export async function GET(request: Request) {

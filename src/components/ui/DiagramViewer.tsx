@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -15,10 +16,21 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import DOMPurify from "dompurify";
 import { copyToClipboard } from "@/lib/utils";
 
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 8;
+
+// Diagram SVG is generated from user-authored mermaid/graphviz source and is
+// rendered via dangerouslySetInnerHTML, including on the public share page.
+// Sanitize with the SVG profile so a crafted diagram can't inject scripts or
+// javascript: URLs into another viewer's browser.
+function sanitizeSvg(svg: string): string {
+  return DOMPurify.sanitize(svg, {
+    USE_PROFILES: { svg: true, svgFilters: true },
+  });
+}
 
 function clampScale(value: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
@@ -107,6 +119,8 @@ export function DiagramViewer({
   const [ty, setTy] = useState(0);
   const [copied, setCopied] = useState<CopyKind | null>(null);
   const drag = useRef<{ id: number; x: number; y: number } | null>(null);
+
+  const safeSvg = useMemo(() => sanitizeSvg(svg), [svg]);
 
   const reset = useCallback(() => {
     setScale(1);
@@ -279,7 +293,7 @@ export function DiagramViewer({
           style={{
             transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
           }}
-          dangerouslySetInnerHTML={{ __html: svg }}
+          dangerouslySetInnerHTML={{ __html: safeSvg }}
         />
       </div>
     </div>

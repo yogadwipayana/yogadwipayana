@@ -9,7 +9,6 @@ import {
   getMessages,
   updateConversation,
 } from "@/lib/server/chat-service";
-import { TOOL_CATEGORY_KEYS } from "@/lib/server/chat-tools";
 import { listGeneratedImages } from "@/lib/server/image-service";
 import { createClient } from "@/utils/supabase/server";
 
@@ -21,8 +20,6 @@ const PatchBody = z.object({
   mode: z.enum(["chat", "image"]).optional(),
   // `null` detaches the prompt; a uuid attaches one. Omitted = leave unchanged.
   system_prompt_id: z.uuid().nullable().optional(),
-  // Tool categories switched off for this conversation (see TOOL_CATEGORY_KEYS).
-  disabled_tools: z.array(z.enum(TOOL_CATEGORY_KEYS)).optional(),
   // Organizational state — does not bump updated_at / reorder the list.
   pinned: z.boolean().optional(),
   archived: z.boolean().optional(),
@@ -106,7 +103,6 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     parsed.data.model === undefined &&
     parsed.data.mode === undefined &&
     parsed.data.system_prompt_id === undefined &&
-    parsed.data.disabled_tools === undefined &&
     parsed.data.pinned === undefined &&
     parsed.data.archived === undefined
   ) {
@@ -121,7 +117,6 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     model: parsed.data.model,
     mode: parsed.data.mode,
     systemPromptId: parsed.data.system_prompt_id,
-    disabledTools: parsed.data.disabled_tools,
     pinned: parsed.data.pinned,
     archived: parsed.data.archived,
   });

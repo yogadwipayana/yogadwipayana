@@ -15,7 +15,6 @@ export type ConversationRow = {
   is_public: boolean;
   share_token: string | null;
   system_prompt_id: string | null;
-  disabled_tools: string[];
   pinned: boolean;
   archived_at: string | null;
   active_leaf_message_id: string | null;
@@ -45,7 +44,7 @@ export type MessageRow = {
 
 export type ConversationSummary = Pick<
   ConversationRow,
-  "id" | "title" | "model" | "mode" | "is_public" | "share_token" | "system_prompt_id" | "disabled_tools" | "pinned" | "archived_at" | "updated_at"
+  "id" | "title" | "model" | "mode" | "is_public" | "share_token" | "system_prompt_id" | "pinned" | "archived_at" | "updated_at"
 >;
 
 /** A history entry trimmed down to what the model actually receives. */
@@ -103,8 +102,8 @@ export function applyHistoryWindow(
 // `mode()` ordered-set aggregate that PostgREST otherwise mistakes the column
 // name for, raising 42809 ("WITHIN GROUP is required for ordered-set aggregate
 // mode"). The column is `chat_mode` on the row and `mode` on the wire.
-const SUMMARY_COLS = "id,title,model,mode:chat_mode,is_public,share_token,system_prompt_id,disabled_tools,pinned,archived_at,updated_at";
-const ROW_COLS = "id,user_id,title,model,mode:chat_mode,is_public,share_token,system_prompt_id,disabled_tools,pinned,archived_at,active_leaf_message_id,created_at,updated_at";
+const SUMMARY_COLS = "id,title,model,mode:chat_mode,is_public,share_token,system_prompt_id,pinned,archived_at,updated_at";
+const ROW_COLS = "id,user_id,title,model,mode:chat_mode,is_public,share_token,system_prompt_id,pinned,archived_at,active_leaf_message_id,created_at,updated_at";
 
 export async function listConversations(
   supabase: SupabaseClient,
@@ -547,7 +546,6 @@ export async function updateConversation(
     model?: string;
     mode?: ConversationMode;
     systemPromptId?: string | null;
-    disabledTools?: string[];
     pinned?: boolean;
     archived?: boolean;
   },
@@ -557,7 +555,6 @@ export async function updateConversation(
   if (patch.model !== undefined) fields.model = patch.model;
   if (patch.mode !== undefined) fields.chat_mode = patch.mode;
   if (patch.systemPromptId !== undefined) fields.system_prompt_id = patch.systemPromptId;
-  if (patch.disabledTools !== undefined) fields.disabled_tools = patch.disabledTools;
   if (patch.pinned !== undefined) fields.pinned = patch.pinned;
   if (patch.archived !== undefined) {
     fields.archived_at = patch.archived ? new Date().toISOString() : null;
@@ -570,8 +567,7 @@ export async function updateConversation(
     patch.title !== undefined ||
     patch.model !== undefined ||
     patch.mode !== undefined ||
-    patch.systemPromptId !== undefined ||
-    patch.disabledTools !== undefined;
+    patch.systemPromptId !== undefined;
   if (isContentEdit) fields.updated_at = new Date().toISOString();
 
   const { data, error } = await supabase

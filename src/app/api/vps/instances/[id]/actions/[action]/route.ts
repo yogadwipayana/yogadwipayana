@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/server/auth-session";
 import { ApiError, fail, ok } from "@/lib/server/api-response";
 import { recordAudit } from "@/lib/server/audit";
 import { performInstanceAction } from "@/lib/server/dashboard-service";
+import { captureEvent } from "@/lib/server/posthog";
 import {
   checkRateLimit,
   getClientIp,
@@ -40,6 +41,7 @@ export async function POST(
       resourceId: id,
       metadata: { request_id: operation.requestId },
     });
+    await captureEvent(user.id, "vps action", { action });
     return ok({ operation });
   } catch (err) {
     return fail(err);

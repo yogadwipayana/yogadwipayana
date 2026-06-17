@@ -3,6 +3,7 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { createClient } from "@/utils/supabase/server";
 import { ensureAiOwner } from "@/lib/server/ai-admin";
+import { captureEvent, identifyUser } from "@/lib/server/posthog";
 import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
@@ -45,6 +46,15 @@ export async function GET(request: NextRequest) {
           } catch (err) {
             console.error("[auth/confirm] ensureAiOwner failed", err);
           }
+          // Associate the PostHog person and record the signup. signup_date is
+          // written $set_once so account-age reporting reflects first signup.
+          await identifyUser(user.id, {
+            email: user.email,
+            signupDate: user.created_at ?? undefined,
+          });
+          await captureEvent(user.id, "user signed up", {
+            email_domain: user.email.split("@")[1] ?? null,
+          });
         }
       }
       return NextResponse.redirect(redirectTo);

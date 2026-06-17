@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { DEFAULT_MODEL, openai } from "@/lib/openai";
 import { ApiError, fail } from "@/lib/server/api-response";
+import { captureAiGeneration } from "@/lib/server/posthog";
 import {
   checkRateLimit,
   getClientIp,
@@ -51,6 +52,7 @@ export async function POST(request: Request) {
     }
 
     const { prompt, system, model, temperature } = parsed.data;
+    const startedAt = Date.now();
     const completion = await openai().chat.completions.create({
       model: model ?? DEFAULT_MODEL,
       temperature: temperature ?? 0.3,
@@ -59,6 +61,18 @@ export async function POST(request: Request) {
         { role: "user" as const, content: prompt },
       ],
     });
+
+    if (completion.usage) {
+      await captureAiGeneration({
+        userId: user.id,
+        surface: "router",
+        model: completion.model,
+        promptTokens: completion.usage.prompt_tokens,
+        completionTokens: completion.usage.completion_tokens,
+        totalTokens: completion.usage.total_tokens,
+        latencySeconds: (Date.now() - startedAt) / 1000,
+      });
+    }
 
     const text = completion.choices[0]?.message?.content ?? "";
     return NextResponse.json({

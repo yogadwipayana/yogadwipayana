@@ -2,14 +2,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type OpenAI from "openai";
 
 import { openai } from "@/lib/openai";
-import { executeTool, getChatTools, isToolDisabled } from "@/lib/server/chat-tools";
+import { executeTool, getChatTools } from "@/lib/server/chat-tools";
+import { captureAiGeneration } from "@/lib/server/posthog";
 import {
   openContext7Session,
   type Context7Session,
 } from "@/lib/server/mcp/context7";
 import {
   appendMessage,
-  getConversation,
   recordUsageEvent,
   touchConversation,
 } from "@/lib/server/chat-service";
@@ -269,6 +269,16 @@ async function runGeneration(ctx: {
               } catch {
                 // Ledger write is best-effort; never break the stream.
               }
+              await captureAiGeneration({
+                userId,
+                surface: "chat",
+                model,
+                promptTokens: usageTotals.promptTokens,
+                completionTokens: usageTotals.completionTokens,
+                totalTokens: usageTotals.totalTokens,
+                toolCalls: allToolEvents.length,
+                traceId: conversationId,
+              });
             }
           } catch {
             // Persisting is best-effort; the stream itself should still close cleanly.
@@ -297,6 +307,14 @@ async function runGeneration(ctx: {
           await persistFinal();
           return;
         }
+        // Skip follow-ups for document-generation turns: the delivered artifact
+        // is the download card, and "what next" suggestions like "Download
+        // dokumen" only read as fake buttons that send text instead of saving
+        // the file.
+        if (allToolEvents.some((e) => e.name === "word_generate")) {
+          await persistFinal();
+          return;
+        }
         let followUps: string[] = [];
         try {
           followUps = await generateFollowUps(messages, model);
@@ -311,17 +329,6 @@ async function runGeneration(ctx: {
       try {
         if (preface) send(preface);
 
-        // Per-conversation tool toggles: load the disabled categories once so
-        // the model never sees (and the forced-tool logic never forces) a tool
-        // the user switched off for this conversation.
-        let disabledTools: string[] = [];
-        try {
-          const conv = await getConversation(supabase, conversationId, userId);
-          disabledTools = conv?.disabled_tools ?? [];
-        } catch {
-          // Best-effort; an empty list just means no tools are disabled.
-        }
-
         // Connect to the Context7 MCP server for this turn. Best-effort: a null
         // session just means the model falls back to the built-in tools.
         mcpSession = await openContext7Session();
@@ -329,15 +336,12 @@ async function runGeneration(ctx: {
         // Questions about install/setup/versions/prices drift over time. Force a
         // web_search on the first round so the model grounds instead of answering
         // from stale memory; subsequent rounds revert to "auto".
-        const forceSearchFirstRound =
-          !isToolDisabled("web_search", disabledTools) &&
-          lastUserNeedsGrounding(messages);
+        const forceSearchFirstRound = lastUserNeedsGrounding(messages);
         // When Context7 is connected and the question names a known library/
         // framework/SDK, force its lookup on round 0. This takes priority over
         // forceSearchFirstRound so e.g. "install next.js latest" routes to
         // Context7 (library docs) instead of web_search (OS install).
         const forceContext7FirstRound =
-          !isToolDisabled("mcp__context7__resolve-library-id", disabledTools) &&
           !!mcpSession &&
           mcpSession.tools.some(
             (t) =>
@@ -361,7 +365,7 @@ async function runGeneration(ctx: {
               temperature: 0.4,
               stream: true,
               stream_options: { include_usage: true },
-              tools: getChatTools(mcpSession, disabledTools),
+              tools: getChatTools(mcpSession),
               tool_choice:
                 round === 0 && forceContext7FirstRound
                   ? {
@@ -449,6 +453,19 @@ async function runGeneration(ctx: {
             .sort(([a], [b]) => a - b)
             .map(([, call]) => call);
 
+          // A "deliverable" is a finished artifact handed to the user this turn
+          // (a downloadable .docx or a generated/edited image). Clarifying
+          // questions must come BEFORE producing one — asking afterwards is
+          // contradictory and renders a question card next to a finished
+          // artifact (the bug where a .docx download appears alongside "what
+          // should I put in this section?"). Track whether any deliverable was
+          // produced this turn so we can refuse a late ask_user below.
+          const DELIVERABLE_TOOLS = new Set([
+            "word_generate",
+            "image_generate",
+            "image_edit",
+          ]);
+
           // ask_user is a terminal, NON-blocking action. Rather than parking
           // the stream waiting for an answer (which leaves the sidebar spinner
           // stuck and loses the card on reload), we persist the question as the
@@ -457,7 +474,17 @@ async function runGeneration(ctx: {
           // the conversation on a fresh turn with the question already in
           // history.
           const askCall = orderedCalls.find((c) => c.name === "ask_user");
-          if (askCall) {
+          // Skip the terminal ask path when a deliverable already exists this
+          // turn (in an earlier round or as a sibling call in this round). The
+          // ask_user call still falls through to the loop below, where it gets
+          // a refusal result (no card emitted) so the model finalizes its reply
+          // instead of leaving an unanswered question beside the artifact.
+          const deliverableProducedThisTurn =
+            allToolEvents.some((e) => DELIVERABLE_TOOLS.has(e.name)) ||
+            orderedCalls.some(
+              (c) => c !== askCall && DELIVERABLE_TOOLS.has(c.name),
+            );
+          if (askCall && !deliverableProducedThisTurn) {
             const askArgs = tryParseJson(askCall.arguments || "{}");
             const question =
               askArgs && typeof askArgs === "object" && askArgs !== null
@@ -517,6 +544,28 @@ async function runGeneration(ctx: {
 
           for (const call of orderedCalls) {
             const parsedArgs = tryParseJson(call.arguments || "{}");
+
+            // ask_user only reaches this loop when a deliverable was already
+            // produced this turn (otherwise the terminal path above handled
+            // it). Refuse it: feed the model a result telling it the question
+            // was rejected and to finalize from what it has, and DO NOT emit a
+            // card frame — a question card next to a finished artifact is the
+            // exact contradiction we're preventing. The model continues the
+            // loop and wraps up its reply (e.g. the download link).
+            if (call.name === "ask_user") {
+              const refusal = JSON.stringify({
+                asked: false,
+                error:
+                  "A deliverable (document or image) was already produced this turn, so a clarifying question cannot be shown now. Do NOT ask the user mid-turn here. Finish your reply using what you already have. If genuine choices remain, finalize the turn first, then describe the options in plain text so the user can reply on their next message.",
+              });
+              messages.push({
+                role: "tool",
+                tool_call_id: call.id,
+                content: refusal,
+              });
+              continue;
+            }
+
             send({
               tool: {
                 name: call.name,

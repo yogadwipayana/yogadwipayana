@@ -184,7 +184,6 @@ export type ChatConversationSummary = {
   is_public?: boolean;
   share_token?: string | null;
   system_prompt_id?: string | null;
-  disabled_tools?: string[];
   pinned?: boolean;
   archived_at?: string | null;
 };

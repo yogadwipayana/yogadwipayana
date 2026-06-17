@@ -435,9 +435,6 @@ function tokensToChildren(
         new Paragraph({
           style: "Title",
           spacing: { before: 0, after: 200 },
-          border: {
-            bottom: { style: BorderStyle.SINGLE, size: 6, color: "D9DEE3", space: 8 },
-          },
           children: inlineRuns(t.tokens ?? [], {
             bold: true,
             color: HEADING_COLOR,
@@ -513,14 +510,9 @@ function pushToken(token: Token, out: DocChild[], images: ImageMap): void {
     }
 
     case "hr": {
-      out.push(
-        new Paragraph({
-          border: {
-            bottom: { style: BorderStyle.SINGLE, size: 6, color: BORDER, space: 1 },
-          },
-          children: [],
-        }),
-      );
+      // Render thematic breaks as vertical whitespace rather than a drawn rule:
+      // the document style intentionally avoids horizontal lines entirely.
+      out.push(new Paragraph({ spacing: { before: 120, after: 120 }, children: [] }));
       break;
     }
 

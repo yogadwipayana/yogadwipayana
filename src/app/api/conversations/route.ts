@@ -7,6 +7,7 @@ import {
   createConversation,
   listConversations,
 } from "@/lib/server/chat-service";
+import { captureEvent } from "@/lib/server/posthog";
 import { createClient } from "@/utils/supabase/server";
 
 export const runtime = "nodejs";
@@ -56,6 +57,11 @@ export async function POST(request: Request) {
     mode: parsed.data.mode,
     title: parsed.data.title,
     systemPromptId: parsed.data.system_prompt_id,
+  });
+
+  await captureEvent(user.id, "conversation created", {
+    mode: parsed.data.mode ?? "chat",
+    model: parsed.data.model ?? DEFAULT_MODEL,
   });
 
   return NextResponse.json({ conversation }, { status: 201 });

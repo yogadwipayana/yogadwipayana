@@ -1,85 +1,153 @@
-# Live Feature Test Report
+# Chat AI — Laporan Hasil Test Final
 
-**Target:** https://yogathedev.com/
-**Date:** 2026-06-15
-**Account:** kiropower2@gmail.com
-**Method:** BrowserAct automation driving real Chrome (chrome-direct), headed.
-**Scope:** Every user-facing feature was mapped from source, then exercised live. Destructive actions against the live VPS (stop/reboot/reset/reinstall) were intentionally skipped; everything else was tested end-to-end.
+Tanggal: 2026-06-16
+Metode: BrowserAct headed (chrome-live, profil Chrome asli), login aktif.
+Server: `localhost:3000` (dev).
+Acuan: `docs/PLAN.md`.
 
----
-
-## Summary
-
-| Tool | Result | Notes |
-|---|---|---|
-| Auth (sign-in) | PASS | Login succeeded after correct password. |
-| Chat AI | PASS | Streaming, time tool, web search, model switch all work. |
-| VPS Control | PASS | Read paths + live SSH terminal verified; destructive actions skipped. |
-| AI Router | PASS | Key CRUD, usage, billing/QRIS, models all work. |
-| Image Studio | PASS | Real generation completed; history + canvas actions work. |
-| Settings | PASS (partial) | Account page verified; destructive actions not triggered. |
-
-No blocking defects found.
+Legenda: ✅ lulus · ❌ gagal · ⚠️ catatan/parsial · ⏭️ tidak diuji
 
 ---
 
-## 1. Authentication
+## Ringkasan
 
-- **Sign-in** (`/sign-in`): Email + password form renders with show/hide toggle and "Forgot password?" link.
-- First two credential attempts were rejected with "Invalid email or password." Login succeeded on the third attempt with the corrected password (`Kiropower2`).
-- After submit, the page briefly showed a transient "This page couldn't load" error, but navigating to `/dashboard` confirmed the session was authenticated — landed on `/dashboard/chat`. **Minor:** the post-login redirect showed a transient error screen once; worth a glance but session was valid.
+| # | Bagian | Status |
+|---|--------|--------|
+| 1 | Chat dasar & streaming | ✅ |
+| 2 | Slash commands built-in (/summarize, /diagram, /word) | ✅ |
+| 3 | Custom slash command (/ringkas) | ✅ |
+| 4 | System Prompts (Bajak Laut) | ✅ |
+| 5 | Mode Image (generate + edit) | ✅ |
+| 6 | Image generation di mode Chat | ❌ |
+| 7 | Memory (simpan + bahasa lintas-percakapan + toggle) | ✅ |
+| 8 | Web search & web fetch | ✅ |
+| 9 | Library docs (Context7) | ✅ |
+| 10 | Waktu (get_current_time) | ✅ |
+| 11 | ask_user (klarifikasi) | ✅ |
+| 12 | VPS read-only | ✅ |
+| 13 | VPS write (butuh konfirmasi) | ✅ |
+| 14 | SSH / Terminal | ✅ |
+| 15 | Attachments | ✅ (image+PDF), ⏭️ DOCX/XLSX/PPTX |
+| 16 | Model selector | ✅ |
+| 17 | Fitur pesan (regenerate/edit/branch) | ✅ |
+| 18 | Manajemen percakapan | ✅ |
+| 19 | Gallery | ✅ |
+| 20 | Tool toggles per-percakapan | ⚠️ Fitur sudah dihapus |
+| 21 | Usage tracking | ✅ |
 
-## 2. Chat AI (`/dashboard/chat`)
-
-- **New conversation + streaming:** Sent "What is the current time? Use your time tool." — `get_current_time` tool fired ("Completed 1 step"), response streamed, follow-up suggestions generated, conversation appeared in the sidebar.
-- **Web search tool:** Sent a Next.js version query — `web_search` + 2× `web_fetch` fired ("Completed 3 steps"), the **Links** tab populated with a "5" badge, answer cited npmjs.com and github.com.
-- **Model switcher:** Dropdown lists all 4 models (GPT-5.5, Claude Opus 4.8, Claude Opus 4.7, Claude Sonnet 4.6). Switched mid-thread to Claude Sonnet 4.6; selector label updated and a follow-up message routed on the new model.
-- **Tabs:** Answer / Links / Images tabs present with live counts; per-message Copy / Edit / Retry and branch controls render.
-
-## 3. VPS Control (`/dashboard/vps`)
-
-Live instance present: **Ubuntu-4**, Running, ap-jakarta, 43.133.143.50, Ubuntu Server 24.04 LTS, 2 vCPU / 2 GB / 40 GB SSD / 20 Mbps.
-
-- **Instance detail / Overview:** Full specs, status, IP (with copy), expiry, instance ID all render.
-- **Refresh (sync):** Clicked — instance stayed Running, no errors.
-- **Firewall tab:** Listed 2 real rules — TCP/22 ACCEPT (SSH), ICMP ALL ACCEPT. Add/Delete controls present.
-- **SSH Keys tab:** Shows account key "main" (ssh-ed25519), "0 keys bound to Ubuntu-4", Import/Bind controls.
-- **SSH Terminal** (`/dashboard/vps/terminal`): Connected over WebSocket using saved credentials. Full Ubuntu MOTD + live shell prompt (`ubuntu@VM-0-5-ubuntu:~$`). Interactive — `whoami` accepted. **This is the standout: a real in-browser SSH session works.**
-- **Skipped (destructive, live server):** Stop, Reboot, Reset password, Reinstall OS, SSH bind, firewall rule deletion.
-
-## 4. AI Router (`/dashboard/ai`)
-
-- **API Keys — full CRUD verified:**
-  - Create: "New key" → named "browseract-test-key" → secret revealed once (`sk-…`) → key appeared masked (`sk-...8abc`).
-  - Edit/Rename: renamed to "browseract-renamed", persisted in list. Active toggle present.
-  - Delete: confirm modal → deleted. List returned to empty state. **Test key cleaned up.**
-- **Billing:** Real balance shown — **$10.00 Active** (Budget $10.00 · Spent $0.00).
-  - Add Funds modal: amount stepper, quick chips (Rp10k–100k), rate line. Created a Rp50.000 payment → reference `DWP-KK4LTRFX`, QRIS image, merchant "Dwipa", WhatsApp confirm link with prefilled message. Client-only flow — no real charge, balance unchanged.
-- **Usage:** 3 meter cards (Requests/Tokens/Spent = 0), "Last 24 hours" range filter, request-log table with empty state.
-- **Models:** 4 models listed with pricing + context. Base URL `https://ai.yogathedev.com/v1` and curl example shown.
-
-## 5. Image Studio (`/dashboard/image`)
-
-- **Controls:** Prompt textarea, negative-prompt toggle, Describe/Enhance, 9 style presets, 5 aspect ratios, Auto/HD quality, reference upload/paste-URL.
-- **Generation (real, end-to-end):** Prompt "a small green cactus in a terracotta pot, minimalist, soft studio lighting" → background job, sidebar showed pending with elapsed timer → completed within ~1 min → image rendered in History grid with prompt + "just now" + Iterate.
-- **Canvas actions:** Selecting the result loaded it into the canvas with Generate variation / Upscale / Remove background / Download / Delete.
-- **Delete:** Deleted the test image ("Image deleted" toast). **Test image cleaned up.**
-
-## 6. Settings (`/dashboard/settings`)
-
-- **Account / Profile:** Renders email (kiropower2@gmail.com), User ID, Joined Jun 8 2026, and a Display name form with Save changes.
-- **Skipped (destructive):** Security → Sign out everywhere; Danger zone → Delete account.
+**1 kegagalan nyata:** image generation di mode Chat (Bagian 6).
 
 ---
 
-## Cleanup performed
+## Detail
 
-- Deleted the test AI API key (created → renamed → deleted).
-- Deleted the test generated image.
-- Closed the BrowserAct session. Chat test conversations were left in place (low-noise; can be deleted on request).
+### 1. Chat dasar & streaming — ✅
+- "Jelaskan apa itu Docker dalam 3 kalimat" → jawaban 3 kalimat + 4 saran follow-up.
+- "Lanjutkan dengan contoh perintah dasarnya" → konteks dipertahankan (lanjut topik Docker dengan perintah dasar).
 
-## Observations / follow-ups
+### 2. Slash commands built-in — ✅
+- `/summarize` (percakapan) → TL;DR 1 kalimat → 5 poin → 3 pertanyaan terbuka. Ikut menarik konteks memory (pm2/Tencent).
+- `/summarize <teks>` → meringkas teks yang ditempel (mitokondria), bukan percakapan.
+- `/diagram alur login OAuth` → caption + sequence diagram Mermaid (bukan image tool).
+- `/diagram state machine lampu lalu lintas` → stateDiagram.
+- `/word <topik>` → tool `word_generate`, link `.docx` valid (terverifikasi 11.235 byte, MIME docx benar).
+- `/word` (tanpa argumen) → membuat dokumen dari percakapan sebelumnya.
 
-1. **Transient post-login error:** sign-in submit flashed a "This page couldn't load" screen once before the session resolved correctly. Worth verifying the redirect path.
-2. **AI Keys empty-state copy** says "Use the admin API to create one," which contradicts the working "New key" modal. Cosmetic.
-3. **Not tested (by design):** all live-VPS state changes, account deletion, sign-out-everywhere.
+### 3. Custom slash command — ✅
+- Dibuat command `ringkas` di `/dashboard/chat/commands`.
+- `/ringkas <teks kasual>` → ditulis ulang jadi ringkas & profesional.
+
+### 4. System Prompts — ✅
+- Dibuat prompt "Bajak Laut", dipilih dari dropdown, lalu "Apa itu Docker?" → persona bajak laut konsisten ("Ahoy!", "matey") meski pertanyaan teknis biasa.
+
+### 5. Mode Image — ✅
+- "rubah merah di hutan bersalju, sinematik" → gambar tertanam inline + prompt yang dipakai (~75 dtk). File PNG valid (2,5 MB, terverifikasi).
+- "buat lebih hangat, suasana matahari terbenam" → `image_edit` pada gambar sebelumnya (prompt eksplisit "Edit gambar sebelumnya"), file baru.
+
+### 6. Image generation di mode Chat — ❌ GAGAL
+- "Gambarkan kota cyberpunk neon di malam hari, format lebar." di mode Chat → **macet di "Running image_generate…" tanpa batas** (ditunggu >11 menit).
+- Diuji ulang dengan **GPT-5.5 dan Claude Opus 4.8** → keduanya macet. Jadi **bukan masalah model**.
+- **Temuan penting:** gambarnya **benar-benar selesai dibuat & tersimpan** (muncul di Gallery: `1781621534119-...png`). Jadi generator/`runAndPersist` di backend OK — yang gagal adalah **pengiriman hasil ke UI chat lewat SSE stream** (stream tidak pernah menyematkan hasil & tidak menutup).
+- Kontras: mode Image memakai backend yang sama dan selesai ~75 dtk. Bug khusus jalur tool-call di mode Chat.
+- Saran investigasi: `src/lib/server/chat-stream.ts` (penanganan hasil tool deliverable image_generate di mode chat), bandingkan dengan jalur mode Image.
+
+### 7. Memory — ✅
+- "Ingat bahwa aku selalu deploy pakai Docker di Tencent Lighthouse" → `memory_save`, entri baru "AI" muncul di `/dashboard/chat/memory` (jadi 3 aktif).
+- Memory "Selalu balas dalam Bahasa Indonesia" aktif → percakapan baru, "What is a reverse proxy?" (Inggris) → **dijawab Bahasa Indonesia** (memory menang atas bahasa input).
+- Toggle: memory bahasa dimatikan → pertanyaan Inggris dijawab Inggris. Dinyalakan lagi (state dikembalikan).
+
+### 8. Web search & fetch — ✅
+- "Versi stabil terbaru Node.js?" → `web_search` (+`web_fetch`), jawaban dengan sumber/link nodejs.org, data fresh (v24 LTS / v26 Current).
+- "Ringkas halaman ini: nodejs.org/en/blog" → `web_fetch` ("Completed 2 steps", 5 sources), transparan saat konten utama tak terbaca penuh.
+
+### 9. Library docs (Context7) — ✅
+- "Setup middleware di Next.js?" → `resolve-library-id` + `query-docs`, jawaban grounded (membedakan `proxy.ts` Next 16+ vs `middleware.ts` versi lama, cite docs). Catatan: streaming agak lambat (~30 dtk) tapi berhasil.
+- "Relasi schema di Prisma" → "Completed 2 steps", definisi relasi akurat dari docs Prisma.
+
+### 10. Waktu — ✅
+- "Jam berapa di Asia/Jakarta?" → `get_current_time`, waktu WIB + tanggal benar (16 Juni 2026).
+
+### 11. ask_user — ✅
+- "Tolong reset BAC saya" → SATU pertanyaan klarifikasi dengan opsi yang bisa diklik (Backup Access Code, Bank/Account Code, Building Access Control, Blood Alcohol Content, Lainnya) + input bebas; turn berhenti.
+- Klik "Building Access Control" → turn lanjut kontekstual sesuai pilihan.
+
+### 12. VPS read-only — ✅
+- "Ada berapa VPS & menyala?" → `vps_list` langsung jalan tanpa konfirmasi (1 VPS: Ubuntu-2, ap-jakarta, RUNNING).
+- "Aturan firewall server web-ku" → `vps_firewall_list` (resolve "web-ku" → Ubuntu-2), + catatan keamanan SSH 0.0.0.0/0.
+- "List SSH key" → `vps_ssh_keys_list` (MAIN, ed25519).
+
+### 13. VPS write (konfirmasi) — ✅
+- "Reboot Ubuntu-2" → **minta konfirmasi dulu** dengan rincian dampak, TIDAK langsung eksekusi. (Eksekusi nyata dilewati atas permintaan user — gate sudah terbukti.)
+- "Buka port 8080 TCP ke 0.0.0.0/0" → **minta konfirmasi** + peringatan eksposur publik. Dibatalkan → "tidak mengubah firewall". Tidak ada perubahan nyata.
+
+### 14. SSH / Terminal — ✅
+- "Jalankan df -h di Ubuntu-2" → `ssh_run` jalan tanpa konfirmasi, output nyata (disk 73%).
+- "Buka terminal untuk cek uname" → `open_terminal` (sesi terminal live + MOTD), `terminal_run` mengusulkan `uname -a` dengan tombol **Run/Deny** (approve manual). Klik Run → perintah jalan, output kernel nyata (Linux 6.8.0-101-generic).
+
+### 15. Attachments — ✅ / ⏭️
+- Gambar (`qris.jpg`) → vision membaca isi benar (QRIS, merchant "Dwipa", NMID).
+- PDF → teks diekstrak & diringkas akurat (proposal app sembako Android).
+- ⏭️ DOCX/XLSX/PPTX tidak diuji (tidak ada file sampel lokal) — pipeline attachment & ekstraksi teks terbukti jalan via image+PDF.
+- Catatan teknis: input file disembunyikan (hidden), upload via BrowserAct `upload` setelah dibuat visible.
+
+### 16. Model selector — ✅
+- Ganti antar GPT-5.5 / Opus 4.8 / Opus 4.7 / Sonnet 4.6 (4 model tersedia di picker).
+- Pilihan **tersimpan per-percakapan** (navigasi keluar lalu balik → tetap Opus 4.8).
+
+### 17. Fitur pesan — ✅
+- Regenerate (Retry) → respons baru.
+- Edit & resend → membuat branch (indikator "2/2").
+- Branch navigation → tombol "Previous branch" pindah ke sibling 1/2 tanpa generate ulang.
+- Continue: tidak terpicu (hanya muncul saat turn berhenti karena tool budget) — tidak teruji.
+
+### 18. Manajemen percakapan — ✅
+- Pin → grup "Pinned" muncul (menu berubah jadi "Unpin").
+- Rename → judul berubah ("PDF Sembako - Renamed Test").
+- Archive → pindah ke `/dashboard/chat/archived`.
+- Delete → percakapan hilang (count cyberpunk 2→1). Langsung tanpa dialog konfirmasi.
+- Share publik → link `/chat/share/<token>` ter-generate, HTTP 200 (read-only).
+- Export Markdown → endpoint `/export` HTTP 200, `text/markdown`, isi diawali judul + metadata.
+
+### 19. Gallery — ✅
+- `/dashboard/chat/gallery` menampilkan 9 gambar + prompt, sort newest/oldest.
+- Gambar hasil chat (termasuk cyberpunk yang macet di UI) muncul di sini.
+- Aksi per-kartu: Copy image, Copy share link, Delete image.
+- Delete diuji → count 9→8.
+
+### 20. Tool toggles per-percakapan — ⚠️ FITUR DIHAPUS
+- Tidak ada lagi selector Tools on/off di UI.
+- Dikonfirmasi via migrasi `supabase/migrations/20260616000000_drop_conversation_disabled_tools.sql`: kolom `disabled_tools` di-drop, "all tools are now always enabled".
+- Bagian PLAN.md ini sudah usang — perlu dihapus/diperbarui.
+
+### 21. Usage tracking — ✅
+- `/dashboard/chat/usage`: Responses 81, Total tokens 1.1M (1.1M in / 21K out), Avg 14K, Tool calls 57.
+- Grafik per-hari, token per-model (gpt-5.5 / sonnet-4.6 / opus-4.8), split prompt/completion. Akumulatif (append-only ledger).
+
+---
+
+## Tindak lanjut yang disarankan
+
+1. **Perbaiki Bagian 6 (prioritas):** image_generate di mode Chat macet di UI walau backend sukses. Periksa pengiriman hasil tool deliverable image di `src/lib/server/chat-stream.ts`.
+2. **Update PLAN.md:** hapus Bagian 20 (tool toggles) karena fiturnya sudah dihapus.
+3. **Opsional:** lengkapi test attachment DOCX/XLSX/PPTX dengan file sampel.
+4. **Catatan minor:** regenerate pada respons berbasis PDF kadang gagal baca ulang isi PDF (hasil "tidak bisa membaca") — kemungkinan re-fetch file saat retry; perlu dicek terpisah.

@@ -6,6 +6,7 @@ import { normalizeAspectInput, presetToSize } from "@/lib/aspect-ratio";
 import { getObjectBytes, keyFromProxyUrl } from "@/lib/r2";
 import { fail } from "@/lib/server/api-response";
 import { generateImage } from "@/lib/server/image-gen";
+import { captureEvent } from "@/lib/server/posthog";
 import {
   completeImage,
   createPendingImage,
@@ -191,6 +192,12 @@ export async function POST(request: Request) {
           mask: resolvedMask,
         });
         await completeImage(admin, jobId, result.url);
+        await captureEvent(user.id, "image generated", {
+          source: effectiveSource,
+          quality: quality ?? "auto",
+          aspect_ratio: aspect_ratio ?? null,
+          edited: resolvedImages.length > 0,
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Generation failed";
         console.error("[/api/images] background generate failed:", err);
@@ -225,6 +232,12 @@ export async function POST(request: Request) {
         mask: resolvedMask,
         abortSignal: request.signal,
       },
+    });
+    await captureEvent(user.id, "image generated", {
+      source: effectiveSource,
+      quality: quality ?? "auto",
+      aspect_ratio: aspect_ratio ?? null,
+      edited: resolvedImages.length > 0,
     });
     return NextResponse.json({ image: row });
   } catch (err) {

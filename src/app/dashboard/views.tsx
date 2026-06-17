@@ -40,7 +40,6 @@ import {
   Sparkles,
   Terminal,
   Trash2,
-  Wrench,
   X,
 } from "lucide-react";
 import hljs from "highlight.js/lib/common";
@@ -74,7 +73,15 @@ const CHAT_MODELS = AI_MODELS.map((m) => ({
   slug: m.slug,
   name: m.name,
   provider: m.provider,
+  providerCode: m.providerCode,
 }));
+
+// Provider-tinted monogram styling so each model row reads as distinct at a
+// glance instead of repeating the same icon.
+const PROVIDER_BADGE: Record<string, string> = {
+  OpenAI: "border-[#3ecf8e]/30 bg-[#3ecf8e]/[0.08] text-[#3ecf8e]",
+  Anthropic: "border-[#d97757]/30 bg-[#d97757]/[0.08] text-[#d97757]",
+};
 
 const HIGHLIGHT_CACHE = new Map<string, string>();
 
@@ -496,6 +503,42 @@ function buildLocalAttachmentFooter(
     .join("\n");
 }
 
+/** A user message split into text and attachment segments. */
+type UserPart =
+  | { type: "text"; value: string }
+  | { type: "image"; alt: string; url: string }
+  | { type: "file"; name: string; url: string };
+
+/**
+ * Parse a stored user message back into ordered text/attachment parts. The send
+ * path encodes images as `![name](url)` and other files as `[📎 name](url)`;
+ * ordinary markdown links (neither image nor 📎 file) are left as text. Used to
+ * render attachments as real UI (chips/images) instead of raw markdown, in both
+ * the read-only bubble and the edit composer.
+ */
+function parseUserParts(raw: string): UserPart[] {
+  const parts: UserPart[] = [];
+  const attRe = /(!)?\[(?:📎\s*)?([^\]]*)\]\(([^)]+)\)/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = attRe.exec(raw)) !== null) {
+    const isImage = m[1] === "!";
+    const isFile = !isImage && /\[\s*📎/.test(m[0]);
+    if (!isImage && !isFile) continue;
+    const text = raw.slice(last, m.index).replace(/^\n+|\n+$/g, "");
+    if (text) parts.push({ type: "text", value: text });
+    if (isImage) {
+      parts.push({ type: "image", alt: m[2], url: m[3] });
+    } else {
+      parts.push({ type: "file", name: m[2].trim(), url: m[3] });
+    }
+    last = attRe.lastIndex;
+  }
+  const tail = raw.slice(last).replace(/^\n+|\n+$/g, "");
+  if (tail) parts.push({ type: "text", value: tail });
+  return parts;
+}
+
 /**
  * Loads the user's saved system prompts for the picker, shared by the landing
  * composer and the in-conversation header. Fetched once per mount; the list is
@@ -591,9 +634,6 @@ export function ChatView({
   const [mode, setMode] = useState<ChatMode>(conversation.mode ?? "chat");
   const [promptId, setPromptId] = useState<string | null>(
     conversation.system_prompt_id ?? null,
-  );
-  const [disabledTools, setDisabledTools] = useState<string[]>(
-    conversation.disabled_tools ?? [],
   );
   const { prompts: systemPrompts, loading: promptsLoading } = useSystemPrompts();
   const customCommands = useCustomSlashCommands();
@@ -743,7 +783,6 @@ export function ChatView({
             mode: ChatMode;
             updated_at: string;
             system_prompt_id?: string | null;
-            disabled_tools?: string[];
           };
           messages: ChatMessage[];
           images?: Array<{ url: string; prompt: string }>;
@@ -756,7 +795,6 @@ export function ChatView({
         setModel(data.conversation.model || defaultModel || "");
         setMode(data.conversation.mode ?? "chat");
         setPromptId(data.conversation.system_prompt_id ?? null);
-        setDisabledTools(data.conversation.disabled_tools ?? []);
         // Restore persisted images (oldest first so the tab matches conversation order)
         if (data.images && data.images.length > 0) {
           setLoadedImages([...data.images].reverse());
@@ -935,32 +973,6 @@ export function ChatView({
       }
     },
     [conversation.id, promptId, onConversationUpdated],
-  );
-
-  const handleToggleToolCategory = useCallback(
-    async (category: string) => {
-      const previous = disabledTools;
-      const next = previous.includes(category)
-        ? previous.filter((c) => c !== category)
-        : [...previous, category];
-      setDisabledTools(next);
-      try {
-        const res = await fetch(`/api/conversations/${conversation.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ disabled_tools: next }),
-        });
-        if (!res.ok) {
-          setDisabledTools(previous);
-          return;
-        }
-        const data = (await res.json()) as { conversation: ChatConversationSummary };
-        onConversationUpdated?.(data.conversation);
-      } catch {
-        setDisabledTools(previous);
-      }
-    },
-    [conversation.id, disabledTools, onConversationUpdated],
   );
 
   const consumeStream = useCallback(
@@ -2427,10 +2439,6 @@ export function ChatView({
                   onSelect={handleSelectPrompt}
                   loading={promptsLoading}
                 />
-                <ToolsSelector
-                  disabled={disabledTools}
-                  onToggle={handleToggleToolCategory}
-                />
               </div>
 
               {/* Right — model + send */}
@@ -2785,6 +2793,10 @@ export function ChatLanding({
   const [mode, setMode] = useState<ChatMode>("chat");
   const [promptId, setPromptId] = useState<string | null>(null);
   const { prompts, loading: promptsLoading } = useSystemPrompts();
+  const customCommands = useCustomSlashCommands();
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashFilter, setSlashFilter] = useState("");
+  const [slashIndex, setSlashIndex] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const {
     attachments,
@@ -2809,6 +2821,77 @@ export function ChatLanding({
   const submit = () => {
     if (!canSend) return;
     onStart(trimmed, { model, mode, attachments: readyAttachmentPayloads(), systemPromptId: promptId });
+  };
+
+  // Slash command: detect when input matches ^\s*\/\w*$
+  const checkSlash = useCallback((val: string) => {
+    const match = /^\s*\/(\w*)$/.exec(val);
+    if (match) {
+      setSlashFilter(match[1].toLowerCase());
+      setSlashIndex(0);
+      setSlashOpen(true);
+    } else {
+      setSlashOpen(false);
+    }
+  }, []);
+
+  const filteredCommands = useMemo(
+    () =>
+      [...SLASH_COMMANDS, ...customCommands].filter((c) =>
+        c.command.slice(1).startsWith(slashFilter),
+      ),
+    [slashFilter, customCommands],
+  );
+
+  const applyCommand = (command: string) => {
+    const newVal = command + " ";
+    setText(newVal);
+    setSlashOpen(false);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (el) {
+        el.style.height = "auto";
+        el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+        el.setSelectionRange(newVal.length, newVal.length);
+        el.focus();
+      }
+    });
+  };
+
+  const onTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setText(val);
+    checkSlash(val);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (slashOpen && filteredCommands.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashIndex((i) => (i + 1) % filteredCommands.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashIndex((i) => (i - 1 + filteredCommands.length) % filteredCommands.length);
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const cmd = filteredCommands[slashIndex];
+        if (cmd) applyCommand(cmd.command);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSlashOpen(false);
+        return;
+      }
+    }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      submit();
+    }
   };
 
   // Auto-grow the textarea up to a cap, mirroring the in-conversation composer.
@@ -2863,16 +2946,42 @@ export function ChatLanding({
         />
 
         <div className="relative rounded-xl border border-white/[0.1] bg-[#171717] transition-colors focus-within:border-[#3ecf8e]/40">
+          {/* Slash command autocomplete */}
+          {slashOpen && filteredCommands.length > 0 && (
+            <div className="absolute bottom-full left-0 z-30 mb-1.5 w-full overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
+              <div className="border-b border-white/[0.05] px-3 py-1.5">
+                <span className="text-[10px] uppercase tracking-[0.12em] text-white/30">Commands</span>
+              </div>
+              <ul>
+                {filteredCommands.map((cmd, idx) => (
+                  <li key={cmd.command}>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        applyCommand(cmd.command);
+                      }}
+                      className={`flex w-full items-start gap-3 px-3 py-2 text-left transition-colors ${
+                        idx === slashIndex
+                          ? "bg-white/[0.05] text-white"
+                          : "text-white/70 hover:bg-white/[0.03]"
+                      }`}
+                    >
+                      <span className="mt-0.5 shrink-0 font-mono text-[12px] text-[#3ecf8e]/80">
+                        {cmd.command}
+                      </span>
+                      <span className="text-[11px] text-white/40">{cmd.description}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <textarea
             ref={textareaRef}
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                submit();
-              }
-            }}
+            onChange={onTextChange}
+            onKeyDown={onKeyDown}
             onPaste={handlePaste}
             disabled={starting}
             rows={1}
@@ -3098,7 +3207,43 @@ function ChatBubble({
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(message.content);
+  // Attachments carried into edit mode, parsed out of the message content so
+  // they show as removable chips instead of raw markdown. Kept separate from
+  // the textarea text and re-encoded into a footer on commit.
+  const [editAttachments, setEditAttachments] = useState<
+    { key: string; kind: AttachmentKind; name: string; url: string }[]
+  >([]);
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Split a stored user message into its text body and attachment chips. Text
+  // parts are rejoined for the textarea; image/file parts become chips.
+  const enterEdit = useCallback(() => {
+    const parts = parseUserParts(message.content);
+    const text = parts
+      .filter((p): p is Extract<UserPart, { type: "text" }> => p.type === "text")
+      .map((p) => p.value)
+      .join("\n\n");
+    const atts = parts
+      .filter((p) => p.type !== "text")
+      .map((p, i) =>
+        p.type === "image"
+          ? { key: `edit-att-${i}`, kind: "image" as const, name: p.alt, url: p.url }
+          : { key: `edit-att-${i}`, kind: "document" as const, name: p.name, url: p.url },
+      );
+    setDraft(text);
+    setEditAttachments(atts);
+    setEditing(true);
+  }, [message.content]);
+
+  // Reassemble the edited message exactly as handleSend does: text body, then a
+  // blank line, then the attachment footer (matching the server's format).
+  const assembleEdit = useCallback(() => {
+    const text = draft.trim();
+    const footer = buildLocalAttachmentFooter(
+      editAttachments.map((a) => ({ kind: a.kind, name: a.name, publicUrl: a.url })),
+    );
+    return footer ? (text ? `${text}\n\n${footer}` : footer) : text;
+  }, [draft, editAttachments]);
 
   useEffect(() => {
     if (!editing) return;
@@ -3118,14 +3263,15 @@ function ChatBubble({
   }, [message.content]);
 
   const commitEdit = useCallback(() => {
-    setEditing(false);
-    const next = draft.trim();
+    const next = assembleEdit();
     if (!next || next === message.content) {
+      setEditing(false);
       setDraft(message.content);
       return;
     }
+    setEditing(false);
     onEdit?.(next);
-  }, [draft, message.content, onEdit]);
+  }, [assembleEdit, message.content, onEdit]);
 
   // Branch navigator (‹ idx/count ›). Rendered only when this message has
   // sibling branches and a switch handler is wired. Prev/next map to adjacent
@@ -3169,6 +3315,7 @@ function ChatBubble({
 
   const cancelEdit = useCallback(() => {
     setDraft(message.content);
+    setEditAttachments([]);
     setEditing(false);
   }, [message.content]);
 
@@ -3177,6 +3324,34 @@ function ChatBubble({
       return (
         <div className={`flex justify-end ${isFirstInGroup ? "mt-5" : "mt-1"}`}>
           <div className="w-full max-w-[80%] rounded-2xl rounded-br-md border border-[#3ecf8e]/25 bg-[#3ecf8e]/[0.06] p-2">
+            {editAttachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 px-1 pb-2">
+                {editAttachments.map((att) => (
+                  <div
+                    key={att.key}
+                    className="group relative flex items-center gap-2 rounded-lg border border-white/[0.08] bg-white/[0.04] px-2.5 py-1.5"
+                  >
+                    {att.kind === "image" ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={att.url} alt={att.name} className="h-5 w-5 rounded object-cover" />
+                    ) : (
+                      <Paperclip className="h-3.5 w-3.5 shrink-0 text-white/40" aria-hidden />
+                    )}
+                    <span className="max-w-[120px] truncate text-[11px] text-white/60">{att.name}</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setEditAttachments((prev) => prev.filter((a) => a.key !== att.key))
+                      }
+                      className="ml-0.5 text-white/25 transition-colors hover:text-white/60"
+                      aria-label={`Remove ${att.name}`}
+                    >
+                      <X className="h-3 w-3" aria-hidden />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <textarea
               ref={editTextareaRef}
               value={draft}
@@ -3211,7 +3386,10 @@ function ChatBubble({
               <button
                 type="button"
                 onClick={commitEdit}
-                disabled={!draft.trim() || draft.trim() === message.content}
+                disabled={
+                  (!draft.trim() && editAttachments.length === 0) ||
+                  assembleEdit() === message.content
+                }
                 className="inline-flex h-7 items-center gap-1 rounded-md bg-[#3ecf8e] px-2.5 text-[12px] font-medium text-[#171717] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-white/30"
               >
                 Send
@@ -3223,37 +3401,8 @@ function ChatBubble({
     }
 
     // Parse attachments out of the user message content so they render as real
-    // UI (images as <img>, files as a chip) instead of raw markdown. The send
-    // path encodes images as `![name](url)` and other files as `[📎 name](url)`.
-    const userParts: Array<
-      | { type: "text"; value: string }
-      | { type: "image"; alt: string; url: string }
-      | { type: "file"; name: string; url: string }
-    > = [];
-    {
-      // Matches an optional leading `!` (image) or a `📎 ` filename prefix
-      // (file attachment), then `[label](url)`.
-      const attRe = /(!)?\[(?:📎\s*)?([^\]]*)\]\(([^)]+)\)/g;
-      let last = 0;
-      let m: RegExpExecArray | null;
-      const raw = message.content;
-      while ((m = attRe.exec(raw)) !== null) {
-        const isImage = m[1] === "!";
-        const isFile = !isImage && /\[\s*📎/.test(m[0]);
-        // Leave ordinary markdown links (neither image nor 📎 file) as text.
-        if (!isImage && !isFile) continue;
-        const text = raw.slice(last, m.index).replace(/^\n+|\n+$/g, "");
-        if (text) userParts.push({ type: "text", value: text });
-        if (isImage) {
-          userParts.push({ type: "image", alt: m[2], url: m[3] });
-        } else {
-          userParts.push({ type: "file", name: m[2].trim(), url: m[3] });
-        }
-        last = attRe.lastIndex;
-      }
-      const tail = raw.slice(last).replace(/^\n+|\n+$/g, "");
-      if (tail) userParts.push({ type: "text", value: tail });
-    }
+    // UI (images as <img>, files as a chip) instead of raw markdown.
+    const userParts = parseUserParts(message.content);
 
     return (
       <div className={`group flex justify-end ${isFirstInGroup ? "mt-5" : "mt-1"}`}>
@@ -3303,7 +3452,7 @@ function ChatBubble({
             {onEdit && (
               <button
                 type="button"
-                onClick={() => { setDraft(message.content); setEditing(true); }}
+                onClick={enterEdit}
                 title="Edit"
                 aria-label="Edit message"
                 className="inline-flex h-7 w-7 items-center justify-center rounded-md text-white/30 transition-colors hover:bg-white/[0.05] hover:text-white/60"
@@ -3352,6 +3501,29 @@ function ChatBubble({
           streaming={streaming}
           onIterateImage={message.role === "assistant" ? onIterateImage : undefined}
         />
+        {/* Always surface a download card for any .docx the model generated this
+            turn, even if it forgot to print the [Download …](url) markdown link.
+            Skip events whose URL the markdown already rendered to avoid a dup. */}
+        {(() => {
+          const linkedInBody = message.content.includes("/generated-documents/");
+          const docs = (message.toolEvents ?? []).filter((e) => {
+            if (e.name !== "word_generate" || e.status !== "done") return false;
+            const r = e.result as { url?: string } | undefined;
+            if (!r?.url) return false;
+            return !(linkedInBody && message.content.includes(r.url));
+          });
+          if (docs.length === 0) return null;
+          return docs.map((e) => {
+            const r = e.result as { url?: string; title?: string };
+            return (
+              <DocxDownloadCard
+                key={e.call_id}
+                href={r.url as string}
+                label={r.title?.trim() || "Download document"}
+              />
+            );
+          });
+        })()}
         {streaming && message.content === "" && (!message.toolEvents || message.toolEvents.length === 0) ? (
           <span className="inline-flex items-center gap-1.5 text-white/35">
             <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
@@ -3605,6 +3777,44 @@ function AskUserCard({
         </form>
       )}
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Generated .docx download card                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Download card for a generated Word document. Rendered both from the markdown
+ * link the model emits ([Download <title>.docx](url)) and directly from the
+ * `word_generate` tool event, so the file is always reachable even when the
+ * model forgets to print the link. `href` is the same-origin proxy URL; the
+ * suggested filename is derived from the document title/label.
+ */
+function DocxDownloadCard({ href, label }: { href: string; label: string }) {
+  const safeName =
+    label
+      .replace(/^download\s+/i, "")
+      .replace(/[\\/:*?"<>|]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120) || "document";
+  const downloadName = /\.docx$/i.test(safeName) ? safeName : `${safeName}.docx`;
+  return (
+    <a
+      href={href}
+      download={downloadName}
+      className="my-2 flex w-fit max-w-full items-center gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-2 no-underline transition-colors hover:border-[#3ecf8e]/30 hover:bg-[#3ecf8e]/[0.06]"
+    >
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#3ecf8e]/10 text-[#3ecf8e]">
+        <FileText className="h-4 w-4" aria-hidden />
+      </span>
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate text-[13px] font-medium text-white/85">{downloadName}</span>
+        <span className="text-[11px] text-white/40">Word document · .docx</span>
+      </span>
+      <Download className="ml-1 h-3.5 w-3.5 shrink-0 text-white/40" aria-hidden />
+    </a>
   );
 }
 
@@ -4001,99 +4211,6 @@ function PromptSelector({
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/*  Tool category toggle dropdown                                             */
-/* -------------------------------------------------------------------------- */
-
-const TOOL_CATEGORY_OPTIONS: { key: string; label: string; description: string }[] = [
-  { key: "web", label: "Web", description: "Search & fetch pages" },
-  { key: "vps", label: "VPS & terminal", description: "Server control, SSH, terminal" },
-  { key: "media", label: "Images & docs", description: "Generate images and Word files" },
-  { key: "memory", label: "Memory", description: "Save facts about you" },
-  { key: "context7", label: "Library docs", description: "Context7 documentation lookup" },
-];
-
-function ToolsSelector({
-  disabled,
-  onToggle,
-}: {
-  disabled: string[];
-  onToggle: (category: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const offCount = disabled.length;
-
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title="Tools"
-        className={`group flex items-center gap-1 text-[12px] transition-colors ${
-          offCount > 0 ? "text-[#3ecf8e]/80 hover:text-[#3ecf8e]" : "text-white/50 hover:text-white/80"
-        }`}
-      >
-        <Wrench className="h-3 w-3 shrink-0" aria-hidden />
-        <span className="max-w-[100px] truncate sm:max-w-[130px]">
-          {offCount > 0 ? `Tools (${offCount} off)` : "Tools"}
-        </span>
-        <ChevronDown
-          className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`}
-          aria-hidden
-        />
-      </button>
-
-      {open && (
-        <>
-          <button
-            type="button"
-            className="fixed inset-0 z-10"
-            aria-label="Close tools picker"
-            onClick={() => setOpen(false)}
-          />
-          <div className="absolute bottom-full left-0 z-20 mb-2 w-[calc(100vw-2rem)] max-w-[280px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30">
-            <div className="border-b border-white/[0.06] px-3 py-2">
-              <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">
-                Tools for this chat
-              </span>
-            </div>
-            <ul className="max-h-64 overflow-y-auto p-1.5">
-              {TOOL_CATEGORY_OPTIONS.map((opt) => {
-                const enabled = !disabled.includes(opt.key);
-                return (
-                  <li key={opt.key}>
-                    <button
-                      type="button"
-                      onClick={() => onToggle(opt.key)}
-                      className="flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left text-white/70 transition-colors hover:bg-white/[0.04] hover:text-white"
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px]">{opt.label}</span>
-                        <span className="block truncate text-[11px] text-white/35">
-                          {opt.description}
-                        </span>
-                      </span>
-                      <span
-                        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-                          enabled
-                            ? "border-[#3ecf8e] bg-[#3ecf8e]"
-                            : "border-white/20 bg-transparent"
-                        }`}
-                        aria-hidden
-                      >
-                        {enabled && <Check className="h-3 w-3 text-[#0a0a0a]" />}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
 
 /* -------------------------------------------------------------------------- */
 /*  Model selector dropdown                                                   */
@@ -4173,42 +4290,33 @@ function ModelSelector({
                       }}
                       className={`group flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
                         selected
-                          ? "bg-[#3ecf8e]/[0.08] text-white"
+                          ? "bg-white/[0.05] text-white"
                           : "text-white/70 hover:bg-white/[0.04] hover:text-white"
                       }`}
                     >
                       <span
                         aria-hidden
-                        className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border ${
-                          selected
-                            ? "border-[#3ecf8e]/35 bg-[#3ecf8e]/[0.1] text-[#3ecf8e]"
-                            : "border-white/[0.08] bg-white/[0.03] text-white/40 group-hover:border-white/[0.14] group-hover:text-white/60"
+                        className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border font-mono text-[11px] font-semibold ${
+                          PROVIDER_BADGE[m.provider] ??
+                          "border-white/[0.08] bg-white/[0.03] text-white/40"
                         }`}
                       >
-                        <Sparkles className="h-3 w-3" />
+                        {m.providerCode}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="block truncate text-[13px] font-medium leading-tight">
-                            {m.name}
-                          </span>
-                        </div>
-                        <div className="mt-0.5 flex items-center gap-1.5">
-                          <span className="font-mono text-[10px] text-white/35">
-                            {m.slug}
-                          </span>
-                          <span aria-hidden className="text-white/15">·</span>
-                          <span className="text-[10px] text-white/40">
-                            {m.provider}
-                          </span>
-                        </div>
+                        <span className="block truncate text-[13px] font-medium leading-tight">
+                          {m.name}
+                        </span>
+                        <span className="mt-0.5 block truncate text-[10px] text-white/35">
+                          {m.provider}
+                        </span>
                       </div>
-                      {selected && (
-                        <Check
-                          className="h-3.5 w-3.5 shrink-0 text-[#3ecf8e]"
-                          aria-hidden
-                        />
-                      )}
+                      <span
+                        aria-hidden
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors ${
+                          selected ? "bg-[#3ecf8e]" : "bg-transparent"
+                        }`}
+                      />
                     </button>
                   </li>
                 );
@@ -4386,41 +4494,7 @@ function AssistantMarkdown({
               // Generated .docx → download card with an icon, not a plain link.
               if (href && /\/generated-documents\//.test(href)) {
                 const label = String(children ?? "").trim() || "Download document";
-                // The file is stored on disk under an opaque timestamp-UUID name
-                // for uniqueness, but the browser should save it under a readable
-                // name. Since the file is served same-origin, the `download`
-                // attribute's value sets the suggested filename. Derive it from
-                // the card label (the AI-provided document title), stripping
-                // characters that are unsafe in filenames across OSes.
-                const safeName =
-                  label
-                    .replace(/^download\s+/i, "")
-                    .replace(/[\\/:*?"<>|]/g, "")
-                    .replace(/\s+/g, " ")
-                    .trim()
-                    .slice(0, 120) || "document";
-                const downloadName = /\.docx$/i.test(safeName)
-                  ? safeName
-                  : `${safeName}.docx`;
-                // Display the readable filename, not the raw link text which may
-                // carry a "Download " prefix from the AI-generated markdown.
-                const displayName = downloadName;
-                return (
-                  <a
-                    href={href}
-                    download={downloadName}
-                    className="my-2 flex w-fit max-w-full items-center gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-2 no-underline transition-colors hover:border-[#3ecf8e]/30 hover:bg-[#3ecf8e]/[0.06]"
-                  >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#3ecf8e]/10 text-[#3ecf8e]">
-                      <FileText className="h-4 w-4" aria-hidden />
-                    </span>
-                    <span className="flex min-w-0 flex-col">
-                      <span className="truncate text-[13px] font-medium text-white/85">{displayName}</span>
-                      <span className="text-[11px] text-white/40">Word document · .docx</span>
-                    </span>
-                    <Download className="ml-1 h-3.5 w-3.5 shrink-0 text-white/40" aria-hidden />
-                  </a>
-                );
+                return <DocxDownloadCard href={href} label={label} />;
               }
               // Internal relative paths → Next.js Link (SPA navigation, no reload)
               if (href && href.startsWith("/")) {
@@ -4485,6 +4559,31 @@ function AssistantMarkdown({
                       >
                         <Sparkles className="h-3 w-3" aria-hidden />
                         Iterate
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const res = await fetch(url);
+                            const blob = await res.blob();
+                            const objectUrl = URL.createObjectURL(blob);
+                            const ext = (blob.type.split("/")[1] || "png").split("+")[0];
+                            const a = document.createElement("a");
+                            a.href = objectUrl;
+                            a.download = `${url.split("/").pop()?.split("?")[0] || `image.${ext}`}`;
+                            document.body.appendChild(a);
+                            a.click();
+                            a.remove();
+                            URL.revokeObjectURL(objectUrl);
+                          } catch {
+                            window.open(url, "_blank", "noopener,noreferrer");
+                          }
+                        }}
+                        title="Download image"
+                        className="inline-flex items-center gap-1 rounded-md border border-white/[0.06] bg-white/[0.02] px-2 py-0.5 text-[11px] text-white/40 transition-colors hover:border-white/[0.12] hover:text-white/70"
+                      >
+                        <Download className="h-3 w-3" aria-hidden />
+                        Download
                       </button>
                       <a
                         href={url}

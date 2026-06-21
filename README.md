@@ -14,7 +14,7 @@
 
 ## Current Projects
 
-- 🛜 **[Dwipa](https://dwipa.my.id)** - the AI router
+- 🛜 **[yogathedev](https://yogathedev.com)** - the AI router
 
 ### Legacy Work
 

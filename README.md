@@ -14,7 +14,7 @@
 
 ## Current Projects
 
-- 🛜 **[yogathedev](https://yogathedev.com)** - the AI router
+- 🛜 **[yogathedev](https://yogathedev.com)** - the portofolio and dashboard for online tools
 
 ### Legacy Work
 

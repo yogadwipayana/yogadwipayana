@@ -22,7 +22,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ["yogathedev.com", "test.yogathedev.com", "192.168.56.1"],
+  allowedDevOrigins: ["yogathedev.com"],
   pageExtensions: ["ts", "tsx", "js", "jsx", "md", "mdx"],
   serverExternalPackages: ["ssh2", "pdf-parse", "docx"],
   turbopack: {

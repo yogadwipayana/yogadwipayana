@@ -17,7 +17,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Home" },
   { href: "/about", label: "About" },
   { href: "/tools", label: "Tools" },
-  { href: "https://github.com/yogadwipayana", label: "GitHub", external: true },
 ];
 
 type NavbarClientProps = {

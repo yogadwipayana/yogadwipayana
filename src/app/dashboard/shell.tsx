@@ -1619,7 +1619,6 @@ function TopBar({
 }
 
 function AccountMenu() {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [signingOut, startSignOut] = useTransition();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -1646,8 +1645,7 @@ function AccountMenu() {
     setOpen(false);
     startSignOut(async () => {
       await fetch("/auth/sign-out", { method: "POST" });
-      router.refresh();
-      router.push("/");
+      window.location.assign("/");
     });
   };
 

@@ -8,22 +8,6 @@ export function Footer() {
           <span suppressHydrationWarning>© {new Date().getFullYear()} Yoga · Bali, ID</span>
         </div>
         <div className="flex items-center gap-5">
-          <a
-            href="https://github.com/yogadwipayana"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="transition-colors hover:text-white"
-          >
-            GitHub
-          </a>
-          <a
-            href="https://www.linkedin.com/in/yoga-dwipayana-9958a1324/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="transition-colors hover:text-white"
-          >
-            LinkedIn
-          </a>
           <Link href="/about" className="transition-colors hover:text-white">
             About
           </Link>

@@ -189,32 +189,15 @@ export default function About() {
                   Let&apos;s connect
                 </h2>
                 <p className="mt-3 text-base leading-relaxed text-white/60">
-                  The code is on GitHub and I&apos;m around on LinkedIn. Or jump
-                  straight into the tools.
+                  Jump straight into the tools.
                 </p>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <Button size="lg" asChild>
-                  <a
-                    href="https://github.com/yogadwipayana"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    GitHub
+                  <Link href="/tools">
+                    Explore the tools
                     <ArrowRight aria-hidden />
-                  </a>
-                </Button>
-                <Button size="lg" variant="secondary" asChild>
-                  <a
-                    href="https://www.linkedin.com/in/yoga-dwipayana-9958a1324/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    LinkedIn
-                  </a>
-                </Button>
-                <Button size="lg" variant="ghost" asChild>
-                  <Link href="/tools">Explore the tools</Link>
+                  </Link>
                 </Button>
               </div>
             </div>

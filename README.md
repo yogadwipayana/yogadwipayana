@@ -10,7 +10,7 @@
 ![CLI](https://img.shields.io/badge/-CLI-000000?style=flat-square&logo=gnu-bash&logoColor=white)
 ![Web](https://img.shields.io/badge/-Web-4285F4?style=flat-square&logo=google-chrome&logoColor=white)
 
-> Deep in vibe-coding mode – building AI-powered developer tools at ludicrous speed. After 3+ years shipping modern web feels like a breath of fresh air.
+> Deep in vibe-coding mode – building AI-powered developer tools.
 
 ## Current Projects
 

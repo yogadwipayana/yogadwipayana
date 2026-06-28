@@ -18,6 +18,43 @@ const MARKETPLACE = {
   kiro: "https://marketku.id/kiro/product/pre-order-akun-kiro-dev-37f174fe-5ef7-41f3-a93d-c30e460daa0d",
 };
 
+const BASE_URL = "https://ai.yogathedev.com/v1";
+
+const MODELS = [
+  {
+    name: "GPT-5.5",
+    id: "gpt-5.5",
+    provider: "OpenAI",
+    context: "1,000,000",
+    input: "$5.00",
+    output: "$30.00",
+  },
+  {
+    name: "Claude Opus 4.8",
+    id: "claude-opus-4.8",
+    provider: "Anthropic",
+    context: "1,000,000",
+    input: "$5.00",
+    output: "$25.00",
+  },
+  {
+    name: "Claude Opus 4.7",
+    id: "claude-opus-4.7",
+    provider: "Anthropic",
+    context: "1,000,000",
+    input: "$5.00",
+    output: "$25.00",
+  },
+  {
+    name: "Claude Sonnet 4.6",
+    id: "claude-sonnet-4.6",
+    provider: "Anthropic",
+    context: "1,000,000",
+    input: "$3.00",
+    output: "$15.00",
+  },
+];
+
 type Product = {
   icon: typeof Waypoints;
   name: string;
@@ -183,6 +220,74 @@ export default function AiStore() {
               ChatGPT Plus and Kiro are fulfilled via Marketku and open in a new
               tab. AI Router is run in-house from the dashboard.
             </p>
+          </div>
+        </section>
+
+        {/* AI Router model pricing */}
+        <section className="border-b border-white/[0.08]">
+          <div className="mx-auto w-full max-w-6xl px-6 py-12 sm:px-8 sm:py-16">
+            <div className="max-w-2xl">
+              <h2 className="text-2xl font-medium tracking-[-0.01em] text-white sm:text-3xl">
+                AI Router model pricing
+              </h2>
+              <p className="mt-3 text-base leading-relaxed text-white/60">
+                Pay per token, billed in credit. Prices shown per million
+                tokens.
+              </p>
+            </div>
+
+            <div className="mt-6 flex flex-col gap-1.5 rounded-lg border border-white/[0.08] bg-[#171717] px-4 py-3 sm:flex-row sm:items-center sm:gap-3">
+              <span className="text-[12px] uppercase tracking-wide text-white/40">
+                Base URL
+              </span>
+              <code className="font-mono text-[13px] text-[#3ecf8e]">
+                {BASE_URL}
+              </code>
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-xl border border-white/[0.08]">
+              <table className="w-full text-left text-[13px] sm:text-sm">
+                <thead>
+                  <tr className="border-b border-white/[0.08] text-white/40">
+                    <th className="px-4 py-3 font-medium sm:px-5">Model</th>
+                    <th className="px-4 py-3 font-medium sm:px-5">Model ID</th>
+                    <th className="hidden px-5 py-3 font-medium sm:table-cell">
+                      Context
+                    </th>
+                    <th className="px-4 py-3 text-right font-medium sm:px-5">
+                      In / Out
+                      <span className="text-white/25"> /M</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {MODELS.map((model) => (
+                    <tr
+                      key={model.name}
+                      className="border-b border-white/[0.06] last:border-0"
+                    >
+                      <td className="px-4 py-3.5 font-medium text-white sm:px-5">
+                        {model.name}
+                        <span className="mt-0.5 block text-[12px] font-normal text-white/40">
+                          {model.provider}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3.5 sm:px-5">
+                        <code className="font-mono text-[13px] text-white/70">
+                          {model.id}
+                        </code>
+                      </td>
+                      <td className="hidden px-5 py-3.5 text-white/60 sm:table-cell">
+                        {model.context}
+                      </td>
+                      <td className="px-4 py-3.5 text-right text-white/60 sm:px-5">
+                        {model.input} / {model.output}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </section>
       </main>

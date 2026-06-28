@@ -17,6 +17,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Home" },
   { href: "/about", label: "About" },
   { href: "/tools", label: "Tools" },
+  { href: "/ai", label: "AI" },
 ];
 
 type NavbarClientProps = {

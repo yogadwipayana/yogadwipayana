@@ -133,11 +133,11 @@ export default async function AiBillingPage() {
           <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5 text-[13px]">
             <p className="text-[10px] uppercase tracking-[0.1em] text-white/30 mb-4">How it works</p>
             <ul className="space-y-2.5 text-white/50 leading-relaxed">
-              <li>• Top up your balance in IDR via QRIS</li>
-              <li>• Exchange rate: <span className="text-white/70">$1 = Rp 1,000</span></li>
+              <li>• Buy a credit voucher from Marketku</li>
+              <li>• Redeem the code here to top up instantly</li>
+              <li>• Exchange rate: <span className="text-white/70">Rp 10.000 = $25</span></li>
               <li>• Requests are charged at standard model rates per 1M tokens</li>
-              <li>• No subscription — only pay for what you use</li>
-              <li>• Balance never expires</li>
+              <li>• No subscription · balance never expires</li>
             </ul>
           </div>
         </div>
@@ -150,8 +150,8 @@ export default async function AiBillingPage() {
           <div className="divide-y divide-white/[0.04]">
             {[
               { label: "Pay as you go",  detail: "Charged per token · standard model rates", badge: "current" },
-              { label: "Minimum top-up", detail: "Rp 5,000 via QRIS", badge: null },
-              { label: "Manual top-up",  detail: "Payment confirmed by admin within 1 business day", badge: null },
+              { label: "Voucher top-up", detail: "Buy a credit voucher from Marketku", badge: null },
+              { label: "Redeem",         detail: "Enter the voucher code to add credit instantly", badge: null },
             ].map((row) => (
               <div key={row.label} className="flex items-center justify-between gap-4 px-5 py-4">
                 <div className="flex items-center gap-2">

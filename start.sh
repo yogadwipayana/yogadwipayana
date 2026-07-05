@@ -1,6 +1,7 @@
 pm2 stop yogadwipayana
 pm2 delete yogadwipayana
 git stash
+git fetch
 git pull
 npm install
 npm run build

@@ -8,7 +8,7 @@ import { ExternalLink, Ticket, X } from "lucide-react";
 /*  Constants                                                                  */
 /* -------------------------------------------------------------------------- */
 
-const VOUCHER_URL = "https://marketku.id/u/yogathedev-store";
+const VOUCHER_URL = "https://marketku.id/ai/product/ai-router-opus-4-8-sonnet-5-dan-gpt-5-5-c10f5333-679c-405b-a4bc-f746e318bf46";
 
 /* -------------------------------------------------------------------------- */
 /*  Shared modal pieces                                                        */

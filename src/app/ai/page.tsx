@@ -24,7 +24,7 @@ const MARKETPLACE = {
   chatgptPlus:
     "https://marketku.id/chatgpt/product/chatgpt-plus-1-bulan-sudah-verif-ea6de138-5e57-4dbb-8cba-0623b18321fd",
   kiro: "https://marketku.id/kiro/product/pre-order-akun-kiro-dev-37f174fe-5ef7-41f3-a93d-c30e460daa0d",
-  voucher: "https://marketku.id/u/yogathedev-store",
+  voucher: "https://marketku.id/ai/product/ai-router-opus-4-8-sonnet-5-dan-gpt-5-5-c10f5333-679c-405b-a4bc-f746e318bf46",
 };
 
 const BASE_URL = "https://ai.yogathedev.com/v1";
@@ -308,7 +308,7 @@ export default function AiStore() {
               <p className="text-[13px] leading-relaxed text-white/55">
                 Top up by redeeming a voucher bought from{" "}
                 <a
-                  href="https://marketku.id/u/yogathedev-store"
+                  href="https://marketku.id/ai/product/ai-router-opus-4-8-sonnet-5-dan-gpt-5-5-c10f5333-679c-405b-a4bc-f746e318bf46"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-white/80 underline decoration-white/20 underline-offset-2 transition-colors hover:text-white"

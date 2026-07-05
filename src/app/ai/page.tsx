@@ -39,6 +39,14 @@ const MODELS = [
     output: "$30.00",
   },
   {
+    name: "Claude Sonnet 5",
+    id: "claude-sonnet-5",
+    provider: "Anthropic",
+    context: "1,000,000",
+    input: "$2.00",
+    output: "$10.00",
+  },
+  {
     name: "Claude Opus 4.8",
     id: "claude-opus-4.8",
     provider: "Anthropic",
@@ -74,6 +82,7 @@ type Product = {
   cta: string;
   href: string;
   external: boolean;
+  comingSoon?: boolean;
   secondaryCta?: string;
   secondaryHref?: string;
 };
@@ -108,7 +117,7 @@ const PRODUCTS: Product[] = [
       "1 month access",
       "Latest OpenAI models",
     ],
-    price: "Rp45.000",
+    price: "Rp25.000",
     cta: "Buy now",
     href: MARKETPLACE.chatgptPlus,
     external: true,
@@ -124,10 +133,11 @@ const PRODUCTS: Product[] = [
       "Spec-driven agentic IDE",
       "Pre-release reservation",
     ],
-    price: "Rp80.000",
-    cta: "Pre-order",
+    price: "Coming soon",
+    cta: "Coming soon",
     href: MARKETPLACE.kiro,
     external: true,
+    comingSoon: true,
   },
 ];
 
@@ -204,7 +214,16 @@ export default function AiStore() {
                     </div>
 
                     <div className="mt-4 flex gap-2">
-                      {product.external ? (
+                      {product.comingSoon ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1"
+                          disabled
+                        >
+                          {product.cta}
+                        </Button>
+                      ) : product.external ? (
                         <Button size="sm" className="flex-1" asChild>
                           <a
                             href={product.href}

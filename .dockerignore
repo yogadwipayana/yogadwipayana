@@ -1,0 +1,40 @@
+# Dependencies & build output — regenerated inside the image for linux/musl.
+# These MUST be ignored: copying the Windows host versions would break the
+# Linux build (native node_modules + Prisma engines are platform-specific).
+node_modules
+.next
+out
+build
+
+# Prisma client is regenerated in the builder stage (npx prisma generate)
+src/generated
+
+# Secrets — never bake these into the image; pass at runtime instead.
+.env
+.env.*
+!.env.example
+
+# Local / VCS / editor noise
+.git
+.gitignore
+.github
+*.log
+npm-debug.log*
+.DS_Store
+.vscode
+.idea
+
+# Docker & ops files (not needed inside the image)
+Dockerfile
+.dockerignore
+docker-compose*.yml
+nginx.conf
+start.sh
+
+# Runtime artifacts written by the app
+public/generated-images
+public/generated-documents
+
+# Docs / misc
+README.md
+DESIGN.md

@@ -137,7 +137,10 @@ export type AiModel = {
 };
 
 export const AI_MODELS: AiModel[] = [
-  { slug: "gpt-5.5",          name: "GPT-5.5",          provider: "OpenAI",    providerCode: "OA", contextWindow: "1,000,000", inputPrice: "$5.00",  outputPrice: "$30.00", modelId: "gpt-5.5" },
+  { slug: "gpt-5.6-sol",      name: "GPT 5.6 Sol",      provider: "OpenAI",    providerCode: "OA", contextWindow: "1,050,000", inputPrice: "$5.00",  outputPrice: "$30.00", modelId: "gpt-5.6-sol" },
+  { slug: "gpt-5.6-terra",    name: "GPT 5.6 Terra",    provider: "OpenAI",    providerCode: "OA", contextWindow: "1,050,000", inputPrice: "$2.50",  outputPrice: "$15.00", modelId: "gpt-5.6-terra" },
+  { slug: "gpt-5.6-luna",     name: "GPT 5.6 Luna",     provider: "OpenAI",    providerCode: "OA", contextWindow: "1,050,000", inputPrice: "$1.00",  outputPrice: "$6.00",  modelId: "gpt-5.6-luna" },
+  { slug: "gpt-5.5",          name: "GPT 5.5",          provider: "OpenAI",    providerCode: "OA", contextWindow: "1,000,000", inputPrice: "$5.00",  outputPrice: "$30.00", modelId: "gpt-5.5" },
   { slug: "claude-sonnet-5",  name: "Claude Sonnet 5",  provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$2.00",  outputPrice: "$10.00", modelId: "claude-sonnet-5" },
   { slug: "claude-opus-4.8",  name: "Claude Opus 4.8",  provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$5.00",  outputPrice: "$25.00", modelId: "claude-opus-4.8" },
   { slug: "claude-opus-4.7",  name: "Claude Opus 4.7",  provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$5.00",  outputPrice: "$25.00", modelId: "claude-opus-4.7" },

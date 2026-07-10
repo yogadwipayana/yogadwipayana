@@ -31,7 +31,31 @@ const BASE_URL = "https://ai.yogathedev.com/v1";
 
 const MODELS = [
   {
-    name: "GPT-5.5",
+    name: "GPT 5.6 Sol",
+    id: "gpt-5.6-sol",
+    provider: "OpenAI",
+    context: "1,050,000",
+    input: "$5.00",
+    output: "$30.00",
+  },
+  {
+    name: "GPT 5.6 Terra",
+    id: "gpt-5.6-terra",
+    provider: "OpenAI",
+    context: "1,050,000",
+    input: "$2.50",
+    output: "$15.00",
+  },
+  {
+    name: "GPT 5.6 Luna",
+    id: "gpt-5.6-luna",
+    provider: "OpenAI",
+    context: "1,050,000",
+    input: "$1.00",
+    output: "$6.00",
+  },
+  {
+    name: "GPT 5.5",
     id: "gpt-5.5",
     provider: "OpenAI",
     context: "1,000,000",

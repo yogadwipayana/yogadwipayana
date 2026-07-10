@@ -28,11 +28,11 @@ function providerColor(provider: string) {
 
 export default function AiModelsPage() {
   const [query, setQuery] = useState("");
-  const [copied, setCopied] = useState<"url" | "example" | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
 
   const baseUrl = "https://ai.yogathedev.com/v1";
 
-  function copy(text: string, key: "url" | "example") {
+  function copy(text: string, key: string) {
     navigator.clipboard.writeText(text).then(() => {
       setCopied(key);
       setTimeout(() => setCopied((prev) => (prev === key ? null : prev)), 1500);
@@ -107,7 +107,21 @@ export default function AiModelsPage() {
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-white/60">{model.contextWindow}</td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[#3ecf8e]">{model.inputPrice}</td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[#3ecf8e]">{model.outputPrice}</td>
-                  <td className="px-4 py-3 font-mono text-[11px] text-white/35">{model.modelId}</td>
+                  <td className="px-4 py-3">
+                    <button
+                      type="button"
+                      onClick={() => copy(model.modelId, `model:${model.slug}`)}
+                      className="inline-flex items-center gap-1.5 font-mono text-[11px] text-white/35 transition-colors hover:text-white/70"
+                      aria-label={`Copy model ID ${model.modelId}`}
+                    >
+                      {model.modelId}
+                      {copied === `model:${model.slug}` ? (
+                        <Check className="h-3 w-3 text-[#3ecf8e]" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -134,7 +148,24 @@ export default function AiModelsPage() {
                     <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
                       <div><dt className="text-white/30">Context</dt><dd className="mt-0.5 font-mono text-white/70">{model.contextWindow}</dd></div>
                       <div><dt className="text-white/30">Output / 1M</dt><dd className="mt-0.5 font-mono text-[#3ecf8e]">{model.outputPrice}</dd></div>
-                      <div className="col-span-2"><dt className="text-white/30">Model ID</dt><dd className="mt-0.5 truncate font-mono text-[11px] text-white/35">{model.modelId}</dd></div>
+                      <div className="col-span-2">
+                        <dt className="text-white/30">Model ID</dt>
+                        <dd className="mt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => copy(model.modelId, `model:${model.slug}`)}
+                            className="inline-flex max-w-full items-center gap-1.5 font-mono text-[11px] text-white/35 transition-colors hover:text-white/70"
+                            aria-label={`Copy model ID ${model.modelId}`}
+                          >
+                            <span className="truncate">{model.modelId}</span>
+                            {copied === `model:${model.slug}` ? (
+                              <Check className="h-3 w-3 shrink-0 text-[#3ecf8e]" />
+                            ) : (
+                              <Copy className="h-3 w-3 shrink-0" />
+                            )}
+                          </button>
+                        </dd>
+                      </div>
                     </dl>
                   </div>
                 ))}

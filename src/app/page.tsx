@@ -9,17 +9,19 @@ import {
   Server,
   Sparkles,
   Terminal,
+  Users,
   Waypoints,
   Zap,
 } from "lucide-react";
 
+import { aiDb } from "@/lib/db/ai";
+import { createAdminClient } from "@/utils/supabase/admin";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { CopyValue } from "@/components/ui/CopyValue";
 import { ProviderIcon } from "@/components/ui/ProviderIcons";
 import { Reveal } from "@/components/ui/Reveal";
-import { TypedText } from "@/components/ui/TypedText";
 
 // Closest open-source match to Supabase's proprietary Circular typeface.
 const figtree = Figtree({ subsets: ["latin"], display: "swap" });
@@ -29,7 +31,7 @@ const BASE_URL = "https://ai.yogathedev.com/v1";
 export const metadata: Metadata = {
   title: "Yoga | AI Router, Chat, VPS & Image tools in one hub",
   description:
-    "One OpenAI-compatible key for GPT and Claude, plus a browser VPS console, chat, and image studio. Pay as you go, built and run in the open from Bali.",
+    "One OpenAI-compatible key for GPT and Claude, plus a browser VPS console, chat, and image studio. Pay as you go, built and run in the open.",
 };
 
 type ToolCard = {
@@ -132,14 +134,132 @@ const STORE = [
   },
 ] as const;
 
-const STATS = [
-  { value: "8+", label: "Models" },
-  { value: "2", label: "Providers" },
-  { value: "1M+", label: "Context tokens" },
-  { value: "4", label: "Tools" },
-] as const;
+// Re-render the page at most every 5 minutes so the hero stats stay fresh
+// without hitting the router database on every visit.
+export const revalidate = 300;
 
-export default function Home() {
+const wholeNumber = new Intl.NumberFormat("en");
+const compactNumber = new Intl.NumberFormat("en", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+type RouterTotals = {
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+  cost: number;
+};
+
+/** All-time totals across every request routed through ai.yogathedev.com. */
+async function getRouterTotals(): Promise<RouterTotals | null> {
+  try {
+    const totals = await aiDb.usageHistory.aggregate({
+      _count: true,
+      _sum: { promptTokens: true, completionTokens: true, cost: true },
+    });
+    return {
+      requests: totals._count,
+      inputTokens: totals._sum.promptTokens ?? 0,
+      outputTokens: totals._sum.completionTokens ?? 0,
+      cost: totals._sum.cost ?? 0,
+    };
+  } catch {
+    // The landing page must render even when the router DB is unreachable.
+    return null;
+  }
+}
+
+type LatestRequest = {
+  model: string | null;
+  promptTokens: number;
+  completionTokens: number;
+  cost: number;
+  timestamp: string;
+};
+
+/** Most recent successful request served by the router. */
+async function getLatestRequest(): Promise<LatestRequest | null> {
+  try {
+    const row = await aiDb.usageHistory.findFirst({
+      where: { status: "ok" },
+      orderBy: { id: "desc" },
+      select: {
+        model: true,
+        promptTokens: true,
+        completionTokens: true,
+        cost: true,
+        timestamp: true,
+      },
+    });
+    if (!row) return null;
+    return {
+      model: row.model,
+      promptTokens: row.promptTokens ?? 0,
+      completionTokens: row.completionTokens ?? 0,
+      cost: row.cost ?? 0,
+      timestamp: row.timestamp,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function timeAgo(iso: string): string {
+  const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+/** Total registered accounts on the hub (Supabase auth). */
+async function getUserCount(): Promise<number | null> {
+  try {
+    const admin = createAdminClient();
+    // perPage: 1 keeps the payload tiny — only the pagination total is used.
+    const { data, error } = await admin.auth.admin.listUsers({
+      page: 1,
+      perPage: 1,
+    });
+    if (error) return null;
+    return data.total;
+  } catch {
+    return null;
+  }
+}
+
+export default async function Home() {
+  const [totals, userCount, latest] = await Promise.all([
+    getRouterTotals(),
+    getUserCount(),
+    getLatestRequest(),
+  ]);
+
+  // The curl example always mirrors the request the response pane describes.
+  const exampleModel = latest?.model ?? "claude-opus-4.8";
+
+  const heroStats = [
+    {
+      label: "Requests routed",
+      value: totals ? wholeNumber.format(totals.requests) : "—",
+    },
+    {
+      label: "Input tokens",
+      value: totals ? compactNumber.format(totals.inputTokens) : "—",
+    },
+    {
+      label: "Output tokens",
+      value: totals ? compactNumber.format(totals.outputTokens) : "—",
+    },
+    {
+      label: "Est. cost served",
+      value: totals ? `~$${wholeNumber.format(Math.round(totals.cost))}` : "—",
+    },
+  ];
+
   return (
     <div className={`${figtree.className} flex flex-1 flex-col tracking-[0]`}>
       <Navbar />
@@ -153,8 +273,10 @@ export default function Home() {
             <div className="hero-glow absolute -top-44 left-1/2 h-[480px] w-[860px] -translate-x-1/2 [background:radial-gradient(closest-side,rgba(62,207,142,0.16),transparent)]" />
           </div>
 
-          <div className="relative mx-auto w-full max-w-6xl px-6 pt-16 pb-16 sm:px-8 sm:pt-24 sm:pb-24">
-            <div className="mx-auto flex max-w-4xl flex-col items-center text-center">
+          {/* min-h fills the viewport below the h-14 navbar so the whole hero
+              (headline through stats strip) is visible without scrolling. */}
+          <div className="relative mx-auto flex min-h-[calc(100svh-3.5rem)] w-full max-w-6xl flex-col justify-center px-6 py-10 sm:px-8 sm:py-12">
+            <div className="mx-auto flex w-full max-w-4xl flex-col items-center text-center">
               {/* Announcement pill → /ai */}
               <Link
                 href="/ai"
@@ -171,14 +293,14 @@ export default function Home() {
               </Link>
 
               <h1
-                className="rise-in mt-8 bg-gradient-to-b from-white via-white to-white/40 bg-clip-text text-balance text-4xl font-bold leading-[1.05] tracking-[-0.03em] text-transparent sm:text-6xl lg:text-7xl"
+                className="rise-in mt-6 bg-gradient-to-b from-white via-white to-white/40 bg-clip-text text-balance text-4xl font-bold leading-[1.05] tracking-[-0.03em] text-transparent sm:text-6xl lg:text-7xl"
                 style={{ animationDelay: "60ms" }}
               >
                 One Hub For Every Model
               </h1>
 
               <p
-                className="rise-in mt-6 text-pretty text-base text-white/70 sm:text-lg"
+                className="rise-in mt-5 text-pretty text-base text-white/70 sm:text-lg"
                 style={{ animationDelay: "120ms" }}
               >
                 One{" "}
@@ -199,7 +321,7 @@ export default function Home() {
               </p>
 
               <div
-                className="rise-in mt-9 flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center"
+                className="rise-in mt-8 flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center"
                 style={{ animationDelay: "180ms" }}
               >
                 <Button
@@ -217,27 +339,58 @@ export default function Home() {
                 </Button>
               </div>
 
-              {/* Stats strip */}
-              <dl
-                className="rise-in mt-16 grid w-full grid-cols-2 gap-y-10 rounded-2xl border border-white/[0.08] bg-white/[0.02] px-4 py-8 backdrop-blur-sm sm:mt-20 sm:grid-cols-4 sm:gap-y-0 sm:py-10"
+              {/* Live router usage strip */}
+              <div
+                className="rise-in mt-10 w-full overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur-sm sm:mt-12"
                 style={{ animationDelay: "260ms" }}
               >
-                {STATS.map((stat, i) => (
-                  <div
-                    key={stat.label}
-                    className={`flex flex-col items-center gap-1 ${
-                      i > 0 ? "sm:border-l sm:border-white/[0.08]" : ""
-                    }`}
-                  >
-                    <dd className="order-1 text-3xl font-bold tracking-[-0.02em] text-white sm:text-4xl">
-                      {stat.value}
-                    </dd>
-                    <dt className="order-2 text-[13px] text-white/50">
-                      {stat.label}
-                    </dt>
-                  </div>
-                ))}
-              </dl>
+                <div className="flex flex-col gap-1.5 border-b border-white/[0.06] px-5 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="inline-flex items-center justify-center gap-3 sm:justify-start">
+                    <span className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#3ecf8e]">
+                      <span aria-hidden className="relative flex h-2 w-2">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#3ecf8e] opacity-50" />
+                        <span className="relative inline-flex h-2 w-2 rounded-full bg-[#3ecf8e]" />
+                      </span>
+                      Live
+                    </span>
+                    {userCount !== null && (
+                      <>
+                        <span aria-hidden className="h-3.5 w-px bg-white/[0.12]" />
+                        <span className="inline-flex items-center gap-1.5 text-[12px] text-white/45">
+                          <Users
+                            className="h-3.5 w-3.5 text-white/40"
+                            aria-hidden
+                          />
+                          <span className="font-semibold text-white tabular-nums">
+                            {wholeNumber.format(userCount)}
+                          </span>
+                          users
+                        </span>
+                      </>
+                    )}
+                  </span>
+                  <span className="text-center text-[11px] text-white/30 sm:text-right">
+                    All time · cost is estimated, not billing
+                  </span>
+                </div>
+                <dl className="grid grid-cols-2 gap-y-8 px-4 py-6 sm:grid-cols-4 sm:gap-y-0 sm:py-8">
+                  {heroStats.map((stat, i) => (
+                    <div
+                      key={stat.label}
+                      className={`flex flex-col items-center gap-1 ${
+                        i > 0 ? "sm:border-l sm:border-white/[0.08]" : ""
+                      }`}
+                    >
+                      <dd className="order-1 text-3xl font-bold tracking-[-0.02em] text-white tabular-nums sm:text-4xl">
+                        {stat.value}
+                      </dd>
+                      <dt className="order-2 text-[13px] text-white/50">
+                        {stat.label}
+                      </dt>
+                    </div>
+                  ))}
+                </dl>
+              </div>
             </div>
           </div>
         </section>
@@ -263,6 +416,7 @@ export default function Home() {
                   </span>
                 </div>
                 <div className="grid gap-0 sm:grid-cols-2">
+                  {/* Request: a complete curl you can paste and run */}
                   <pre className="overflow-x-auto border-b border-white/[0.06] p-4 text-[12.5px] leading-relaxed sm:border-b-0 sm:border-r">
                     <code className="font-mono text-white/80">
                       <span className="text-white/40">$ </span>BASE=
@@ -276,35 +430,106 @@ export default function Home() {
                         &quot;Authorization: Bearer $KEY&quot;
                       </span>{" "}
                       \{"\n"}
-                      {"  "}-d{" "}
-                      <span className="text-[#7dd3fc]">&apos;{"{"}</span>{" "}
+                      {"  "}-H{" "}
+                      <span className="text-[#7dd3fc]">
+                        &quot;Content-Type: application/json&quot;
+                      </span>{" "}
+                      \{"\n"}
+                      {"  "}-d <span className="text-[#7dd3fc]">&apos;</span>
+                      {"{"}
+                      {"\n"}
+                      {"    "}
                       <span className="text-[#c084fc]">&quot;model&quot;</span>:{" "}
                       <span className="text-[#3ecf8e]">
-                        &quot;claude-opus-4.8&quot;
+                        &quot;{exampleModel}&quot;
                       </span>
-                      , … <span className="text-[#7dd3fc]">{"}"}&apos;</span>
+                      ,{"\n"}
+                      {"    "}
+                      <span className="text-[#c084fc]">&quot;messages&quot;</span>
+                      : [{"\n"}
+                      {"      "}
+                      {"{"}{" "}
+                      <span className="text-[#c084fc]">&quot;role&quot;</span>:{" "}
+                      <span className="text-[#3ecf8e]">&quot;user&quot;</span>,{" "}
+                      <span className="text-[#c084fc]">&quot;content&quot;</span>
+                      : <span className="text-[#3ecf8e]">&quot;Hi&quot;</span>{" "}
+                      {"}"}
+                      {"\n"}
+                      {"    "}]{"\n"}
+                      {"  "}
+                      {"}"}
+                      <span className="text-[#7dd3fc]">&apos;</span>
                     </code>
                   </pre>
+
+                  {/* Response: the latest real request served by the router */}
                   <div className="p-4 text-[12.5px] leading-relaxed">
-                    <div className="flex items-center gap-2 text-white/35">
-                      <Zap className="h-3.5 w-3.5 text-[#3ecf8e]" aria-hidden />
-                      streaming claude-opus-4.8
-                    </div>
-                    <p className="mt-3 min-h-[3.75rem] font-mono text-white/80">
-                      <TypedText text="One router, every model. Swap providers without touching a line of your code." />
-                      <span className="term-cursor ml-0.5 inline-block h-3.5 w-[7px] translate-y-0.5 bg-[#3ecf8e]" />
-                    </p>
-                    <div className="mt-4 flex flex-wrap gap-1.5 text-[11px] text-white/45">
-                      {["1,240 tokens", "$0.0086", "842ms"].map((stat, i) => (
-                        <span
-                          key={stat}
-                          className="rise-in rounded-md border border-white/[0.08] bg-white/[0.03] px-1.5 py-0.5"
-                          style={{ animationDelay: `${2400 + i * 150}ms` }}
-                        >
-                          {stat}
+                    <div className="flex items-center justify-between gap-2 text-white/35">
+                      <span className="inline-flex items-center gap-2">
+                        <Zap
+                          className="h-3.5 w-3.5 text-[#3ecf8e]"
+                          aria-hidden
+                        />
+                        {latest ? "latest request served" : "example response"}
+                      </span>
+                      {latest && (
+                        <span className="text-[11px] text-white/30">
+                          {timeAgo(latest.timestamp)}
                         </span>
-                      ))}
+                      )}
                     </div>
+                    <pre className="mt-3 overflow-x-auto">
+                      <code className="font-mono text-white/80">
+                        {"{"}
+                        {"\n"}
+                        {"  "}
+                        <span className="text-[#c084fc]">&quot;model&quot;</span>
+                        :{" "}
+                        <span className="text-[#3ecf8e]">
+                          &quot;{exampleModel}&quot;
+                        </span>
+                        ,{"\n"}
+                        {"  "}
+                        <span className="text-[#c084fc]">&quot;usage&quot;</span>
+                        : {"{"}
+                        {"\n"}
+                        {"    "}
+                        <span className="text-[#c084fc]">
+                          &quot;prompt_tokens&quot;
+                        </span>
+                        :{" "}
+                        <span className="text-[#7dd3fc]">
+                          {latest ? latest.promptTokens : 1240}
+                        </span>
+                        ,{"\n"}
+                        {"    "}
+                        <span className="text-[#c084fc]">
+                          &quot;completion_tokens&quot;
+                        </span>
+                        :{" "}
+                        <span className="text-[#7dd3fc]">
+                          {latest ? latest.completionTokens : 128}
+                        </span>
+                        {"\n"}
+                        {"  "}
+                        {"}"},{"\n"}
+                        {"  "}
+                        <span className="text-[#c084fc]">
+                          &quot;cost_usd&quot;
+                        </span>
+                        :{" "}
+                        <span className="text-[#7dd3fc]">
+                          {(latest ? latest.cost : 0.0086).toFixed(4)}
+                        </span>
+                        {"\n"}
+                        {"}"}
+                      </code>
+                    </pre>
+                    <p className="mt-3 text-[11px] text-white/30">
+                      {latest
+                        ? "Real usage from the router log — every call is metered like this."
+                        : "Every call returns token usage and its exact cost."}
+                    </p>
                   </div>
                 </div>
 

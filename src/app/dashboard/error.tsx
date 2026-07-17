@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect } from "react";
+import { Figtree } from "next/font/google";
 import { AlertCircle, RefreshCw } from "lucide-react";
+
+const figtree = Figtree({ subsets: ["latin"], display: "swap" });
 
 export default function ErrorBoundary({
   error,
@@ -15,7 +18,7 @@ export default function ErrorBoundary({
   }, [error]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#1c1c1c] p-6 text-white">
+    <div className={`${figtree.className} flex min-h-screen items-center justify-center bg-[#1c1c1c] p-6 tracking-[0] text-white`}>
       <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-lg border border-white/[0.08] bg-[#171717] px-6 py-16 text-center">
         <AlertCircle className="h-8 w-8 text-white/20" />
         <div className="space-y-1.5">

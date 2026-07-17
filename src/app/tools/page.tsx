@@ -5,11 +5,17 @@ import {
   ArrowRight,
   Check,
   ImagePlus,
+  KeyRound,
   MessageSquare,
   Server,
+  Terminal,
+  Wallet,
   Waypoints,
 } from "lucide-react";
 
+import { ChatMockLive } from "./chat-mock";
+import { ImageMockLive } from "./image-mock";
+import { VpsMockLive } from "./vps-mock";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
@@ -30,6 +36,7 @@ type ToolSection = {
   tag: string;
   name: string;
   blurb: string;
+  href: string;
   features: string[];
 };
 
@@ -41,13 +48,14 @@ const TOOLS: ToolSection[] = [
     name: "AI Router",
     blurb:
       "An OpenAI-compatible endpoint at ai.yogathedev.com/v1. Point any client at it, use one key for every model, and pay only for what you use.",
+    href: "/dashboard/ai",
     features: [
-      "Drop-in chat completions and embeddings: any OpenAI SDK works",
-      "One key reaches GPT and Claude models alike",
-      "Create, rename, disable, and revoke API keys",
-      "Track spend, request counts, and token usage per day",
+      "Drop-in chat completions and embeddings",
+      "One key reaches GPT and Claude alike",
+      "Create, rename, disable, and revoke keys",
+      "Spend, requests, and tokens per day",
       "Per-call log with model, tokens, and cost",
-      "Pay-as-you-go top-ups via QRIS, billed in credit",
+      "QRIS top-ups, billed in credit",
     ],
   },
   {
@@ -57,13 +65,14 @@ const TOOLS: ToolSection[] = [
     name: "Chat AI",
     blurb:
       "A chat surface that runs on the router. Stream responses, switch models mid-thread, call tools, and keep every conversation.",
+    href: "/dashboard/chat",
     features: [
-      "Streaming replies with conversations you can rename and delete",
-      "Switch model or mode mid-thread without losing context",
-      "Built-in tools: web search, time, VPS control, and an inline SSH terminal",
-      "Edit a message to branch, or regenerate the last reply",
-      "Attach images and PDFs: paste, drag, or upload",
-      "Share a conversation by public link or export it to Markdown",
+      "Streaming replies, conversations you keep",
+      "Switch model or mode mid-thread",
+      "Web search, time, VPS, and SSH tools",
+      "Edit to branch, or regenerate a reply",
+      "Attach images and PDFs",
+      "Share by link or export to Markdown",
     ],
   },
   {
@@ -73,13 +82,14 @@ const TOOLS: ToolSection[] = [
     name: "VPS Control",
     blurb:
       "Run your cloud instances from the browser. Bring your own Tencent Cloud account, import what you already have, and manage it without leaving the dashboard.",
+    href: "/dashboard/vps",
     features: [
-      "Start, stop, and reboot instances with audit-logged actions",
-      "Reset passwords and reinstall the OS from a chosen image",
-      "Manage firewall rules: protocol, port, CIDR, accept or drop",
-      "Generate or import SSH keys and bind them to instances",
-      "Full SSH terminal in the browser over a live WebSocket",
-      "Connect a Tencent Cloud account and sync instances on demand",
+      "Start, stop, and reboot with an audit log",
+      "Reset passwords, reinstall the OS",
+      "Firewall rules: protocol, port, CIDR",
+      "Generate or import SSH keys",
+      "Full SSH terminal over a live WebSocket",
+      "Sync Tencent Cloud instances on demand",
     ],
   },
   {
@@ -89,47 +99,186 @@ const TOOLS: ToolSection[] = [
     name: "Image Studio",
     blurb:
       "Generate images from a prompt and keep them organized alongside the rest of your work. Iterate on any result without starting over.",
+    href: "/dashboard/image",
     features: [
-      "Prompt to image with aspect-ratio presets and a quality toggle",
-      "Attach up to four reference images for image-to-image",
+      "Aspect-ratio presets and a quality toggle",
+      "Up to four references for image-to-image",
       "Cancel a generation mid-flight",
-      "Browse a paginated history grid and delete individually",
-      "Iterate: reload any past image as a reference in one click",
+      "Paginated history grid with delete",
+      "Reload any past image as a reference",
       "Shared backend with Chat AI's image mode",
     ],
   },
 ];
+
+const SHARED = [
+  {
+    icon: KeyRound,
+    title: "One key",
+    detail: "A single API key works across the router and every SDK.",
+  },
+  {
+    icon: Wallet,
+    title: "One balance",
+    detail: "Top up once; every tool bills the same credit, per token.",
+  },
+  {
+    icon: Terminal,
+    title: "One dashboard",
+    detail: "Every tool lives side by side in the same workspace.",
+  },
+] as const;
 
 const MODELS = [
   {
     name: "GPT 5.6 Sol",
     provider: "OpenAI",
     context: "1,050,000",
-    input: "$5.00",
-    output: "$30.00",
+    io: "$5.00 / $30.00",
   },
   {
     name: "Claude Opus 4.8",
     provider: "Anthropic",
     context: "1,000,000",
-    input: "$5.00",
-    output: "$25.00",
+    io: "$5.00 / $25.00",
   },
   {
     name: "Claude Sonnet 5",
     provider: "Anthropic",
     context: "1,000,000",
-    input: "$2.00",
-    output: "$10.00",
+    io: "$2.00 / $10.00",
   },
   {
     name: "GPT 5.6 Luna",
     provider: "OpenAI",
     context: "1,050,000",
-    input: "$1.00",
-    output: "$6.00",
+    io: "$1.00 / $6.00",
   },
-];
+] as const;
+
+/** OpenAI's mono mark inherits this tint; Claude ships its own brand color. */
+function providerTint(provider: string) {
+  return provider === "Anthropic" ? "" : "text-white/80";
+}
+
+/** Window chrome shared by every tool mockup. */
+function MockWindow({
+  label,
+  badge,
+  children,
+}: {
+  label: string;
+  badge?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#171717] shadow-[0_24px_80px_-24px_rgba(0,0,0,0.7)]">
+      <div className="flex items-center gap-2 border-b border-white/[0.08] px-4 py-2.5">
+        <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+        <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+        <span className="h-2.5 w-2.5 rounded-full bg-white/15" />
+        <span className="ml-2 truncate font-mono text-[12px] text-white/35">
+          {label}
+        </span>
+        {badge && (
+          <span className="ml-auto shrink-0 rounded-full bg-[#3ecf8e]/10 px-2 py-0.5 text-[11px] font-medium text-[#3ecf8e]">
+            {badge}
+          </span>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** AI Router — the live pricing table is the product's argument. */
+function RouterMock() {
+  return (
+    <MockWindow label="ai.yogathedev.com/v1" badge="USD / M tokens">
+      <table className="w-full text-left text-[13px]">
+        <tbody>
+          {MODELS.map((model) => (
+            <tr
+              key={model.name}
+              className="border-b border-white/[0.06] last:border-0"
+            >
+              <td className="px-4 py-3.5 font-medium text-white">
+                <span className="flex items-center gap-2.5">
+                  <ProviderIcon
+                    provider={model.provider}
+                    className={`h-4 w-4 shrink-0 ${providerTint(model.provider)}`}
+                  />
+                  <span>
+                    {model.name}
+                    <span className="mt-0.5 block text-[12px] font-normal text-white/40">
+                      {model.provider}
+                    </span>
+                  </span>
+                </span>
+              </td>
+              <td className="hidden px-4 py-3.5 text-white/60 sm:table-cell">
+                {model.context}
+              </td>
+              <td className="px-4 py-3.5 text-right font-mono text-white/60">
+                {model.io}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <Link
+        href="/ai"
+        className="flex items-center justify-between border-t border-white/[0.08] px-4 py-3 text-[13px] text-white/60 transition-colors hover:text-white"
+      >
+        See the full model list and pricing
+        <ArrowRight className="h-4 w-4" aria-hidden />
+      </Link>
+    </MockWindow>
+  );
+}
+
+/** Chat AI — a compact thread that replays itself: message, tool call,
+    then the reply streams in and the loop restarts. */
+function ChatMock() {
+  return (
+    <div className="mx-auto w-full max-w-md">
+      <MockWindow label="chat — deploy checklist" badge="Streaming">
+        <ChatMockLive />
+      </MockWindow>
+    </div>
+  );
+}
+
+/** VPS Control — a compact console that replays itself: the stopped worker
+    boots, then the terminal types an SSH command and prints the session. */
+function VpsMock() {
+  return (
+    <div className="mx-auto w-full max-w-md">
+      <MockWindow label="vps — instances" badge="Synced">
+        <VpsMockLive />
+      </MockWindow>
+    </div>
+  );
+}
+
+/** Image Studio — a compact history grid that replays itself: the prompt
+    types out, one tile generates, and a real router-made image develops in. */
+function ImageMock() {
+  return (
+    <div className="mx-auto w-full max-w-md">
+      <MockWindow label="image studio — history" badge="Generating">
+        <ImageMockLive />
+      </MockWindow>
+    </div>
+  );
+}
+
+const MOCKUPS: Record<string, () => React.ReactElement> = {
+  ai: RouterMock,
+  chat: ChatMock,
+  vps: VpsMock,
+  image: ImageMock,
+};
 
 export default function Tools() {
   return (
@@ -137,62 +286,104 @@ export default function Tools() {
       <Navbar />
 
       <main className="flex-1">
-        {/* Header */}
+        {/* Hero */}
         <section className="relative overflow-hidden border-b border-white/[0.08]">
           <div aria-hidden className="pointer-events-none absolute inset-0">
-            <div className="hero-glow absolute -top-40 left-1/2 h-[400px] w-[760px] -translate-x-1/2 [background:radial-gradient(closest-side,rgba(62,207,142,0.12),transparent)]" />
+            <div className="grid-bg absolute inset-0 [mask-image:radial-gradient(110%_75%_at_50%_0%,#000_30%,transparent_72%)]" />
+            <div className="hero-glow absolute -top-40 left-1/2 h-[400px] w-[760px] -translate-x-1/2 [background:radial-gradient(closest-side,rgba(62,207,142,0.14),transparent)]" />
           </div>
 
-          <div className="relative mx-auto w-full max-w-6xl px-6 pt-14 pb-14 sm:px-8 sm:pt-20 sm:pb-16">
-            <span className="rise-in inline-block text-[12px] uppercase tracking-wide text-[#3ecf8e]">
-              The toolkit
-            </span>
+          <div className="relative mx-auto w-full max-w-6xl px-6 pt-16 pb-14 sm:px-8 sm:pt-24 sm:pb-16 lg:pt-28">
+            <div className="mx-auto flex max-w-3xl flex-col items-center text-center">
+              <span className="rise-in text-[12px] uppercase tracking-wide text-[#3ecf8e]">
+                The toolkit
+              </span>
 
-            <h1
-              className="rise-in mt-4 max-w-3xl text-balance text-4xl font-semibold leading-[1.08] tracking-[-0.02em] text-white sm:text-5xl"
-              style={{ animationDelay: "60ms" }}
-            >
-              Four tools, one place to run them.
-            </h1>
+              <h1
+                className="rise-in mt-4 text-balance text-4xl font-semibold leading-[1.08] tracking-[-0.02em] text-white sm:text-5xl"
+                style={{ animationDelay: "60ms" }}
+              >
+                Four tools, one place to run them.
+              </h1>
 
-            <p
-              className="rise-in mt-5 max-w-2xl text-pretty text-base leading-relaxed text-white/60 sm:text-lg"
-              style={{ animationDelay: "120ms" }}
-            >
-              Each tool stands on its own, but they share a single account, one
-              key, and one billing balance. Here&apos;s what each one does.
-            </p>
+              <p
+                className="rise-in mt-5 max-w-2xl text-pretty text-base leading-relaxed text-white/60 sm:text-lg"
+                style={{ animationDelay: "120ms" }}
+              >
+                Each tool stands on its own, but they share a single account,
+                one key, and one billing balance. Here&apos;s what each one
+                does.
+              </p>
 
-            <nav
-              aria-label="Tools"
-              className="rise-in mt-8 flex flex-wrap gap-2 text-[13px]"
-              style={{ animationDelay: "180ms" }}
+              <nav
+                aria-label="Tools"
+                className="rise-in mt-8 flex flex-wrap justify-center gap-2 text-[13px]"
+                style={{ animationDelay: "180ms" }}
+              >
+                {TOOLS.map((tool, i) => (
+                  <a
+                    key={tool.id}
+                    href={`#${tool.id}`}
+                    className="group inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.04] py-1.5 pl-2.5 pr-3.5 text-white/70 transition-colors hover:border-[#3ecf8e]/30 hover:text-white"
+                  >
+                    <span className="font-mono text-[11px] text-white/30 transition-colors group-hover:text-[#3ecf8e]">
+                      0{i + 1}
+                    </span>
+                    <tool.icon className="h-4 w-4 text-[#3ecf8e]" aria-hidden />
+                    {tool.name}
+                  </a>
+                ))}
+              </nav>
+            </div>
+
+            {/* Shared foundation strip */}
+            <div
+              className="rise-in mt-12 grid grid-cols-1 overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur-sm sm:mt-16 sm:grid-cols-3"
+              style={{ animationDelay: "260ms" }}
             >
-              {TOOLS.map((tool) => (
-                <a
-                  key={tool.id}
-                  href={`#${tool.id}`}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.04] px-3.5 py-1.5 text-white/70 transition-colors hover:border-[#3ecf8e]/30 hover:text-white"
+              {SHARED.map((item, i) => (
+                <div
+                  key={item.title}
+                  className={`flex items-start gap-3.5 px-5 py-5 sm:px-6 ${
+                    i > 0
+                      ? "border-t border-white/[0.06] sm:border-l sm:border-t-0"
+                      : ""
+                  }`}
                 >
-                  <tool.icon className="h-4 w-4 text-[#3ecf8e]" aria-hidden />
-                  {tool.name}
-                </a>
+                  <span
+                    aria-hidden
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-[#3ecf8e]"
+                  >
+                    <item.icon className="h-4.5 w-4.5" />
+                  </span>
+                  <span>
+                    <span className="block text-[14px] font-medium text-white">
+                      {item.title}
+                    </span>
+                    <span className="mt-0.5 block text-[13px] leading-relaxed text-white/50">
+                      {item.detail}
+                    </span>
+                  </span>
+                </div>
               ))}
-            </nav>
+            </div>
           </div>
         </section>
 
         {/* Tool sections */}
-        {TOOLS.map((tool) => {
+        {TOOLS.map((tool, index) => {
           const Icon = tool.icon;
+          const Mock = MOCKUPS[tool.id];
+          const flipped = index % 2 === 1;
+
           return (
             <section
               key={tool.id}
               id={tool.id}
               className="scroll-mt-20 border-b border-white/[0.08]"
             >
-              <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-10 px-6 py-16 sm:px-8 sm:py-24 lg:grid-cols-[1fr_1.1fr] lg:gap-16">
-                <div className="lg:sticky lg:top-20 lg:self-start">
+              <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-10 px-6 py-16 sm:px-8 sm:py-24 lg:grid-cols-2 lg:items-center lg:gap-16">
+                <div className={flipped ? "lg:order-2" : ""}>
                   <Reveal>
                     <div className="flex items-center gap-3">
                       <span
@@ -202,33 +393,25 @@ export default function Tools() {
                         <Icon className="h-5 w-5" />
                       </span>
                       <span className="text-[12px] uppercase tracking-wide text-white/40">
+                        <span className="mr-2 font-mono text-white/25">
+                          0{index + 1}
+                        </span>
                         {tool.tag}
                       </span>
                     </div>
+
                     <h2 className="mt-5 text-2xl font-semibold tracking-[-0.02em] text-white sm:text-3xl">
                       {tool.name}
                     </h2>
                     <p className="mt-3 max-w-md text-base leading-relaxed text-white/60">
                       {tool.blurb}
                     </p>
-                    <div className="mt-7">
-                      <Button asChild>
-                        <Link href="/dashboard">
-                          Open {tool.name}
-                          <ArrowRight aria-hidden />
-                        </Link>
-                      </Button>
-                    </div>
-                  </Reveal>
-                </div>
 
-                <div>
-                  <Reveal delay={100}>
-                    <ul className="space-y-px overflow-hidden rounded-xl border border-white/[0.08]">
+                    <ul className="mt-6 grid grid-cols-1 gap-x-6 gap-y-2.5 sm:grid-cols-2">
                       {tool.features.map((feature) => (
                         <li
                           key={feature}
-                          className="flex items-start gap-3 bg-white/[0.02] px-5 py-4 text-[15px] leading-relaxed text-white/75 transition-colors hover:bg-white/[0.04]"
+                          className="flex items-start gap-2.5 text-[14px] leading-relaxed text-white/70"
                         >
                           <Check
                             className="mt-0.5 h-4 w-4 shrink-0 text-[#3ecf8e]"
@@ -238,64 +421,22 @@ export default function Tools() {
                         </li>
                       ))}
                     </ul>
-                  </Reveal>
 
-                  {tool.id === "ai" && (
-                    <Reveal delay={160}>
-                      <div className="mt-6 overflow-hidden rounded-xl border border-white/[0.08] bg-[#171717]">
-                        <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
-                          <span className="text-[13px] font-medium text-white">
-                            Popular models
-                          </span>
-                          <span className="rounded-md border border-[#3ecf8e]/15 bg-[#3ecf8e]/[0.06] px-2 py-0.5 text-[11px] font-medium text-[#3ecf8e]">
-                            USD / M tokens
-                          </span>
-                        </div>
-                        <table className="w-full text-left text-[13px]">
-                          <tbody>
-                            {MODELS.map((model) => (
-                              <tr
-                                key={model.name}
-                                className="border-b border-white/[0.06] last:border-0"
-                              >
-                                <td className="px-4 py-3.5 font-medium text-white">
-                                  <span className="flex items-center gap-2.5">
-                                    <ProviderIcon
-                                      provider={model.provider}
-                                      className={`h-4 w-4 shrink-0 ${
-                                        model.provider === "OpenAI"
-                                          ? "text-white/80"
-                                          : ""
-                                      }`}
-                                    />
-                                    <span>
-                                      {model.name}
-                                      <span className="mt-0.5 block text-[12px] font-normal text-white/40">
-                                        {model.provider}
-                                      </span>
-                                    </span>
-                                  </span>
-                                </td>
-                                <td className="hidden px-4 py-3.5 text-white/60 sm:table-cell">
-                                  {model.context}
-                                </td>
-                                <td className="px-4 py-3.5 text-right font-mono text-white/60">
-                                  {model.input} / {model.output}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        <Link
-                          href="/ai"
-                          className="flex items-center justify-between border-t border-white/[0.08] px-4 py-3 text-[13px] text-white/60 transition-colors hover:text-white"
-                        >
-                          See the full model list and pricing
-                          <ArrowRight className="h-4 w-4" aria-hidden />
+                    <div className="mt-8">
+                      <Button asChild>
+                        <Link href={tool.href}>
+                          Open {tool.name}
+                          <ArrowRight aria-hidden />
                         </Link>
-                      </div>
-                    </Reveal>
-                  )}
+                      </Button>
+                    </div>
+                  </Reveal>
+                </div>
+
+                <div className={flipped ? "lg:order-1" : ""}>
+                  <Reveal delay={120}>
+                    <Mock />
+                  </Reveal>
                 </div>
               </div>
             </section>

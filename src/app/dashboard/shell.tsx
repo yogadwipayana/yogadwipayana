@@ -1,5 +1,6 @@
 "use client";
 
+import { Figtree } from "next/font/google";
 import Link from "next/link";
 import { useRouter, useSelectedLayoutSegment } from "next/navigation";
 import {
@@ -58,6 +59,8 @@ import {
   stashPendingFirstMessage,
   type AttachmentPayload,
 } from "./views";
+
+const figtree = Figtree({ subsets: ["latin"], display: "swap" });
 import { GalleryView } from "./chat/gallery";
 import { MemoryView } from "./chat/memory";
 import { ArchivedView } from "./chat/archived";
@@ -197,9 +200,10 @@ function buildSections(
       {
         title: "Settings",
         items: [
-          { id: "ai:usage",   label: "Usage",   href: "/dashboard/ai/usage" },
-          { id: "ai:keys",    label: "Keys",    href: "/dashboard/ai/keys" },
-          { id: "ai:billing", label: "Billing", href: "/dashboard/ai/billing" },
+          { id: "ai:usage",    label: "Usage",    href: "/dashboard/ai/usage" },
+          { id: "ai:keys",     label: "Keys",     href: "/dashboard/ai/keys" },
+          { id: "ai:billing",  label: "Billing",  href: "/dashboard/ai/billing" },
+          { id: "ai:vouchers", label: "Vouchers", href: "/dashboard/ai/vouchers" },
         ],
       },
       {
@@ -447,9 +451,19 @@ export function DashboardShell({
     if (chatSegment !== null && chatConfigItem) setChatConfigItem("");
   }
   const activeChatId = routedConfigItem ?? conversationSegment ?? chatConfigItem;
-  // Effective active sub-sidebar item for the current tool. Chat is URL-driven;
-  // every other tool still reads from local `activeItems` state.
-  const activeItemId = toolId === "chat" ? activeChatId : activeItems[toolId];
+  // AI sub-item ids mirror their URL segment (ai:usage ↔ /dashboard/ai/usage),
+  // so the active item can come straight from the URL — a deep link or refresh
+  // then highlights the right item without relying on click state.
+  const aiRoutedItem =
+    toolId === "ai" && chatSegment ? `ai:${chatSegment}` : undefined;
+  // Effective active sub-sidebar item for the current tool. Chat and AI are
+  // URL-driven; every other tool still reads from local `activeItems` state.
+  const activeItemId =
+    toolId === "chat"
+      ? activeChatId
+      : toolId === "ai"
+        ? aiRoutedItem ?? activeItems.ai
+        : activeItems[toolId];
 
   const handleSelectItem = useCallback(
     (id: string) => {
@@ -843,7 +857,7 @@ export function DashboardShell({
         : undefined;
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#1c1c1c] text-white selection:bg-[#3ecf8e]/30 selection:text-white">
+    <div className={`${figtree.className} flex h-screen flex-col overflow-hidden bg-[#1c1c1c] tracking-[0] text-white selection:bg-[#3ecf8e]/30 selection:text-white`}>
       <TopBar
         tool={tool}
         onMenuOpen={() => setDrawerOpen(true)}
@@ -1112,6 +1126,7 @@ function CommandPalette({
       { label: "AI usage", href: "/dashboard/ai/usage", icon: BarChart3, keywords: "router metrics" },
       { label: "API keys", href: "/dashboard/ai/keys", icon: Waypoints, keywords: "router byok" },
       { label: "AI billing", href: "/dashboard/ai/billing", icon: BarChart3, keywords: "router cost" },
+      { label: "AI vouchers", href: "/dashboard/ai/vouchers", icon: BarChart3, keywords: "router redeem history" },
       { label: "AI models", href: "/dashboard/ai/models", icon: Waypoints, keywords: "router catalogue" },
       { label: "VPS terminal", href: "/dashboard/vps/terminal", icon: Terminal, keywords: "ssh console" },
       { label: "Account", href: "/dashboard/settings/account", icon: Settings },
@@ -1234,7 +1249,7 @@ function CommandPalette({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[10000] flex items-start justify-center px-4 pt-[12vh]"
+      className={`${figtree.className} fixed inset-0 z-[10000] flex items-start justify-center px-4 pt-[12vh] tracking-[0]`}
       role="dialog"
       aria-modal="true"
       aria-label="Command palette"
@@ -1328,7 +1343,7 @@ function ToastContainer({ toasts }: { toasts: AppToast[] }) {
     <div
       aria-live="polite"
       aria-atomic="false"
-      className="pointer-events-none fixed bottom-5 right-5 z-[9999] flex flex-col gap-2"
+      className={`${figtree.className} pointer-events-none fixed bottom-5 right-5 z-[9999] flex flex-col gap-2 tracking-[0]`}
       style={{ maxWidth: "calc(100vw - 2.5rem)" }}
     >
       {toasts.map((toast) => (
@@ -1554,6 +1569,12 @@ function TopBar({
   onMenuOpen: () => void;
   onSearchOpen: () => void;
 }) {
+  // Resolved after mount to avoid a hydration mismatch on the shortcut hint.
+  const [isMac, setIsMac] = useState(false);
+  useEffect(() => {
+    setIsMac(/Mac|iPhone|iPad/.test(navigator.platform));
+  }, []);
+
   return (
     <header className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.08] bg-[#0c0c0c] px-2 sm:px-3">
       <div className="flex min-w-0 items-center gap-1">
@@ -1586,12 +1607,15 @@ function TopBar({
         <button
           type="button"
           onClick={onSearchOpen}
-          className="hidden h-8 items-center gap-2 rounded-md border border-white/[0.08] bg-white/[0.03] pr-1.5 pl-2.5 text-[12px] text-white/55 transition-colors hover:border-white/[0.12] hover:bg-white/[0.06] hover:text-white/80 md:inline-flex"
+          className="group hidden h-8 w-52 items-center gap-2 rounded-md border border-white/[0.08] bg-white/[0.03] pr-1.5 pl-2.5 text-[12px] text-white/45 transition-colors hover:border-white/[0.14] hover:bg-white/[0.06] hover:text-white/75 focus-visible:border-white/[0.2] focus-visible:text-white/75 focus-visible:outline-none md:flex lg:w-64"
         >
-          <Search className="h-3 w-3" aria-hidden />
-          <span>Search…</span>
-          <kbd className="rounded border border-white/[0.08] bg-white/[0.04] px-1 py-0.5 font-mono text-[10px] text-white/40">
-            ⌘K
+          <Search
+            className="h-3.5 w-3.5 shrink-0 text-white/35 transition-colors group-hover:text-white/60"
+            aria-hidden
+          />
+          <span className="flex-1 truncate text-left">Search…</span>
+          <kbd className="shrink-0 rounded border border-white/[0.08] bg-[#1c1c1c] px-1.5 py-0.5 font-mono text-[10px] leading-none text-white/40">
+            {isMac ? "⌘K" : "Ctrl K"}
           </kbd>
         </button>
 
@@ -2210,7 +2234,7 @@ function SubItemButton({
         <div
           ref={menuPopupRef}
           style={{ position: "fixed", top: menuPos.top, right: menuPos.right }}
-          className="z-[60] min-w-[148px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] py-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
+          className={`${figtree.className} z-[60] min-w-[148px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] py-1 tracking-[0] shadow-[0_8px_24px_rgba(0,0,0,0.5)]`}
           onClick={(e) => e.stopPropagation()}
         >
           {item.onRename && (

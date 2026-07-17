@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy, Search } from "lucide-react";
+import { Check, Copy, Search, Terminal } from "lucide-react";
 
 import { ProviderIcon } from "@/components/ui/ProviderIcons";
 
@@ -35,14 +35,66 @@ function providerTile(provider: string) {
 }
 
 /* -------------------------------------------------------------------------- */
+/*  cURL example                                                               */
+/* -------------------------------------------------------------------------- */
+
+const BASE_URL = "https://ai.yogathedev.com/v1";
+
+type CodeToken = { text: string; className?: string };
+
+// Tokenized so the highlighted render and the copied text never drift apart.
+const CURL_LINES: CodeToken[][] = [
+  [
+    { text: "curl", className: "text-[#3ecf8e]" },
+    { text: ` ${BASE_URL}/chat/completions `, className: "text-white/85" },
+    { text: "\\", className: "text-white/25" },
+  ],
+  [
+    { text: "  -H ", className: "text-white/45" },
+    { text: '"Authorization: Bearer ', className: "text-[#d4a574]" },
+    { text: "YOUR_KEY", className: "font-medium text-white" },
+    { text: '" ', className: "text-[#d4a574]" },
+    { text: "\\", className: "text-white/25" },
+  ],
+  [
+    { text: "  -H ", className: "text-white/45" },
+    { text: '"Content-Type: application/json" ', className: "text-[#d4a574]" },
+    { text: "\\", className: "text-white/25" },
+  ],
+  [
+    { text: "  -d ", className: "text-white/45" },
+    { text: "'{", className: "text-white/60" },
+  ],
+  [
+    { text: '    "model"', className: "text-white/60" },
+    { text: ": ", className: "text-white/40" },
+    { text: '"claude-sonnet-5"', className: "text-[#d4a574]" },
+    { text: ",", className: "text-white/40" },
+  ],
+  [
+    { text: '    "messages"', className: "text-white/60" },
+    { text: ": [{ ", className: "text-white/40" },
+    { text: '"role"', className: "text-white/60" },
+    { text: ": ", className: "text-white/40" },
+    { text: '"user"', className: "text-[#d4a574]" },
+    { text: ", ", className: "text-white/40" },
+    { text: '"content"', className: "text-white/60" },
+    { text: ": ", className: "text-white/40" },
+    { text: '"Hi"', className: "text-[#d4a574]" },
+    { text: " }]", className: "text-white/40" },
+  ],
+  [{ text: "  }'", className: "text-white/60" }],
+];
+
+const CURL_TEXT = CURL_LINES.map((line) => line.map((t) => t.text).join("")).join("\n");
+
+/* -------------------------------------------------------------------------- */
 /*  Page                                                                       */
 /* -------------------------------------------------------------------------- */
 
 export default function AiModelsPage() {
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
-
-  const baseUrl = "https://ai.yogathedev.com/v1";
 
   function copy(text: string, key: string) {
     navigator.clipboard.writeText(text).then(() => {
@@ -221,11 +273,11 @@ export default function AiModelsPage() {
               <p className="text-[10px] uppercase tracking-[0.1em] text-white/35">Base URL</p>
               <div className="mt-1.5 flex items-center gap-2">
                 <code className="flex-1 truncate rounded-md border border-white/[0.08] bg-[#1c1c1c] px-3 py-2 font-mono text-[12px] text-[#3ecf8e]">
-                  {baseUrl}
+                  {BASE_URL}
                 </code>
                 <button
                   type="button"
-                  onClick={() => copy(baseUrl, "url")}
+                  onClick={() => copy(BASE_URL, "url")}
                   className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/[0.08] text-white/50 transition-colors hover:bg-white/[0.04] hover:text-white"
                   aria-label="Copy base URL"
                 >
@@ -239,24 +291,44 @@ export default function AiModelsPage() {
 
             <div>
               <p className="text-[10px] uppercase tracking-[0.1em] text-white/35">Quick example</p>
-              <div className="mt-1.5 flex items-start gap-2">
-                <pre className="flex-1 overflow-x-auto rounded-md border border-white/[0.08] bg-[#1c1c1c] px-3 py-2.5 font-mono text-[11px] leading-relaxed text-white/70">
-{`curl ${baseUrl}/chat/completions \\
-  -H "Authorization: Bearer YOUR_KEY" \\
-  -H "Content-Type: application/json" \\
-  -d '{"model":"claude-sonnet-4.6","messages":[{"role":"user","content":"Hi"}]}'`}
+              <div className="mt-1.5 overflow-hidden rounded-md border border-white/[0.08] bg-[#1c1c1c]">
+                <div className="flex items-center justify-between border-b border-white/[0.06] bg-white/[0.02] py-1.5 pl-3.5 pr-1.5">
+                  <div className="flex items-center gap-2">
+                    <Terminal className="h-3.5 w-3.5 text-white/30" aria-hidden />
+                    <span className="text-[11px] font-medium text-white/50">Chat completions</span>
+                    <span className="rounded border border-white/[0.08] px-1.5 py-px font-mono text-[9px] uppercase tracking-[0.08em] text-white/30">
+                      bash
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copy(CURL_TEXT, "example")}
+                    className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-[11px] text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white"
+                    aria-label="Copy example"
+                  >
+                    {copied === "example" ? (
+                      <>
+                        <Check className="h-3 w-3 text-[#3ecf8e]" /> Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3" /> Copy
+                      </>
+                    )}
+                  </button>
+                </div>
+                <pre className="overflow-x-auto px-4 py-3.5 font-mono text-[11.5px] leading-[1.75]">
+                  {CURL_LINES.map((line, i) => (
+                    <span key={i}>
+                      {line.map((token, j) => (
+                        <span key={j} className={token.className}>
+                          {token.text}
+                        </span>
+                      ))}
+                      {i < CURL_LINES.length - 1 ? "\n" : null}
+                    </span>
+                  ))}
                 </pre>
-                <button
-                  type="button"
-                  onClick={() => copy(
-                    `curl ${baseUrl}/chat/completions \\\n  -H "Authorization: Bearer YOUR_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"claude-sonnet-4.6","messages":[{"role":"user","content":"Hi"}]}'`,
-                    "example",
-                  )}
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/[0.08] text-white/50 transition-colors hover:bg-white/[0.04] hover:text-white"
-                  aria-label="Copy example"
-                >
-                  {copied === "example" ? <Check className="h-3.5 w-3.5 text-[#3ecf8e]" /> : <Copy className="h-3.5 w-3.5" />}
-                </button>
               </div>
             </div>
           </div>

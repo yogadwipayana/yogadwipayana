@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Check, Copy, Search } from "lucide-react";
 
+import { ProviderIcon } from "@/components/ui/ProviderIcons";
+
 import { AI_MODELS } from "../../data";
 
 /* -------------------------------------------------------------------------- */
@@ -20,6 +22,16 @@ const PROVIDER_COLORS: Record<string, string> = {
 
 function providerColor(provider: string) {
   return PROVIDER_COLORS[provider] ?? "bg-white/[0.06] text-white/50";
+}
+
+// Logo tiles matching the chat model picker so both surfaces read the same.
+const PROVIDER_TILES: Record<string, string> = {
+  OpenAI: "border-white/[0.1] bg-white/[0.05] text-white/90",
+  Anthropic: "border-[#d97757]/25 bg-[#d97757]/[0.08] text-[#d97757]",
+};
+
+function providerTile(provider: string) {
+  return PROVIDER_TILES[provider] ?? "border-white/[0.08] bg-white/[0.03] text-white/40";
 }
 
 /* -------------------------------------------------------------------------- */
@@ -98,7 +110,17 @@ export default function AiModelsPage() {
             <tbody>
               {filtered.map((model) => (
                 <tr key={model.slug} className="border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] transition-colors">
-                  <td className="px-4 py-3 font-medium text-white">{model.name}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <span
+                        aria-hidden
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border ${providerTile(model.provider)}`}
+                      >
+                        <ProviderIcon provider={model.provider} className="h-3.5 w-3.5" />
+                      </span>
+                      <span className="font-medium text-white">{model.name}</span>
+                    </div>
+                  </td>
                   <td className="px-4 py-3">
                     <span className={`rounded-full px-2 py-0.5 text-[10px] ${providerColor(model.provider)}`}>
                       {model.provider}
@@ -133,13 +155,22 @@ export default function AiModelsPage() {
           {Object.entries(grouped).map(([provider, models]) => (
             <div key={provider}>
               <div className="mb-2 flex items-center gap-2">
+                <ProviderIcon provider={provider} className="h-3.5 w-3.5 text-white/70" />
                 <span className={`rounded-full px-2 py-0.5 text-[10px] ${providerColor(provider)}`}>{provider}</span>
               </div>
               <div className="space-y-2">
                 {models.map((model) => (
                   <div key={model.slug} className="rounded-lg border border-white/[0.08] bg-[#171717] p-4">
                     <div className="flex items-start justify-between gap-4">
-                      <p className="font-medium text-white">{model.name}</p>
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span
+                          aria-hidden
+                          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border ${providerTile(model.provider)}`}
+                        >
+                          <ProviderIcon provider={model.provider} className="h-3.5 w-3.5" />
+                        </span>
+                        <p className="truncate font-medium text-white">{model.name}</p>
+                      </div>
                       <div className="text-right shrink-0">
                         <p className="font-mono text-[12px] text-[#3ecf8e]">{model.inputPrice}</p>
                         <p className="font-mono text-[11px] text-white/40">in / 1M</p>

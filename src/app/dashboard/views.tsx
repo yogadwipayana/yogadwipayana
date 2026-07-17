@@ -47,6 +47,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { MermaidDiagram } from "@/components/ui/MermaidDiagram";
+import { ProviderIcon } from "@/components/ui/ProviderIcons";
 import { GraphvizDiagram } from "@/components/ui/GraphvizDiagram";
 import type { InlineSshTerminalHandle } from "./chat/inline-terminal";
 import { InlineSshTerminal } from "./chat/inline-terminal";
@@ -63,6 +64,16 @@ import { copyToClipboard, normalizeMarkdownLists, stripMarkdown } from "@/lib/ut
 
 export { VpsView } from "./vps-view";
 
+// "1,050,000" → "1.05M", "128,000" → "128K"; falls through for odd values.
+function formatContextWindow(raw: string): string {
+  const n = Number(raw.replace(/,/g, ""));
+  if (!Number.isFinite(n) || n <= 0) return raw;
+  if (n >= 1_000_000) {
+    return `${(n / 1_000_000).toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}M`;
+  }
+  return `${Math.round(n / 1_000)}K`;
+}
+
 /**
  * Models the chat dropdown shows. Sourced from the same catalogue as the
  * `/dashboard/ai/models` page so the two cannot drift. If the conversation's
@@ -73,14 +84,23 @@ const CHAT_MODELS = AI_MODELS.map((m) => ({
   slug: m.slug,
   name: m.name,
   provider: m.provider,
-  providerCode: m.providerCode,
+  context: formatContextWindow(m.contextWindow),
 }));
 
-// Provider-tinted monogram styling so each model row reads as distinct at a
-// glance instead of repeating the same icon.
-const PROVIDER_BADGE: Record<string, string> = {
-  OpenAI: "border-[#3ecf8e]/30 bg-[#3ecf8e]/[0.08] text-[#3ecf8e]",
-  Anthropic: "border-[#d97757]/30 bg-[#d97757]/[0.08] text-[#d97757]",
+// Catalogue order already keeps providers contiguous; group for section headers.
+const CHAT_MODEL_GROUPS = CHAT_MODELS.reduce<
+  { provider: string; models: typeof CHAT_MODELS }[]
+>((groups, m) => {
+  const last = groups[groups.length - 1];
+  if (last?.provider === m.provider) last.models.push(m);
+  else groups.push({ provider: m.provider, models: [m] });
+  return groups;
+}, []);
+
+// Provider-tinted logo tiles so each row reads as distinct at a glance.
+const PROVIDER_TILE: Record<string, string> = {
+  OpenAI: "border-white/[0.1] bg-white/[0.05] text-white/90",
+  Anthropic: "border-[#d97757]/25 bg-[#d97757]/[0.08] text-[#d97757]",
 };
 
 const HIGHLIGHT_CACHE = new Map<string, string>();
@@ -4235,11 +4255,29 @@ function ModelSelector({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="group flex items-center gap-1 text-[12px] text-white/50 transition-colors hover:text-white/80"
+        className={`group flex items-center gap-1.5 rounded-md border px-2 py-1.5 font-mono text-[11px] tracking-tight transition-colors sm:py-1 ${
+          open
+            ? "border-white/[0.14] bg-white/[0.05] text-white/80"
+            : "border-white/[0.08] bg-white/[0.02] text-white/55 hover:border-white/[0.14] hover:bg-white/[0.04] hover:text-white/80"
+        }`}
+        aria-label="Choose model"
+        aria-expanded={open}
       >
-        <span className="max-w-[120px] truncate sm:max-w-[140px]">{buttonLabel}</span>
-        <ChevronDown
-          className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`}
+        {known ? (
+          <ProviderIcon
+            provider={known.provider}
+            className={`h-3 w-3 shrink-0 ${
+              known.provider === "Anthropic" ? "text-[#d97757]" : "text-white/70"
+            }`}
+          />
+        ) : (
+          <Sparkles className="h-3 w-3 shrink-0 text-white/40" aria-hidden />
+        )}
+        <span className="max-w-[100px] truncate sm:max-w-[140px]">{buttonLabel}</span>
+        <ChevronUp
+          className={`h-3 w-3 text-white/30 transition-transform group-hover:text-white/55 ${
+            open ? "rotate-180" : ""
+          }`}
           aria-hidden
         />
       </button>
@@ -4254,16 +4292,18 @@ function ModelSelector({
             onClick={() => setOpen(false)}
           />
 
-          {/* Dropdown panel — opens upward */}
-          <div className="absolute bottom-full right-0 z-20 mb-2 w-[calc(100vw-2rem)] max-w-[260px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30 backdrop-blur-sm">
-            <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
+          {/* Popup panel — opens upward */}
+          <div className="absolute bottom-full right-0 z-20 mb-2 w-[calc(100vw-2rem)] max-w-[300px] overflow-hidden rounded-xl border border-white/[0.08] bg-[#161616] shadow-[0_16px_48px_rgba(0,0,0,0.6)] ring-1 ring-black/40">
+            <div className="flex items-center justify-between border-b border-white/[0.06] px-3.5 py-2.5">
               <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">
                 Choose model
               </span>
-              <span className="text-[10px] text-white/25">{CHAT_MODELS.length}</span>
+              <span className="text-[10px] tabular-nums text-white/25">
+                {CHAT_MODELS.length} models
+              </span>
             </div>
             {!known && model ? (
-              <div className="border-b border-white/[0.06] px-3 py-2">
+              <div className="border-b border-white/[0.06] px-3.5 py-2.5">
                 <div className="flex items-center gap-2">
                   <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.1em] text-amber-300">
                     custom
@@ -4277,51 +4317,69 @@ function ModelSelector({
                 </p>
               </div>
             ) : null}
-            <ul className="p-1.5">
-              {CHAT_MODELS.map((m) => {
-                const selected = model === m.slug;
-                return (
-                  <li key={m.slug}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onSelect(m.slug);
-                        setOpen(false);
-                      }}
-                      className={`group flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors ${
-                        selected
-                          ? "bg-white/[0.05] text-white"
-                          : "text-white/70 hover:bg-white/[0.04] hover:text-white"
-                      }`}
-                    >
-                      <span
-                        aria-hidden
-                        className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border font-mono text-[11px] font-semibold ${
-                          PROVIDER_BADGE[m.provider] ??
-                          "border-white/[0.08] bg-white/[0.03] text-white/40"
-                        }`}
-                      >
-                        {m.providerCode}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium leading-tight">
-                          {m.name}
-                        </span>
-                        <span className="mt-0.5 block truncate text-[10px] text-white/35">
-                          {m.provider}
-                        </span>
-                      </div>
-                      <span
-                        aria-hidden
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full transition-colors ${
-                          selected ? "bg-[#3ecf8e]" : "bg-transparent"
-                        }`}
-                      />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="max-h-[min(24rem,55vh)] overflow-y-auto p-1.5">
+              {CHAT_MODEL_GROUPS.map((group) => (
+                <div key={group.provider}>
+                  <div className="flex items-center gap-1.5 px-2.5 pb-1 pt-2.5 first:pt-1.5">
+                    <ProviderIcon
+                      provider={group.provider}
+                      className="h-3 w-3 text-white/30"
+                    />
+                    <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/35">
+                      {group.provider}
+                    </span>
+                  </div>
+                  <ul>
+                    {group.models.map((m) => {
+                      const selected = model === m.slug;
+                      return (
+                        <li key={m.slug}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSelect(m.slug);
+                              setOpen(false);
+                            }}
+                            className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ${
+                              selected
+                                ? "bg-white/[0.06] text-white"
+                                : "text-white/70 hover:bg-white/[0.04] hover:text-white"
+                            }`}
+                          >
+                            <span
+                              aria-hidden
+                              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border ${
+                                PROVIDER_TILE[m.provider] ??
+                                "border-white/[0.08] bg-white/[0.03] text-white/40"
+                              }`}
+                            >
+                              <ProviderIcon
+                                provider={m.provider}
+                                className="h-4 w-4"
+                              />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <span className="block truncate text-[13px] font-medium leading-tight">
+                                {m.name}
+                              </span>
+                              <span className="mt-0.5 block truncate text-[10px] text-white/35">
+                                {m.context} context
+                              </span>
+                            </div>
+                            {selected && (
+                              <Check
+                                className="h-3.5 w-3.5 shrink-0 text-[#3ecf8e]"
+                                aria-hidden
+                              />
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ))}
+            </div>
           </div>
         </>
       )}

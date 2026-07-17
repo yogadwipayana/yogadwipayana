@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { AuthShell } from "@/components/layout/AuthShell";
 import { ForgotPasswordForm } from "./ForgotPasswordForm";
-import { Logo } from "@/components/ui/Logo";
 
 export const metadata: Metadata = {
   title: "Forgot password",
@@ -11,29 +11,11 @@ export const metadata: Metadata = {
 
 export default function ForgotPasswordPage() {
   return (
-    <main className="flex flex-1 flex-col items-center justify-center px-6 py-16">
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center text-center">
-          <Link
-            href="/"
-            className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em] text-white"
-          >
-            <Logo className="h-7 w-7" />
-            yoga
-          </Link>
-          <h1 className="mt-6 text-2xl font-medium tracking-[-0.01em] text-white">
-            Reset your password
-          </h1>
-          <p className="mt-2 text-[14px] leading-relaxed text-white/55">
-            Enter your email and we&apos;ll send you a link to set a new one.
-          </p>
-        </div>
-
-        <div className="mt-8">
-          <ForgotPasswordForm />
-        </div>
-
-        <p className="mt-6 text-center text-[13px] text-white/50">
+    <AuthShell
+      title="Reset your password"
+      subtitle="Enter your email and we'll send you a link to set a new one."
+      footer={
+        <>
           Remembered it?{" "}
           <Link
             href="/sign-in"
@@ -41,8 +23,10 @@ export default function ForgotPasswordPage() {
           >
             Sign in
           </Link>
-        </p>
-      </div>
-    </main>
+        </>
+      }
+    >
+      <ForgotPasswordForm />
+    </AuthShell>
   );
 }

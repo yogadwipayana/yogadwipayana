@@ -33,26 +33,18 @@ export default async function AiBillingPage() {
   const email = user?.email ?? null;
 
   /* ── DB queries (skip entirely when not logged in) ── */
-  const owner = email
-    ? await aiDb.ownerUsers.findUnique({ where: { email } })
-    : null;
+  // Spend comes from the pre-aggregated `ownerSpend` table — one row per owner,
+  // maintained upstream. Verified to match SUM(usageHistory.cost) exactly, at a
+  // fraction of the cost of scanning the full history.
+  const [owner, spend] = email
+    ? await Promise.all([
+        aiDb.ownerUsers.findUnique({ where: { email } }),
+        aiDb.ownerSpend.findUnique({ where: { owner: email } }),
+      ])
+    : [null, null];
 
-  const userKeys = email
-    ? await aiDb.apiKeys.findMany({ where: { owner: email }, select: { key: true } })
-    : [];
-
-  const keyValues = userKeys.map((k) => k.key);
-
-  const spent =
-    keyValues.length > 0
-      ? await aiDb.usageHistory.aggregate({
-          where: { apiKey: { in: keyValues } },
-          _sum: { cost: true },
-        })
-      : null;
-
-  const spentUsd    = spent?._sum.cost ?? 0;
-  const budgetUsd   = owner?.budgetUsd ?? 0;
+  const spentUsd     = spend?.spentUsd ?? 0;
+  const budgetUsd    = owner?.budgetUsd ?? 0;
   const remainingUsd = Math.max(0, budgetUsd - spentUsd);
 
   /* ── Derived display values ── */

@@ -137,30 +137,28 @@ export default async function AiUsagePage({
   } = await supabase.auth.getUser();
   const email = user?.email ?? null;
 
-  /* ── Resolve API keys owned by this user ── */
-  // No FK between usageHistory.apiKey and apiKeys.key — match manually via this map.
+  /* ── API-key name map — labels only, never gates the data ── */
+  // Rows are filtered by usageHistory.owner below. This lookup exists solely to
+  // resolve friendly names for the logs "Key" column; usage from since-deleted
+  // keys still shows (it simply falls back to the masked raw key).
   const userKeys = email
     ? await aiDb.apiKeys.findMany({
         where: { owner: email },
         select: { key: true, name: true },
       })
     : [];
-  const keyValues = userKeys.map((k) => k.key);
   const keyNameByValue = new Map(userKeys.map((k) => [k.key, k.name ?? "Untitled key"]));
 
-  // Today's date prefix in UTC, e.g. "2026-06-04"
-
-  /* ── DB queries — only when user has keys ── */
+  /* ── DB queries — only when logged in ── */
   let spentInRange = 0;
   let requestsInRange = 0;
   let tokensInRange = 0;
   let totalCount = 0;
   let rawLogs: Awaited<ReturnType<typeof aiDb.usageHistory.findMany>> = [];
 
-  if (keyValues.length > 0) {
-    const keyFilter = { apiKey: { in: keyValues } };
+  if (email) {
     const rangeFilter = {
-      ...keyFilter,
+      owner: email,
       timestamp: { gte: fromIso, lt: toIso },
     };
 
@@ -231,7 +229,7 @@ export default async function AiUsagePage({
     },
   ];
 
-  const hasKeys = keyValues.length > 0;
+  const hasKeys = userKeys.length > 0;
   const logsEmptyMessage = !isLoggedIn
     ? "Sign in to view request logs."
     : !hasKeys

@@ -92,3 +92,24 @@ model pricing {
   @@id([providerAlias, modelId])
   @@index([providerAlias], map: "idx_pricing_provider")
 }
+
+model ownerSpend {
+  owner        String @id
+  spentUsd     Float  @default(0)
+  requestCount Int    @default(0)
+  updatedAt    String
+}
+
+model vouchers {
+  id         String  @id
+  code       String  @unique
+  amountUsd  Float
+  status     String  @default("active")
+  redeemedBy String?
+  redeemedAt String?
+  note       String?
+  createdAt  String
+  updatedAt  String
+
+  @@index([status], map: "idx_voucher_status")
+}

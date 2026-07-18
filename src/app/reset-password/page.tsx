@@ -42,7 +42,7 @@ export default async function ResetPasswordPage() {
       {user ? (
         <ResetPasswordForm />
       ) : (
-        <div className="rounded-lg border border-white/[0.08] bg-[#171717] p-6 text-center sm:p-8">
+        <div className="text-center">
           <span
             aria-hidden
             className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/50"

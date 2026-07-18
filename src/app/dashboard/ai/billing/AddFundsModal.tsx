@@ -8,7 +8,9 @@ import { ExternalLink, Ticket, X } from "lucide-react";
 /*  Constants                                                                  */
 /* -------------------------------------------------------------------------- */
 
-const VOUCHER_URL = "https://marketku.id/ai/product/ai-router-opus-4-8-sonnet-5-dan-gpt-5-5-c10f5333-679c-405b-a4bc-f746e318bf46";
+const VOUCHER_URL = `https://wa.me/6287889640714?text=${encodeURIComponent(
+  "Hi, I want to buy an AI Router credit voucher — clicked from the billing dashboard.",
+)}`;
 
 /* -------------------------------------------------------------------------- */
 /*  Shared modal pieces                                                        */
@@ -82,7 +84,7 @@ export default function AddFundsModal() {
     e.preventDefault();
     const trimmed = code.trim();
     if (trimmed.length < 4) {
-      setError("Enter the voucher code from your Marketku purchase.");
+      setError("Enter the voucher code from your purchase.");
       return;
     }
     setError(null);
@@ -144,7 +146,7 @@ export default function AddFundsModal() {
             ) : (
               <form onSubmit={handleRedeem} className="space-y-5">
                 <p className="text-[13px] leading-relaxed text-white/45">
-                  Bought a credit voucher from Marketku? Enter its code to instantly top up your AI balance.
+                  Bought a credit voucher? Enter its code to instantly top up your AI balance.
                 </p>
 
                 <div>
@@ -171,7 +173,7 @@ export default function AddFundsModal() {
                     target="_blank" rel="noopener noreferrer"
                     className="mt-2 inline-flex items-center gap-1 text-[11px] text-white/40 hover:text-white/70 transition-colors"
                   >
-                    Don&apos;t have one? Buy a voucher on Marketku
+                    Don&apos;t have one? Order a voucher via WhatsApp
                     <ExternalLink className="h-3 w-3" />
                   </a>
                   {error && <p role="alert" className="mt-1.5 text-[12px] text-red-400">{error}</p>}

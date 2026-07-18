@@ -47,6 +47,7 @@ export const ratelimits = {
   imageGenDaily: createRatelimit("ratelimit:image-gen-daily", 60, "1d"),
   imageEnhance: createRatelimit("ratelimit:image-enhance", 30, "1h"),
   contact: createRatelimit("ratelimit:contact", 5, "1h"),
+  console: createRatelimit("ratelimit:console", 30, "1m"),
   upload: createRatelimit("ratelimit:upload", 60, "1m"),
   vpsAction: createRatelimit("ratelimit:vps-action", 30, "1m"),
 };

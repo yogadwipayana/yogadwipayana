@@ -125,7 +125,7 @@ export default async function AiBillingPage() {
           <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-5 text-[13px]">
             <p className="text-[10px] uppercase tracking-[0.1em] text-white/30 mb-4">How it works</p>
             <ul className="space-y-2.5 text-white/50 leading-relaxed">
-              <li>• Buy a credit voucher from Marketku</li>
+              <li>• Order a credit voucher via WhatsApp</li>
               <li>• Redeem the code here to top up instantly</li>
               <li>• Exchange rate: <span className="text-white/70">Rp 10.000 = $25</span></li>
               <li>• Requests are charged at standard model rates per 1M tokens</li>
@@ -142,7 +142,7 @@ export default async function AiBillingPage() {
           <div className="divide-y divide-white/[0.04]">
             {[
               { label: "Pay as you go",  detail: "Charged per token · standard model rates", badge: "current" },
-              { label: "Voucher top-up", detail: "Buy a credit voucher from Marketku", badge: null },
+              { label: "Voucher top-up", detail: "Order a credit voucher via WhatsApp", badge: null },
               { label: "Redeem",         detail: "Enter the voucher code to add credit instantly", badge: null },
             ].map((row) => (
               <div key={row.label} className="flex items-center justify-between gap-4 px-5 py-4">

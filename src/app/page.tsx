@@ -130,7 +130,7 @@ const STORE = [
   {
     name: "Kiro dev account",
     detail: "Pre-order for the spec-driven agentic IDE",
-    price: "Coming soon",
+    price: "Rp80.000",
   },
 ] as const;
 

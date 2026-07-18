@@ -26,6 +26,7 @@ type NavbarClientProps = {
 
 export function NavbarClient({ user }: NavbarClientProps) {
   const [open, setOpen] = useState(false);
+  const [bannerVisible, setBannerVisible] = useState(true);
   const close = () => setOpen(false);
   const router = useRouter();
   const [signingOut, startSignOut] = useTransition();
@@ -41,15 +42,38 @@ export function NavbarClient({ user }: NavbarClientProps) {
 
   return (
     <header className="sticky top-0 z-30 border-b border-white/[0.08] bg-[#1c1c1c]/80 backdrop-blur-md">
+      {bannerVisible && (
+        <div className="flex items-center justify-center gap-1 border-b border-[#3ecf8e]/20 bg-[#3ecf8e]/10 px-4 py-1.5">
+          <a
+            href="https://chat.whatsapp.com/BYRIzw7TKRZJlSleNRA91O"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-md px-2 py-0.5 text-center text-[13px] text-[#3ecf8e] transition-colors hover:bg-[#3ecf8e]/10"
+          >
+            <span>
+              Join our WhatsApp group and get{" "}
+              <span className="font-semibold">$25</span> in free API credits
+            </span>
+          </a>
+          <button
+            type="button"
+            aria-label="Dismiss announcement"
+            onClick={() => setBannerVisible(false)}
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[#3ecf8e]/70 transition-colors hover:bg-[#3ecf8e]/15 hover:text-[#3ecf8e]"
+          >
+            <X className="h-3.5 w-3.5" aria-hidden />
+          </button>
+        </div>
+      )}
       <nav
         aria-label="Primary"
-        className="mx-auto grid h-14 w-full max-w-6xl grid-cols-[auto_1fr_auto] items-center gap-4 px-6 sm:px-8"
+        className="mx-auto grid h-14 w-full max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-6 sm:px-8"
       >
         {/* Logo */}
         <Link
           href="/"
           onClick={close}
-          className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.01em] text-white"
+          className="flex items-center gap-2 justify-self-start text-[15px] font-medium tracking-[-0.01em] text-white"
         >
           <Logo className="h-6 w-6" />
           yoga
@@ -64,6 +88,13 @@ export function NavbarClient({ user }: NavbarClientProps) {
 
         {/* Right slot: auth-aware on desktop, hamburger on mobile */}
         <div className="flex items-center justify-end gap-2">
+          <Link
+            href="/console"
+            onClick={close}
+            className="hidden h-8 items-center rounded-md px-3 text-[13px] text-white/70 transition-colors hover:bg-white/5 hover:text-white sm:inline-flex"
+          >
+            Console
+          </Link>
           {user ? (
             <>
               <Link
@@ -129,6 +160,11 @@ export function NavbarClient({ user }: NavbarClientProps) {
           {NAV_ITEMS.map((item) => (
             <NavLink key={item.href} item={item} onNavigate={close} mobile />
           ))}
+          <NavLink
+            item={{ href: "/console", label: "Console" }}
+            onNavigate={close}
+            mobile
+          />
 
           {user ? (
             <>

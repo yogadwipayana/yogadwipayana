@@ -89,7 +89,7 @@ export default async function AiVouchersPage() {
                 How it works
               </p>
               <ul className="space-y-2.5 leading-relaxed text-white/50">
-                <li>• Buy a credit voucher from Marketku</li>
+                <li>• Order a credit voucher via WhatsApp</li>
                 <li>• Redeem the code on the Billing page</li>
                 <li>• Credit is added to your balance instantly</li>
               </ul>

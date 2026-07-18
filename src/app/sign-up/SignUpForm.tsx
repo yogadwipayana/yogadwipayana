@@ -37,7 +37,7 @@ export function SignUpForm() {
 
   if (state?.ok) {
     return (
-      <div className="rounded-lg border border-white/[0.08] bg-[#171717] p-6 text-center sm:p-8">
+      <div className="text-center">
         <span
           aria-hidden
           className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#3ecf8e]/20 bg-[#3ecf8e]/10 text-[#3ecf8e]"
@@ -60,11 +60,7 @@ export function SignUpForm() {
   }
 
   return (
-    <form
-      action={formAction}
-      noValidate
-      className="rounded-lg border border-white/[0.08] bg-[#171717] p-6 sm:p-8"
-    >
+    <form action={formAction} noValidate>
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="email">Email</Label>

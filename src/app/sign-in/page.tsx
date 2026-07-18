@@ -12,9 +12,7 @@ export const metadata: Metadata = {
 };
 
 function FormFallback() {
-  return (
-    <div className="h-[268px] rounded-lg border border-white/[0.08] bg-[#171717]" />
-  );
+  return <div className="h-[248px] animate-pulse rounded-md bg-white/[0.02]" />;
 }
 
 export default function SignInPage() {

@@ -24,15 +24,25 @@ const figtree = Figtree({ subsets: ["latin"], display: "swap" });
 export const metadata: Metadata = {
   title: "AI Store",
   description:
-    "AI products for sale: my own AI Router, plus verified ChatGPT Plus and Kiro dev accounts fulfilled through Marketku.",
+    "AI products for sale: my own AI Router, plus verified ChatGPT Plus and Kiro dev accounts ordered directly via WhatsApp.",
 };
 
+const WHATSAPP_NUMBER = "6287889640714";
+
+function whatsappLink(message: string) {
+  return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`;
+}
+
 const MARKETPLACE = {
-  chatgptPlus:
-    "https://marketku.id/chatgpt/product/chatgpt-plus-1-bulan-sudah-verif-ea6de138-5e57-4dbb-8cba-0623b18321fd",
-  kiro: "https://marketku.id/kiro/product/pre-order-akun-kiro-dev-37f174fe-5ef7-41f3-a93d-c30e460daa0d",
-  voucher:
-    "https://marketku.id/ai/product/ai-router-opus-4-8-sonnet-5-dan-gpt-5-5-c10f5333-679c-405b-a4bc-f746e318bf46",
+  chatgptPlus: whatsappLink(
+    "Hi, I want to order ChatGPT Plus (1 month, verified) — clicked from the AI Store page.",
+  ),
+  kiro: whatsappLink(
+    "Hi, I want to pre-order a Kiro dev account — clicked from the AI Store page.",
+  ),
+  voucher: whatsappLink(
+    "Hi, I want to buy an AI Router credit voucher — clicked from the AI Store page.",
+  ),
 };
 
 const BASE_URL = "https://ai.yogathedev.com/v1";
@@ -45,6 +55,7 @@ const MODELS = [
     context: "1,050,000",
     input: "$5.00",
     output: "$30.00",
+    available: true,
   },
   {
     name: "GPT 5.6 Terra",
@@ -53,6 +64,7 @@ const MODELS = [
     context: "1,050,000",
     input: "$2.50",
     output: "$15.00",
+    available: true,
   },
   {
     name: "GPT 5.6 Luna",
@@ -61,6 +73,7 @@ const MODELS = [
     context: "1,050,000",
     input: "$1.00",
     output: "$6.00",
+    available: true,
   },
   {
     name: "GPT 5.5",
@@ -69,6 +82,7 @@ const MODELS = [
     context: "1,000,000",
     input: "$5.00",
     output: "$30.00",
+    available: true,
   },
   {
     name: "Claude Sonnet 5",
@@ -77,6 +91,7 @@ const MODELS = [
     context: "1,000,000",
     input: "$2.00",
     output: "$10.00",
+    available: true,
   },
   {
     name: "Claude Opus 4.8",
@@ -85,6 +100,7 @@ const MODELS = [
     context: "1,000,000",
     input: "$5.00",
     output: "$25.00",
+    available: true,
   },
   {
     name: "Claude Opus 4.7",
@@ -93,6 +109,7 @@ const MODELS = [
     context: "1,000,000",
     input: "$5.00",
     output: "$25.00",
+    available: true,
   },
   {
     name: "Claude Sonnet 4.6",
@@ -101,6 +118,7 @@ const MODELS = [
     context: "1,000,000",
     input: "$3.00",
     output: "$15.00",
+    available: true,
   },
 ];
 
@@ -161,11 +179,10 @@ const PRODUCTS: Product[] = [
       "Spec-driven agentic IDE",
       "Pre-release reservation",
     ],
-    price: "Coming soon",
-    cta: "Coming soon",
+    price: "Rp80.000",
+    cta: "Pre-order",
     href: MARKETPLACE.kiro,
     external: true,
-    comingSoon: true,
   },
 ];
 
@@ -199,7 +216,7 @@ export default function AiStore() {
               style={{ animationDelay: "120ms" }}
             >
               My own AI Router, plus verified ChatGPT Plus and Kiro dev
-              accounts, fulfilled through Marketku.
+              accounts, ordered directly via WhatsApp.
             </p>
           </div>
         </section>
@@ -307,14 +324,14 @@ export default function AiStore() {
             </ul>
 
             <p className="mt-8 text-[13px] leading-relaxed text-white/40">
-              ChatGPT Plus and Kiro are fulfilled via Marketku and open in a new
-              tab. AI Router is run in-house from the dashboard.
+              ChatGPT Plus and Kiro orders go through WhatsApp and open in a
+              new tab. AI Router is run in-house from the dashboard.
             </p>
           </div>
         </section>
 
         {/* AI Router model pricing */}
-        <section className="border-b border-white/[0.08]">
+        <section id="models" className="scroll-mt-20 border-b border-white/[0.08]">
           <div className="mx-auto w-full max-w-6xl px-6 py-12 sm:px-8 sm:py-16">
             <Reveal>
               <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
@@ -350,14 +367,14 @@ export default function AiStore() {
                   aria-hidden
                 />
                 <p className="text-[13px] leading-relaxed text-white/55">
-                  Top up by redeeming a voucher bought from{" "}
+                  Top up by redeeming a voucher ordered via{" "}
                   <a
                     href={MARKETPLACE.voucher}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-white/80 underline decoration-white/20 underline-offset-2 transition-colors hover:text-white"
                   >
-                    Marketku
+                    WhatsApp
                   </a>
                   . Purchase a credit voucher, then redeem its code in the
                   dashboard to add balance instantly.
@@ -374,19 +391,24 @@ export default function AiStore() {
 
             <Reveal delay={140}>
               <div className="mt-4 overflow-hidden rounded-xl border border-white/[0.08] bg-[#171717]">
-                <table className="w-full text-left text-[13px] sm:text-sm">
+                <table className="w-full table-fixed text-left text-[13px] sm:text-sm">
                   <thead>
                     <tr className="border-b border-white/[0.08] text-white/40">
-                      <th className="px-4 py-3 font-medium sm:px-5">Model</th>
-                      <th className="px-4 py-3 font-medium sm:px-5">
+                      <th className="w-[30%] px-4 py-3 font-medium sm:w-[24%] sm:px-5">
+                        Model
+                      </th>
+                      <th className="w-[26%] px-4 py-3 font-medium sm:w-[22%] sm:px-5">
                         Model ID
                       </th>
-                      <th className="hidden px-5 py-3 font-medium sm:table-cell">
+                      <th className="hidden w-[16%] px-5 py-3 font-medium sm:table-cell">
                         Context
                       </th>
-                      <th className="px-4 py-3 text-right font-medium sm:px-5">
+                      <th className="w-[24%] px-4 py-3 text-right font-medium sm:w-[20%] sm:px-5">
                         In / Out
                         <span className="text-white/25"> /M</span>
+                      </th>
+                      <th className="w-[20%] px-4 py-3 text-right font-medium sm:w-[18%] sm:px-5">
+                        Status
                       </th>
                     </tr>
                   </thead>
@@ -422,6 +444,23 @@ export default function AiStore() {
                         </td>
                         <td className="px-4 py-3.5 text-right font-mono text-white/60 sm:px-5">
                           {model.input} / {model.output}
+                        </td>
+                        <td className="px-4 py-3.5 text-right sm:px-5">
+                          <span
+                            className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium sm:px-2.5 sm:text-[12px] ${
+                              model.available
+                                ? "border-[#3ecf8e]/20 bg-[#3ecf8e]/10 text-[#3ecf8e]"
+                                : "border-white/[0.08] bg-white/[0.03] text-white/40"
+                            }`}
+                          >
+                            <span
+                              aria-hidden
+                              className={`h-1.5 w-1.5 rounded-full ${
+                                model.available ? "bg-[#3ecf8e]" : "bg-white/30"
+                              }`}
+                            />
+                            {model.available ? "Available" : "Not available"}
+                          </span>
                         </td>
                       </tr>
                     ))}

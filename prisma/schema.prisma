@@ -113,3 +113,38 @@ model vouchers {
 
   @@index([status], map: "idx_voucher_status")
 }
+
+model tempApiKeys {
+  id              String  @id
+  key             String  @unique
+  name            String?
+  budgetUsd       Float
+  spentUsd        Float   @default(0)
+  requestCount    Int     @default(0)
+  durationSeconds Int
+  firstUsedAt     String?
+  expiresAt       String?
+  isActive        Int?    @default(1)
+  note            String?
+  createdAt       String
+  updatedAt       String
+
+  @@index([key], map: "idx_tak_key")
+}
+
+model tempUsageHistory {
+  id               Int     @id @default(autoincrement())
+  tempKeyId        String
+  timestamp        String
+  provider         String?
+  model            String?
+  endpoint         String?
+  promptTokens     Int?    @default(0)
+  completionTokens Int?    @default(0)
+  cost             Float?  @default(0)
+  status           String?
+  tokens           String?
+
+  @@index([tempKeyId], map: "idx_tuh_key")
+  @@index([timestamp], map: "idx_tuh_ts")
+}

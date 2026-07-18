@@ -41,11 +41,7 @@ export function SignInForm() {
   const error = actionError ?? paramError;
 
   return (
-    <form
-      action={formAction}
-      noValidate
-      className="rounded-lg border border-white/[0.08] bg-[#171717] p-6 sm:p-8"
-    >
+    <form action={formAction} noValidate>
       <input type="hidden" name="next" value={next} />
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">

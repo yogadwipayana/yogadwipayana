@@ -31,11 +31,7 @@ export function ResetPasswordForm() {
   );
 
   return (
-    <form
-      action={formAction}
-      noValidate
-      className="rounded-lg border border-white/[0.08] bg-[#171717] p-6 sm:p-8"
-    >
+    <form action={formAction} noValidate>
       <div className="flex flex-col gap-4">
         <PasswordField
           name="password"

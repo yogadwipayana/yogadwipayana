@@ -91,7 +91,7 @@ const MODELS = [
     context: "1,000,000",
     input: "$2.00",
     output: "$10.00",
-    available: true,
+    available: false,
   },
   {
     name: "Claude Opus 4.8",
@@ -100,7 +100,7 @@ const MODELS = [
     context: "1,000,000",
     input: "$5.00",
     output: "$25.00",
-    available: true,
+    available: false,
   },
   {
     name: "Claude Opus 4.7",
@@ -109,7 +109,7 @@ const MODELS = [
     context: "1,000,000",
     input: "$5.00",
     output: "$25.00",
-    available: true,
+    available: false,
   },
   {
     name: "Claude Sonnet 4.6",
@@ -118,7 +118,7 @@ const MODELS = [
     context: "1,000,000",
     input: "$3.00",
     output: "$15.00",
-    available: true,
+    available: false,
   },
 ];
 

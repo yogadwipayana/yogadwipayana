@@ -1,14 +1,15 @@
 import type { Metadata } from "next";
 import { Figtree } from "next/font/google";
+import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
   Check,
-  ImagePlus,
-  MessageSquare,
-  Server,
+  Rocket,
+  ShieldCheck,
   Sparkles,
   Terminal,
+  Ticket,
   Users,
   Waypoints,
   Zap,
@@ -35,61 +36,61 @@ export const metadata: Metadata = {
 };
 
 type ToolCard = {
-  icon: typeof Server;
   name: string;
   tag: string;
   blurb: string;
   href: string;
   span: string;
+  image: string;
   accent?: boolean;
 };
 
 const TOOLS: ToolCard[] = [
   {
-    icon: Waypoints,
     name: "AI Router",
     tag: "Models",
     blurb:
       "One OpenAI-compatible key that reaches GPT and Claude alike. Fallback chains, per-token billing, and live usage tracking.",
     href: "/ai",
     span: "lg:col-span-3",
+    image: "/images/tools/router.png",
     accent: true,
   },
   {
-    icon: MessageSquare,
     name: "Chat AI",
     tag: "Assistants",
     blurb:
       "Streaming chat on the router. Switch models mid-thread, call tools, branch a message, and keep every conversation.",
     href: "/tools#chat",
     span: "lg:col-span-3",
+    image: "/images/tools/chat.png",
   },
   {
-    icon: Server,
     name: "VPS Control",
     tag: "Infrastructure",
     blurb:
       "Run cloud instances from the browser: start, stop, reinstall, firewall rules, and a live SSH terminal.",
     href: "/tools#vps",
     span: "lg:col-span-2",
+    image: "/images/tools/vps.png",
   },
   {
-    icon: ImagePlus,
     name: "Image Studio",
     tag: "Media",
     blurb:
       "Prompt to image with aspect presets, reference images, and a history grid you can iterate on.",
     href: "/tools#image",
     span: "lg:col-span-2",
+    image: "/images/tools/image-studio.png",
   },
   {
-    icon: Sparkles,
     name: "AI Store",
     tag: "For sale",
     blurb:
       "Router vouchers, verified ChatGPT Plus, and Kiro dev accounts, all ready to buy.",
     href: "/ai",
     span: "lg:col-span-2",
+    image: "/images/tools/store.png",
   },
 ];
 
@@ -118,19 +119,30 @@ const ROUTER_MODELS = [
 
 const STORE = [
   {
+    icon: Ticket,
     name: "AI Router credit",
-    detail: "Pay-as-you-go voucher you redeem in the dashboard",
-    price: "Rp10.000 = $25",
+    detail: "Pay-as-you-go voucher for the router.",
+    price: "Rp10.000",
+    priceNote: "= $25 credit",
+    features: ["Redeem in the dashboard", "Pay only for tokens you use"],
+    featured: true,
+    badge: "Best value",
   },
   {
+    icon: ShieldCheck,
     name: "ChatGPT Plus",
-    detail: "1 month of a verified account",
+    detail: "A verified account, ready to sign in.",
     price: "Rp25.000",
+    priceNote: "/ month",
+    features: ["Verified account", "Full Plus access"],
   },
   {
+    icon: Rocket,
     name: "Kiro dev account",
-    detail: "Pre-order for the spec-driven agentic IDE",
+    detail: "Pre-order for the spec-driven agentic IDE.",
     price: "Rp80.000",
+    priceNote: "pre-order",
+    features: ["Spec-driven agentic IDE", "Delivered when access opens"],
   },
 ] as const;
 
@@ -599,45 +611,51 @@ export default async function Home() {
             </Reveal>
 
             <ul className="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-6">
-              {TOOLS.map((tool, i) => {
-                const Icon = tool.icon;
-                return (
-                  <li key={tool.name} className={tool.span}>
-                    <Reveal delay={i * 70} className="h-full">
-                      <Link
-                        href={tool.href}
-                        className={`card-sheen group flex h-full flex-col rounded-xl border p-6 transition-all duration-200 hover:-translate-y-0.5 sm:p-7 ${
-                          tool.accent
-                            ? "border-[#3ecf8e]/25 bg-[#3ecf8e]/[0.05] hover:border-[#3ecf8e]/45"
-                            : "border-white/[0.08] bg-[#1c1c1c] hover:border-white/20 hover:bg-white/[0.02]"
-                        }`}
+              {TOOLS.map((tool, i) => (
+                <li key={tool.name} className={tool.span}>
+                  <Reveal delay={i * 70} className="h-full">
+                    <Link
+                      href={tool.href}
+                      className={`card-sheen group flex h-full flex-col overflow-hidden rounded-xl border bg-[#1c1c1c] transition-all duration-200 hover:-translate-y-0.5 ${
+                        tool.accent
+                          ? "border-[#3ecf8e]/25 hover:border-[#3ecf8e]/45"
+                          : "border-white/[0.08] hover:border-white/20"
+                      }`}
+                    >
+                      <div
+                        aria-hidden
+                        className="relative aspect-[2/1] overflow-hidden bg-[#171717]"
                       >
-                        <div className="flex items-center gap-3">
-                          <span
-                            aria-hidden
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-[#3ecf8e] transition-transform group-hover:scale-105"
-                          >
-                            <Icon className="h-5 w-5" />
-                          </span>
-                          <span className="text-[12px] uppercase tracking-wide text-white/40">
+                        <Image
+                          src={tool.image}
+                          alt=""
+                          fill
+                          sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+                          className="object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-[#1c1c1c] via-transparent to-transparent" />
+                      </div>
+                      <div className="flex flex-1 flex-col p-5 sm:p-6 sm:pt-5">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <h3 className="flex items-center gap-1.5 text-lg font-medium text-white">
+                            {tool.name}
+                            <ArrowRight
+                              className="h-4 w-4 -translate-x-1 text-white/40 opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100"
+                              aria-hidden
+                            />
+                          </h3>
+                          <span className="shrink-0 text-[11px] uppercase tracking-[0.08em] text-white/40">
                             {tool.tag}
                           </span>
                         </div>
-                        <h3 className="mt-5 flex items-center gap-1.5 text-lg font-medium text-white">
-                          {tool.name}
-                          <ArrowRight
-                            className="h-4 w-4 -translate-x-1 text-white/40 opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100"
-                            aria-hidden
-                          />
-                        </h3>
-                        <p className="mt-2 text-[15px] leading-relaxed text-white/55">
+                        <p className="mt-2 text-[14px] leading-relaxed text-white/55">
                           {tool.blurb}
                         </p>
-                      </Link>
-                    </Reveal>
-                  </li>
-                );
-              })}
+                      </div>
+                    </Link>
+                  </Reveal>
+                </li>
+              ))}
             </ul>
           </div>
         </section>
@@ -772,34 +790,81 @@ export default async function Home() {
             </Reveal>
 
             <ul className="mt-10 grid grid-cols-1 gap-3 md:grid-cols-3">
-              {STORE.map((item, i) => (
-                <li key={item.name}>
-                  <Reveal delay={i * 80} className="h-full">
-                    <Link
-                      href="/ai"
-                      className="card-sheen group flex h-full flex-col justify-between gap-6 rounded-xl border border-white/[0.08] bg-[#1c1c1c] p-6 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/20"
-                    >
-                      <div>
-                        <h3 className="text-lg font-medium text-white">
+              {STORE.map((item, i) => {
+                const Icon = item.icon;
+                const featured = "featured" in item && item.featured;
+                return (
+                  <li key={item.name}>
+                    <Reveal delay={i * 80} className="h-full">
+                      <Link
+                        href="/ai"
+                        className={`card-sheen group flex h-full flex-col rounded-xl border p-6 transition-all duration-200 hover:-translate-y-0.5 ${
+                          featured
+                            ? "border-[#3ecf8e]/30 bg-[#3ecf8e]/[0.04] hover:border-[#3ecf8e]/50"
+                            : "border-white/[0.08] bg-[#1c1c1c] hover:border-white/20"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <span
+                            aria-hidden
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-[#3ecf8e]"
+                          >
+                            <Icon className="h-4 w-4" />
+                          </span>
+                          {"badge" in item && (
+                            <span className="rounded-full border border-[#3ecf8e]/20 bg-[#3ecf8e]/10 px-2.5 py-0.5 text-[11px] font-medium text-[#3ecf8e]">
+                              {item.badge}
+                            </span>
+                          )}
+                        </div>
+                        <h3 className="mt-4 text-lg font-medium text-white">
                           {item.name}
                         </h3>
-                        <p className="mt-2 text-[14px] leading-relaxed text-white/55">
+                        <p className="mt-1 text-[14px] leading-relaxed text-white/55">
                           {item.detail}
                         </p>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[15px] font-medium text-[#3ecf8e]">
-                          {item.price}
-                        </span>
-                        <ArrowRight
-                          className="h-4 w-4 text-white/40 transition-transform group-hover:translate-x-0.5"
-                          aria-hidden
-                        />
-                      </div>
-                    </Link>
-                  </Reveal>
-                </li>
-              ))}
+                        <ul className="mt-4 space-y-2">
+                          {item.features.map((feature) => (
+                            <li
+                              key={feature}
+                              className="flex items-start gap-2 text-[13px] text-white/60"
+                            >
+                              <Check
+                                className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#3ecf8e]"
+                                aria-hidden
+                              />
+                              {feature}
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="mt-auto pt-6">
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="text-2xl font-semibold tracking-[-0.02em] text-white tabular-nums">
+                              {item.price}
+                            </span>
+                            <span className="text-[13px] text-white/40">
+                              {item.priceNote}
+                            </span>
+                          </div>
+                          <span
+                            className={`mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-md px-4 py-2 text-[14px] font-medium transition-colors ${
+                              featured
+                                ? "bg-[#3ecf8e] text-[#171717] group-hover:bg-[#34b27b]"
+                                : "border border-white/[0.14] bg-white/[0.03] text-white group-hover:border-white/25 group-hover:bg-white/[0.06]"
+                            }`}
+                          >
+                            Buy now
+                            <ArrowRight
+                              className="h-4 w-4 transition-transform group-hover:translate-x-0.5"
+                              aria-hidden
+                            />
+                          </span>
+                        </div>
+                      </Link>
+                    </Reveal>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         </section>

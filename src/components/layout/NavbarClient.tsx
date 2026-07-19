@@ -67,7 +67,7 @@ export function NavbarClient({ user }: NavbarClientProps) {
       )}
       <nav
         aria-label="Primary"
-        className="mx-auto grid h-14 w-full max-w-6xl grid-cols-[1fr_auto_1fr] items-center gap-4 px-6 sm:px-8"
+        className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between gap-4 px-4 sm:grid sm:grid-cols-[1fr_auto_1fr] sm:px-8"
       >
         {/* Logo */}
         <Link

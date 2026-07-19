@@ -11,6 +11,7 @@ import {
   Waypoints,
 } from "lucide-react";
 
+import { aiDb } from "@/lib/db/ai";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
@@ -47,6 +48,35 @@ const MARKETPLACE = {
 
 const BASE_URL = "https://ai.yogathedev.com/v1";
 
+// Re-render at most every 5 minutes so model availability tracks the router
+// without querying its database on every visit (same cadence as the landing page).
+export const revalidate = 300;
+
+/**
+ * Model IDs the router can actually serve right now: enabled in
+ * `enabledModels` under a provider that is itself in `enabledProviders`.
+ * Returns an empty set on failure so every model falls back to
+ * "Not available" rather than promising capacity we can't confirm.
+ */
+async function getEnabledModelIds(): Promise<Set<string>> {
+  try {
+    const [providers, models] = await Promise.all([
+      aiDb.enabledProviders.findMany({ select: { providerAlias: true } }),
+      aiDb.enabledModels.findMany({
+        select: { providerAlias: true, modelId: true },
+      }),
+    ]);
+    const enabledProviders = new Set(providers.map((p) => p.providerAlias));
+    return new Set(
+      models
+        .filter((m) => enabledProviders.has(m.providerAlias))
+        .map((m) => m.modelId),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
 const MODELS = [
   {
     name: "GPT 5.6 Sol",
@@ -55,7 +85,6 @@ const MODELS = [
     context: "1,050,000",
     input: "$5.00",
     output: "$30.00",
-    available: true,
   },
   {
     name: "GPT 5.6 Terra",
@@ -64,7 +93,6 @@ const MODELS = [
     context: "1,050,000",
     input: "$2.50",
     output: "$15.00",
-    available: true,
   },
   {
     name: "GPT 5.6 Luna",
@@ -73,7 +101,6 @@ const MODELS = [
     context: "1,050,000",
     input: "$1.00",
     output: "$6.00",
-    available: true,
   },
   {
     name: "GPT 5.5",
@@ -82,7 +109,6 @@ const MODELS = [
     context: "1,000,000",
     input: "$5.00",
     output: "$30.00",
-    available: true,
   },
   {
     name: "Claude Sonnet 5",
@@ -91,7 +117,6 @@ const MODELS = [
     context: "1,000,000",
     input: "$2.00",
     output: "$10.00",
-    available: false,
   },
   {
     name: "Claude Opus 4.8",
@@ -100,7 +125,6 @@ const MODELS = [
     context: "1,000,000",
     input: "$5.00",
     output: "$25.00",
-    available: false,
   },
   {
     name: "Claude Opus 4.7",
@@ -109,7 +133,6 @@ const MODELS = [
     context: "1,000,000",
     input: "$5.00",
     output: "$25.00",
-    available: false,
   },
   {
     name: "Claude Sonnet 4.6",
@@ -118,7 +141,6 @@ const MODELS = [
     context: "1,000,000",
     input: "$3.00",
     output: "$15.00",
-    available: false,
   },
 ];
 
@@ -186,7 +208,12 @@ const PRODUCTS: Product[] = [
   },
 ];
 
-export default function AiStore() {
+export default async function AiStore() {
+  const enabledModelIds = await getEnabledModelIds();
+  const models = MODELS.map((model) => ({
+    ...model,
+    available: enabledModelIds.has(model.id),
+  }));
   return (
     <div className={`${figtree.className} flex flex-1 flex-col tracking-[0]`}>
       <Navbar />
@@ -413,7 +440,7 @@ export default function AiStore() {
                     </tr>
                   </thead>
                   <tbody>
-                    {MODELS.map((model) => (
+                    {models.map((model) => (
                       <tr
                         key={model.name}
                         className="border-b border-white/[0.06] transition-colors last:border-0 hover:bg-white/[0.02]"

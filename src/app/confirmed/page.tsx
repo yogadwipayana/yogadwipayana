@@ -4,15 +4,20 @@ import { CheckCircle2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Logo } from "@/components/ui/Logo";
+import { PageBackdrop } from "@/components/ui/PageBackdrop";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Account confirmed",
   description: "Your Yoga account is confirmed. Sign in to access the hub.",
-};
+  path: "/confirmed",
+  noIndex: true,
+});
 
 export default function ConfirmedPage() {
   return (
     <main className="flex flex-1 flex-col items-center justify-center px-6 py-16">
+      <PageBackdrop />
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center text-center">
           <Link

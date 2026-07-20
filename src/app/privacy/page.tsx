@@ -2,17 +2,22 @@ import type { Metadata } from "next";
 
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { PageBackdrop } from "@/components/ui/PageBackdrop";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Privacy",
-  description: "How this site and its tools handle your data.",
-};
+  description:
+    "How this site and its tools handle your data: what is collected, where it is stored, who it is shared with, and how to delete it.",
+  path: "/privacy",
+});
 
 const UPDATED = "June 2026";
 
 export default function PrivacyPage() {
   return (
     <>
+      <PageBackdrop />
       <Navbar />
 
       <main className="flex-1">

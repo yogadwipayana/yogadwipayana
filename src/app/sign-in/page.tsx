@@ -4,12 +4,15 @@ import Link from "next/link";
 
 import { AuthShell } from "@/components/layout/AuthShell";
 import { SignInForm } from "./SignInForm";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Sign in",
   description:
     "Sign in to Yoga: one login for VPS Control, AI Router, Chat AI, and Image Studio.",
-};
+  path: "/sign-in",
+  noIndex: true,
+});
 
 function FormFallback() {
   return <div className="h-[248px] animate-pulse rounded-md bg-white/[0.02]" />;

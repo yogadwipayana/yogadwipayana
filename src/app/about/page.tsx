@@ -14,16 +14,26 @@ import {
 
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { breadcrumbSchema, pageMetadata, personSchema } from "@/lib/seo";
 import { Button } from "@/components/ui/button";
+import { PageBackdrop } from "@/components/ui/PageBackdrop";
 import { Reveal } from "@/components/ui/Reveal";
 
 const figtree = Figtree({ subsets: ["latin"], display: "swap" });
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "About",
   description:
     "Who Yoga is and what this site is: a personal portfolio and the working hub for a small set of AI-powered developer tools, built and run in the open.",
-};
+  path: "/about",
+  keywords: [
+    "Yoga Dwipayana",
+    "software engineer portfolio",
+    "AI developer tools",
+    "indie developer",
+  ],
+});
 
 const PRINCIPLES = [
   {
@@ -96,11 +106,18 @@ const STACK = [
 export default function About() {
   return (
     <div className={`${figtree.className} flex flex-1 flex-col tracking-[0]`}>
+      <JsonLd
+        schema={[
+          personSchema(),
+          breadcrumbSchema([{ name: "About", path: "/about" }]),
+        ]}
+      />
+      <PageBackdrop />
       <Navbar />
 
       <main className="flex-1">
         {/* Intro */}
-        <section className="relative overflow-hidden border-b border-white/[0.08]">
+        <section className="relative overflow-hidden">
           <div aria-hidden className="pointer-events-none absolute inset-0">
             <div className="grid-bg absolute inset-0 [mask-image:radial-gradient(110%_75%_at_50%_0%,#000_30%,transparent_72%)]" />
             <div className="hero-glow absolute -top-44 left-1/2 h-[420px] w-[760px] -translate-x-1/2 [background:radial-gradient(closest-side,rgba(62,207,142,0.14),transparent)]" />
@@ -153,7 +170,7 @@ export default function About() {
         </section>
 
         {/* How I work */}
-        <section className="border-b border-white/[0.08]">
+        <section>
           <div className="mx-auto w-full max-w-6xl px-6 py-16 sm:px-8 sm:py-20">
             <Reveal>
               <div className="max-w-2xl">
@@ -195,7 +212,7 @@ export default function About() {
         </section>
 
         {/* What's running here */}
-        <section className="border-b border-white/[0.08]">
+        <section>
           <div className="mx-auto w-full max-w-6xl px-6 py-16 sm:px-8 sm:py-20">
             <Reveal>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -254,7 +271,7 @@ export default function About() {
         </section>
 
         {/* What I work with */}
-        <section className="border-b border-white/[0.08]">
+        <section>
           <div className="mx-auto w-full max-w-6xl px-6 py-16 sm:px-8 sm:py-20">
             <Reveal>
               <div className="max-w-2xl">

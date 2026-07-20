@@ -18,17 +18,56 @@ import { ImageMockLive } from "./image-mock";
 import { VpsMockLive } from "./vps-mock";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { breadcrumbSchema, itemListSchema, pageMetadata } from "@/lib/seo";
 import { Button } from "@/components/ui/button";
+import { PageBackdrop } from "@/components/ui/PageBackdrop";
 import { ProviderIcon } from "@/components/ui/ProviderIcons";
 import { Reveal } from "@/components/ui/Reveal";
 
 const figtree = Figtree({ subsets: ["latin"], display: "swap" });
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Tools",
   description:
     "A small set of tools that share one account, one key, and one billing balance: VPS Control, AI Router, Chat AI, and Image Studio.",
-};
+  path: "/tools",
+  keywords: [
+    "AI router",
+    "OpenAI-compatible endpoint",
+    "VPS control panel",
+    "browser SSH terminal",
+    "AI chat",
+    "AI image studio",
+    "developer tools",
+  ],
+});
+
+const TOOL_SCHEMA = [
+  {
+    name: "AI Router",
+    description:
+      "One OpenAI-compatible key that reaches GPT and Claude alike, with fallback chains and per-token billing.",
+    path: "/tools#ai",
+  },
+  {
+    name: "VPS Control",
+    description:
+      "Monitor, start, stop, reinstall, and SSH into your VPS instances from the browser.",
+    path: "/tools#vps",
+  },
+  {
+    name: "Chat AI",
+    description:
+      "Conversations powered by your own AI router key, with slash commands, memory, and shareable transcripts.",
+    path: "/tools#chat",
+  },
+  {
+    name: "Image Studio",
+    description: "Generate images from text prompts and keep them in one gallery.",
+    path: "/tools#image",
+  },
+];
 
 type ToolSection = {
   id: string;
@@ -283,11 +322,18 @@ const MOCKUPS: Record<string, () => React.ReactElement> = {
 export default function Tools() {
   return (
     <div className={`${figtree.className} flex flex-1 flex-col tracking-[0]`}>
+      <JsonLd
+        schema={[
+          itemListSchema("Tools by Yoga", TOOL_SCHEMA),
+          breadcrumbSchema([{ name: "Tools", path: "/tools" }]),
+        ]}
+      />
+      <PageBackdrop />
       <Navbar />
 
       <main className="flex-1">
         {/* Hero */}
-        <section className="relative overflow-hidden border-b border-white/[0.08]">
+        <section className="relative overflow-hidden">
           <div aria-hidden className="pointer-events-none absolute inset-0">
             <div className="grid-bg absolute inset-0 [mask-image:radial-gradient(110%_75%_at_50%_0%,#000_30%,transparent_72%)]" />
             <div className="hero-glow absolute -top-40 left-1/2 h-[400px] w-[760px] -translate-x-1/2 [background:radial-gradient(closest-side,rgba(62,207,142,0.14),transparent)]" />
@@ -380,7 +426,7 @@ export default function Tools() {
             <section
               key={tool.id}
               id={tool.id}
-              className="scroll-mt-20 border-b border-white/[0.08]"
+              className="scroll-mt-20"
             >
               <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-10 px-6 py-16 sm:px-8 sm:py-24 lg:grid-cols-2 lg:items-center lg:gap-16">
                 <div className={flipped ? "lg:order-2" : ""}>

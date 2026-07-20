@@ -3,11 +3,14 @@ import Link from "next/link";
 
 import { AuthShell } from "@/components/layout/AuthShell";
 import { ForgotPasswordForm } from "./ForgotPasswordForm";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Forgot password",
   description: "Reset your Yoga account password.",
-};
+  path: "/forgot-password",
+  noIndex: true,
+});
 
 export default function ForgotPasswordPage() {
   return (

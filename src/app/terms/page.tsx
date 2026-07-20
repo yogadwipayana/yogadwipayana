@@ -2,17 +2,22 @@ import type { Metadata } from "next";
 
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { PageBackdrop } from "@/components/ui/PageBackdrop";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Terms",
-  description: "The terms of use for Yoga's tools and this site.",
-};
+  description:
+    "The terms of use for Yoga's tools and this site: account rules, billing and credits, acceptable use, and liability.",
+  path: "/terms",
+});
 
 const UPDATED = "June 2026";
 
 export default function TermsPage() {
   return (
     <>
+      <PageBackdrop />
       <Navbar />
 
       <main className="flex-1">

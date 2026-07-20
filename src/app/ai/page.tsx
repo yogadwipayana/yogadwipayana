@@ -16,17 +16,30 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { CopyValue } from "@/components/ui/CopyValue";
+import { PageBackdrop } from "@/components/ui/PageBackdrop";
 import { ProviderIcon } from "@/components/ui/ProviderIcons";
 import { Reveal } from "@/components/ui/Reveal";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { breadcrumbSchema, pageMetadata } from "@/lib/seo";
 import { ModelIdCopy } from "./ModelIdCopy";
 
 const figtree = Figtree({ subsets: ["latin"], display: "swap" });
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "AI Store",
   description:
     "AI products for sale: my own AI Router, plus verified ChatGPT Plus and Kiro dev accounts ordered directly via WhatsApp.",
-};
+  path: "/ai",
+  keywords: [
+    "AI router",
+    "OpenAI-compatible API key",
+    "buy ChatGPT Plus",
+    "Kiro dev account",
+    "AI credit voucher",
+    "GPT and Claude access",
+    "pay as you go AI",
+  ],
+});
 
 const WHATSAPP_NUMBER = "6287889640714";
 
@@ -216,11 +229,13 @@ export default async function AiStore() {
   }));
   return (
     <div className={`${figtree.className} flex flex-1 flex-col tracking-[0]`}>
+      <JsonLd schema={breadcrumbSchema([{ name: "AI Store", path: "/ai" }])} />
+      <PageBackdrop />
       <Navbar />
 
       <main className="flex-1">
         {/* Header */}
-        <section className="relative overflow-hidden border-b border-white/[0.08]">
+        <section className="relative overflow-hidden">
           <div aria-hidden className="pointer-events-none absolute inset-0">
             <div className="hero-glow absolute -top-40 left-1/2 h-[400px] w-[760px] -translate-x-1/2 [background:radial-gradient(closest-side,rgba(62,207,142,0.12),transparent)]" />
           </div>
@@ -249,7 +264,7 @@ export default async function AiStore() {
         </section>
 
         {/* Catalog */}
-        <section className="border-b border-white/[0.08]">
+        <section>
           <div className="mx-auto w-full max-w-6xl px-6 py-12 sm:px-8 sm:py-16">
             <ul className="grid grid-cols-1 gap-3 md:grid-cols-3">
               {PRODUCTS.map((product, i) => {
@@ -358,7 +373,7 @@ export default async function AiStore() {
         </section>
 
         {/* AI Router model pricing */}
-        <section id="models" className="scroll-mt-20 border-b border-white/[0.08]">
+        <section id="models" className="scroll-mt-20">
           <div className="mx-auto w-full max-w-6xl px-6 py-12 sm:px-8 sm:py-16">
             <Reveal>
               <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">

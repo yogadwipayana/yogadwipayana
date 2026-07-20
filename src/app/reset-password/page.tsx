@@ -7,11 +7,14 @@ import { createClient } from "@/utils/supabase/server";
 import { AuthShell } from "@/components/layout/AuthShell";
 import { Button } from "@/components/ui/button";
 import { ResetPasswordForm } from "./ResetPasswordForm";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Reset password",
   description: "Set a new password for your Yoga account.",
-};
+  path: "/reset-password",
+  noIndex: true,
+});
 
 export default async function ResetPasswordPage() {
   const supabase = createClient(await cookies());

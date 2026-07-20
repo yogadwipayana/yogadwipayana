@@ -16,11 +16,15 @@ import {
 } from "lucide-react";
 
 import { aiDb } from "@/lib/db/ai";
+import { pageMetadata, personSchema, websiteSchema } from "@/lib/seo";
 import { createAdminClient } from "@/utils/supabase/admin";
+import { JsonLd } from "@/components/seo/JsonLd";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { CopyValue } from "@/components/ui/CopyValue";
+import { HeroBackdrop } from "@/components/ui/HeroBackdrop";
+import { PageBackdrop } from "@/components/ui/PageBackdrop";
 import { ProviderIcon } from "@/components/ui/ProviderIcons";
 import { Reveal } from "@/components/ui/Reveal";
 
@@ -30,9 +34,24 @@ const figtree = Figtree({ subsets: ["latin"], display: "swap" });
 const BASE_URL = "https://ai.yogathedev.com/v1";
 
 export const metadata: Metadata = {
-  title: "Yoga | AI Router, Chat, VPS & Image tools in one hub",
-  description:
-    "One OpenAI-compatible key for GPT and Claude, plus a browser VPS console, chat, and image studio. Pay as you go, built and run in the open.",
+  ...pageMetadata({
+    title: "Yoga | AI Router, Chat, VPS & Image tools in one hub",
+    description:
+      "One OpenAI-compatible key for GPT and Claude, plus a browser VPS console, chat, and image studio. Pay as you go, built and run in the open.",
+    path: "/",
+    keywords: [
+      "AI router",
+      "OpenAI-compatible API",
+      "GPT and Claude API key",
+      "pay as you go AI API",
+      "VPS control panel",
+      "AI chat app",
+      "AI image generator",
+      "Yoga Dwipayana",
+    ],
+  }),
+  // The home page owns the site title verbatim rather than the "%s · Yoga" template.
+  title: { absolute: "Yoga | AI Router, Chat, VPS & Image tools in one hub" },
 };
 
 type ToolCard = {
@@ -274,13 +293,16 @@ export default async function Home() {
 
   return (
     <div className={`${figtree.className} flex flex-1 flex-col tracking-[0]`}>
+      <JsonLd schema={[websiteSchema(), personSchema()]} />
+      <PageBackdrop />
       <Navbar />
 
       <main className="flex-1">
         {/* Hero */}
-        <section className="relative overflow-hidden border-b border-white/[0.08]">
+        <section className="relative overflow-hidden">
           {/* Ambient backdrop */}
           <div aria-hidden className="pointer-events-none absolute inset-0">
+            <HeroBackdrop />
             <div className="grid-bg absolute inset-0 [mask-image:radial-gradient(110%_75%_at_50%_0%,#000_30%,transparent_72%)]" />
             <div className="hero-glow absolute -top-44 left-1/2 h-[480px] w-[860px] -translate-x-1/2 [background:radial-gradient(closest-side,rgba(62,207,142,0.16),transparent)]" />
           </div>
@@ -408,7 +430,7 @@ export default async function Home() {
         </section>
 
         {/* Router console: how to call the base URL */}
-        <section className="border-b border-white/[0.08]">
+        <section>
           <div className="mx-auto w-full max-w-3xl px-6 py-12 sm:px-8 sm:py-16">
             <Reveal>
               <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#171717] shadow-[0_24px_80px_-24px_rgba(0,0,0,0.7)]">
@@ -558,7 +580,7 @@ export default async function Home() {
         </section>
 
         {/* Model marquee */}
-        <section className="border-b border-white/[0.08] bg-[#191919]">
+        <section>
           <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 py-8 sm:px-8">
             <Reveal>
               <p className="text-center text-[12px] uppercase tracking-wide text-white/35">
@@ -585,7 +607,7 @@ export default async function Home() {
         </section>
 
         {/* Tools bento → /tools */}
-        <section className="border-b border-white/[0.08]">
+        <section>
           <div className="mx-auto w-full max-w-6xl px-6 py-16 sm:px-8 sm:py-24">
             <Reveal>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -661,7 +683,7 @@ export default async function Home() {
         </section>
 
         {/* AI Router spotlight → /ai */}
-        <section className="border-b border-white/[0.08]">
+        <section>
           <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-10 px-6 py-16 sm:px-8 sm:py-24 lg:grid-cols-2 lg:items-center lg:gap-16">
             <Reveal>
               <div>
@@ -763,7 +785,7 @@ export default async function Home() {
         </section>
 
         {/* AI Store cross-sell → /ai */}
-        <section className="border-b border-white/[0.08]">
+        <section>
           <div className="mx-auto w-full max-w-6xl px-6 py-16 sm:px-8 sm:py-24">
             <Reveal>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

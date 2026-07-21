@@ -50,6 +50,12 @@ export const ratelimits = {
   console: createRatelimit("ratelimit:console", 30, "1m"),
   upload: createRatelimit("ratelimit:upload", 60, "1m"),
   vpsAction: createRatelimit("ratelimit:vps-action", 30, "1m"),
+  // Each order spends real SMSPool credit, so this is deliberately tight.
+  smsOrder: createRatelimit("ratelimit:sms-order", 5, "1m"),
+  smsPoll: createRatelimit("ratelimit:sms-poll", 90, "1m"),
+  // Voucher codes are guessable in principle, so redemption is throttled harder
+  // than a normal write.
+  balanceVoucher: createRatelimit("ratelimit:balance-voucher", 10, "1m"),
 };
 
 /** Best-effort client IP extractor for use as a rate-limit identifier. */

@@ -1,153 +1,298 @@
-# Chat AI — Laporan Hasil Test Final
+# SMS OTP — Temuan Keamanan
 
-Tanggal: 2026-06-16
-Metode: BrowserAct headed (chrome-live, profil Chrome asli), login aktif.
-Server: `localhost:3000` (dev).
-Acuan: `docs/PLAN.md`.
+Tinjauan keamanan atas tool SMS OTP dan saldo prabayar yang menjaganya. Setiap
+temuan di bawah punya tingkat keparahan, cara eksploitasi konkret yang bisa
+dijalankan user sungguhan, dan cara menutupnya. Dua temuan Critical sama-sama
+memungkinkan user yang sudah login mencetak saldo tanpa batas, lalu dari situ
+mengambil nomor SMS gratis dengan biaya ditanggung operator.
 
-Legenda: ✅ lulus · ❌ gagal · ⚠️ catatan/parsial · ⏭️ tidak diuji
+> **Cara temuan ini diverifikasi.** Semua probe memakai *publishable key*
+> (`sb_publishable…`) — kunci yang ikut terkirim di bundle browser dan terbaca
+> oleh setiap pengunjung lewat DevTools. Apa pun yang bisa dilakukan kunci itu,
+> bisa dilakukan user tanpa menyentuh route API kita.
+> `NEXT_PUBLIC_SUPABASE_URL` bernilai `https://qdombcgzuhivuvfjivfq.supabase.co`.
 
----
+**Keterangan status:** 🔴 terbuka · 🟢 sudah ditutup
 
-## Ringkasan
-
-| # | Bagian | Status |
-|---|--------|--------|
-| 1 | Chat dasar & streaming | ✅ |
-| 2 | Slash commands built-in (/summarize, /diagram, /word) | ✅ |
-| 3 | Custom slash command (/ringkas) | ✅ |
-| 4 | System Prompts (Bajak Laut) | ✅ |
-| 5 | Mode Image (generate + edit) | ✅ |
-| 6 | Image generation di mode Chat | ❌ |
-| 7 | Memory (simpan + bahasa lintas-percakapan + toggle) | ✅ |
-| 8 | Web search & web fetch | ✅ |
-| 9 | Library docs (Context7) | ✅ |
-| 10 | Waktu (get_current_time) | ✅ |
-| 11 | ask_user (klarifikasi) | ✅ |
-| 12 | VPS read-only | ✅ |
-| 13 | VPS write (butuh konfirmasi) | ✅ |
-| 14 | SSH / Terminal | ✅ |
-| 15 | Attachments | ✅ (image+PDF), ⏭️ DOCX/XLSX/PPTX |
-| 16 | Model selector | ✅ |
-| 17 | Fitur pesan (regenerate/edit/branch) | ✅ |
-| 18 | Manajemen percakapan | ✅ |
-| 19 | Gallery | ✅ |
-| 20 | Tool toggles per-percakapan | ⚠️ Fitur sudah dihapus |
-| 21 | Usage tracking | ✅ |
-
-**1 kegagalan nyata:** image generation di mode Chat (Bagian 6).
+| # | Keparahan | Temuan | Status |
+|---|-----------|--------|--------|
+| 1 | Critical | `credit_balance` / `debit_balance` bisa dipanggil langsung oleh user mana pun | 🔴 |
+| 2 | Critical | `sms_order` / `sms_message` bisa ditulis pemiliknya (memalsukan refund) | 🔴 |
+| 3 | High | Refund hanya jalan saat user membuka halaman (tak ada rekonsiliasi) | 🔴 |
+| 4 | High | Resend berbayar bisa menelan charge saat gagal separuh jalan | 🔴 |
+| 5 | Medium | `/api/sms/status` tanpa rate limit (membakar kuota provider) | 🔴 |
+| 6 | Medium | Tak ada idempotensi pada `sms_message` — dua tab menggelembungkan hitungan kode | 🔴 |
+| 7 | Low | Pemeriksaan `MAX_OPEN_ORDERS` tidak atomik | 🔴 |
+| 8 | Low | `getBalance` di halaman SMS tak dijaga — satu kegagalan baca membuat halaman 500 | 🔴 |
 
 ---
 
-## Detail
+## 1. 🔴 Critical — User yang sudah login bisa mencetak saldo tanpa batas
 
-### 1. Chat dasar & streaming — ✅
-- "Jelaskan apa itu Docker dalam 3 kalimat" → jawaban 3 kalimat + 4 saran follow-up.
-- "Lanjutkan dengan contoh perintah dasarnya" → konteks dipertahankan (lanjut topik Docker dengan perintah dasar).
+**Lokasi:** `supabase/migrations/20260721000000_balance.sql` — function
+`credit_balance` / `debit_balance` beserta grant-nya.
 
-### 2. Slash commands built-in — ✅
-- `/summarize` (percakapan) → TL;DR 1 kalimat → 5 poin → 3 pertanyaan terbuka. Ikut menarik konteks memory (pm2/Tencent).
-- `/summarize <teks>` → meringkas teks yang ditempel (mitokondria), bukan percakapan.
-- `/diagram alur login OAuth` → caption + sequence diagram Mermaid (bukan image tool).
-- `/diagram state machine lampu lalu lintas` → stateDiagram.
-- `/word <topik>` → tool `word_generate`, link `.docx` valid (terverifikasi 11.235 byte, MIME docx benar).
-- `/word` (tanpa argumen) → membuat dokumen dari percakapan sebelumnya.
+**Asumsi yang dipercaya keliru.** Migrasi ini menutup tabel dengan rapi: tak ada
+policy INSERT atau UPDATE, jadi uang semestinya hanya bergerak lewat dua
+security-definer function. Komentarnya sendiri berbunyi *"money only moves
+through the security-definer functions below, so a leaked anon key can never
+mint credit."* Masalahnya, function itulah percetakannya, dan PostgREST
+mengeksposnya ke setiap user sebagai `POST /rest/v1/rpc/<nama>`.
 
-### 3. Custom slash command — ✅
-- Dibuat command `ringkas` di `/dashboard/chat/commands`.
-- `/ringkas <teks kasual>` → ditulis ulang jadi ringkas & profesional.
+**Kenapa `revoke` tidak menolong.** Migrasi ditutup dengan:
 
-### 4. System Prompts — ✅
-- Dibuat prompt "Bajak Laut", dipilih dari dropdown, lalu "Apa itu Docker?" → persona bajak laut konsisten ("Ahoy!", "matey") meski pertanyaan teknis biasa.
+```sql
+revoke all on function public.credit_balance(...) from public;
+grant execute on function public.credit_balance(...) to authenticated;
+```
 
-### 5. Mode Image — ✅
-- "rubah merah di hutan bersalju, sinematik" → gambar tertanam inline + prompt yang dipakai (~75 dtk). File PNG valid (2,5 MB, terverifikasi).
-- "buat lebih hangat, suasana matahari terbenam" → `image_edit` pada gambar sebelumnya (prompt eksplisit "Edit gambar sebelumnya"), file baru.
+`revoke … from public` hanya menyentuh pseudo-role `PUBLIC`. Supabase juga
+memberi `EXECUTE` ke `anon` dan `authenticated` secara default saat function
+dibuat, dan — lebih parah — baris terakhir memberikannya lagi ke
+`authenticated` secara eksplisit. Jadi user yang login diperbolehkan
+memanggilnya.
 
-### 6. Image generation di mode Chat — ❌ GAGAL
-- "Gambarkan kota cyberpunk neon di malam hari, format lebar." di mode Chat → **macet di "Running image_generate…" tanpa batas** (ditunggu >11 menit).
-- Diuji ulang dengan **GPT-5.5 dan Claude Opus 4.8** → keduanya macet. Jadi **bukan masalah model**.
-- **Temuan penting:** gambarnya **benar-benar selesai dibuat & tersimpan** (muncul di Gallery: `1781621534119-...png`). Jadi generator/`runAndPersist` di backend OK — yang gagal adalah **pengiriman hasil ke UI chat lewat SSE stream** (stream tidak pernah menyematkan hasil & tidak menutup).
-- Kontras: mode Image memakai backend yang sama dan selesai ~75 dtk. Bug khusus jalur tool-call di mode Chat.
-- Saran investigasi: `src/lib/server/chat-stream.ts` (penanganan hasil tool deliverable image_generate di mode chat), bandingkan dengan jalur mode Image.
+**Bukti (publishable key, tanpa sesi = belum login):**
 
-### 7. Memory — ✅
-- "Ingat bahwa aku selalu deploy pakai Docker di Tencent Lighthouse" → `memory_save`, entri baru "AI" muncul di `/dashboard/chat/memory` (jadi 3 aktif).
-- Memory "Selalu balas dalam Bahasa Indonesia" aktif → percakapan baru, "What is a reverse proxy?" (Inggris) → **dijawab Bahasa Indonesia** (memory menang atas bahasa input).
-- Toggle: memory bahasa dimatikan → pertanyaan Inggris dijawab Inggris. Dinyalakan lagi (state dikembalikan).
+```
+POST /rest/v1/rpc/credit_balance
+  { "p_amount": 999999, "p_kind": "topup", "p_reference": "PROBE", "p_description": "probe" }
+→ 400 { "code": "P0001", "message": "UNAUTHORIZED" }
+```
 
-### 8. Web search & fetch — ✅
-- "Versi stabil terbaru Node.js?" → `web_search` (+`web_fetch`), jawaban dengan sumber/link nodejs.org, data fresh (v24 LTS / v26 Current).
-- "Ringkas halaman ini: nodejs.org/en/blog" → `web_fetch` ("Completed 2 steps", 5 sources), transparan saat konten utama tak terbaca penuh.
+`P0001` ini menentukan. Itu bukan PostgREST menolak panggilan — penolakan izin
+akan berbunyi `42501 permission denied for function`. `P0001` adalah
+`raise exception 'UNAUTHORIZED'` milik kita sendiri yang menyala **dari dalam
+badan function**, artinya panggilannya lolos pemeriksaan grant dan benar-benar
+dieksekusi. Satu-satunya yang menghentikannya adalah `auth.uid()` bernilai null
+karena probe belum login.
 
-### 9. Library docs (Context7) — ✅
-- "Setup middleware di Next.js?" → `resolve-library-id` + `query-docs`, jawaban grounded (membedakan `proxy.ts` Next 16+ vs `middleware.ts` versi lama, cite docs). Catatan: streaming agak lambat (~30 dtk) tapi berhasil.
-- "Relasi schema di Prisma" → "Completed 2 steps", definisi relasi akurat dari docs Prisma.
+**Eksploitasi (user login sungguhan).** Dengan sesi yang sah, `auth.uid()`
+bernilai id mereka dan function berjalan sampai selesai:
 
-### 10. Waktu — ✅
-- "Jam berapa di Asia/Jakarta?" → `get_current_time`, waktu WIB + tanggal benar (16 Juni 2026).
+```
+POST /rest/v1/rpc/credit_balance
+  Authorization: Bearer <access token user itu sendiri, langsung dari browser>
+  { "p_amount": 100000000, "p_kind": "topup", "p_reference": "<uuid baru mana pun>" }
+→ saldo += Rp100.000.000
+```
 
-### 11. ask_user — ✅
-- "Tolong reset BAC saya" → SATU pertanyaan klarifikasi dengan opsi yang bisa diklik (Backup Access Code, Bank/Account Code, Building Access Control, Blood Alcohol Content, Lainnya) + input bebas; turn berhenti.
-- Klik "Building Access Control" → turn lanjut kontekstual sesuai pilihan.
+Ulangi dengan `p_reference` baru sesukanya (unique index hanya memblokir
+*pemakaian ulang* reference, bukan pembuatan yang baru). Tanpa voucher, tanpa
+route API, tanpa rate limit — panggilan PostgREST langsung. Dari situ setiap
+nomor SMS praktis gratis, dibayar dari kredit SMSPool operator.
 
-### 12. VPS read-only — ✅
-- "Ada berapa VPS & menyala?" → `vps_list` langsung jalan tanpa konfirmasi (1 VPS: Ubuntu-2, ap-jakarta, RUNNING).
-- "Aturan firewall server web-ku" → `vps_firewall_list` (resolve "web-ku" → Ubuntu-2), + catatan keamanan SSH 0.0.0.0/0.
-- "List SSH key" → `vps_ssh_keys_list` (MAIN, ed25519).
+**Perbaikan.** Cabut percetakan itu dari sisi client sepenuhnya.
 
-### 13. VPS write (konfirmasi) — ✅
-- "Reboot Ubuntu-2" → **minta konfirmasi dulu** dengan rincian dampak, TIDAK langsung eksekusi. (Eksekusi nyata dilewati atas permintaan user — gate sudah terbukti.)
-- "Buka port 8080 TCP ke 0.0.0.0/0" → **minta konfirmasi** + peringatan eksposur publik. Dibatalkan → "tidak mengubah firewall". Tidak ada perubahan nyata.
+1. Cabut execute dari role client:
 
-### 14. SSH / Terminal — ✅
-- "Jalankan df -h di Ubuntu-2" → `ssh_run` jalan tanpa konfirmasi, output nyata (disk 73%).
-- "Buka terminal untuk cek uname" → `open_terminal` (sesi terminal live + MOTD), `terminal_run` mengusulkan `uname -a` dengan tombol **Run/Deny** (approve manual). Klik Run → perintah jalan, output kernel nyata (Linux 6.8.0-101-generic).
+   ```sql
+   revoke execute on function public.credit_balance(bigint,text,text,text) from anon, authenticated;
+   revoke execute on function public.debit_balance(bigint,text,text,text)  from anon, authenticated;
+   ```
 
-### 15. Attachments — ✅ / ⏭️
-- Gambar (`qris.jpg`) → vision membaca isi benar (QRIS, merchant "Dwipa", NMID).
-- PDF → teks diekstrak & diringkas akurat (proposal app sembako Android).
-- ⏭️ DOCX/XLSX/PPTX tidak diuji (tidak ada file sampel lokal) — pipeline attachment & ekstraksi teks terbukti jalan via image+PDF.
-- Catatan teknis: input file disembunyikan (hidden), upload via BrowserAct `upload` setelah dibuat visible.
+2. Function tak bisa lagi membaca `auth.uid()` (bernilai null di bawah service
+   role), jadi tambahkan parameter eksplisit `p_user uuid` dan pakai itu
+   menggantikan `auth.uid()`. Pertahankan penjagaan internal
+   `UNAUTHORIZED`/`INVALID_*`.
 
-### 16. Model selector — ✅
-- Ganti antar GPT-5.5 / Opus 4.8 / Opus 4.7 / Sonnet 4.6 (4 model tersedia di picker).
-- Pilihan **tersimpan per-percakapan** (navigasi keluar lalu balik → tetap Opus 4.8).
+3. Panggil hanya dari server lewat `createAdminClient()`
+   (`src/utils/supabase/admin.ts`), meneruskan id yang di-resolve dari sesi di
+   route — jangan pernah dari body request. `creditBalance` / `debitBalance` di
+   `balance-service.ts` menjadi satu-satunya pemanggil.
 
-### 17. Fitur pesan — ✅
-- Regenerate (Retry) → respons baru.
-- Edit & resend → membuat branch (indikator "2/2").
-- Branch navigation → tombol "Previous branch" pindah ke sibling 1/2 tanpa generate ulang.
-- Continue: tidak terpicu (hanya muncul saat turn berhenti karena tool budget) — tidak teruji.
-
-### 18. Manajemen percakapan — ✅
-- Pin → grup "Pinned" muncul (menu berubah jadi "Unpin").
-- Rename → judul berubah ("PDF Sembako - Renamed Test").
-- Archive → pindah ke `/dashboard/chat/archived`.
-- Delete → percakapan hilang (count cyberpunk 2→1). Langsung tanpa dialog konfirmasi.
-- Share publik → link `/chat/share/<token>` ter-generate, HTTP 200 (read-only).
-- Export Markdown → endpoint `/export` HTTP 200, `text/markdown`, isi diawali judul + metadata.
-
-### 19. Gallery — ✅
-- `/dashboard/chat/gallery` menampilkan 9 gambar + prompt, sort newest/oldest.
-- Gambar hasil chat (termasuk cyberpunk yang macet di UI) muncul di sini.
-- Aksi per-kartu: Copy image, Copy share link, Delete image.
-- Delete diuji → count 9→8.
-
-### 20. Tool toggles per-percakapan — ⚠️ FITUR DIHAPUS
-- Tidak ada lagi selector Tools on/off di UI.
-- Dikonfirmasi via migrasi `supabase/migrations/20260616000000_drop_conversation_disabled_tools.sql`: kolom `disabled_tools` di-drop, "all tools are now always enabled".
-- Bagian PLAN.md ini sudah usang — perlu dihapus/diperbarui.
-
-### 21. Usage tracking — ✅
-- `/dashboard/chat/usage`: Responses 81, Total tokens 1.1M (1.1M in / 21K out), Avg 14K, Tool calls 57.
-- Grafik per-hari, token per-model (gpt-5.5 / sonnet-4.6 / opus-4.8), split prompt/completion. Akumulatif (append-only ledger).
+Setelah diperbaiki, mengulang probe di atas harus mengembalikan **`42501
+permission denied for function credit_balance`** — bukti bahwa grant-nya, bukan
+sekadar penjagaan di badan function, yang kini menghentikannya.
 
 ---
 
-## Tindak lanjut yang disarankan
+## 2. 🔴 Critical — Pemilik bisa mengarang order dan refund dengan menulis tabel langsung
 
-1. **Perbaiki Bagian 6 (prioritas):** image_generate di mode Chat macet di UI walau backend sukses. Periksa pengiriman hasil tool deliverable image di `src/lib/server/chat-stream.ts`.
-2. **Update PLAN.md:** hapus Bagian 20 (tool toggles) karena fiturnya sudah dihapus.
-3. **Opsional:** lengkapi test attachment DOCX/XLSX/PPTX dengan file sampel.
-4. **Catatan minor:** regenerate pada respons berbasis PDF kadang gagal baca ulang isi PDF (hasil "tidak bisa membaca") — kemungkinan re-fetch file saat retry; perlu dicek terpisah.
+**Lokasi:** `supabase/migrations/20260720000000_sms_order.sql` dan
+`20260720020000_sms_message.sql` — keduanya memakai policy `for all`.
+
+**Celahnya.** `for all` memberi pemilik INSERT, UPDATE, dan DELETE, bukan hanya
+SELECT. Anon tetap terblokir (terverifikasi di bawah), tapi user yang *login*
+adalah pemilik barisnya sendiri sehingga policy mengizinkannya menulis. Logika
+refund di `sms-service.ts` memercayai kolom-kolom pada baris itu — `charge_ref`,
+`charged_idr`, `charge_delivered`, `status`, `expires_at` — yang semuanya kini
+dikendalikan user.
+
+**Bukti (anon benar terblokir; intinya apa yang diizinkan bagi *pemilik*):**
+
+```
+POST /rest/v1/sms_order   (publishable key, tanpa sesi)
+  { "user_id": "…", "order_id": "PROBE", … }
+→ 401 { "code": "42501", "message": "new row violates row-level security policy for table \"sms_order\"" }
+```
+
+Klausa `with check` pada RLS adalah `user_id = auth.uid()`. Bagi user login yang
+memasukkan `user_id` *miliknya sendiri*, pemeriksaan itu lolos — persis yang
+memblokir anon justru meloloskan pemilik.
+
+**Eksploitasi A — mengarang order yang bisa direfund:**
+
+1. `POST /rest/v1/sms_order` dengan `user_id` sendiri, `order_id` acak,
+   `charge_ref` uuid acak, `charged_idr: 5000`, `status: 'pending'`,
+   `charge_delivered: false`, dan `expires_at` di masa lalu.
+2. Buka dashboard. `refreshOrders` melihat order pending, bertanya ke SMSPool,
+   yang tak mengenali `order_id` palsu itu, jadi `isExpired` → status `expired`
+   → `settleRefund` mengembalikan `charged_idr`. Saldo bertambah untuk nomor
+   yang tak pernah ada.
+
+**Eksploitasi B — membatalkan penyelesaian order asli:**
+
+```
+PATCH /rest/v1/sms_order?id=eq.<order completed milik sendiri>
+  { "charge_delivered": false }
+```
+
+Lalu tekan **Cancel & refund**. Ini langsung membuka kembali bug free-number
+resend→cancel yang baru kita tutup — penjagaan server membaca
+`charge_delivered`, dan client barusan menyetelnya ke `false`. Order → ambil
+kode → balikkan flag → cancel → simpan OTP dan uangnya.
+
+Perbaikan `charge_delivered` kemarin memindahkan keputusan uang ke sebuah kolom
+yang ternyata bisa ditulis pemiliknya, dan itulah yang membuat Eksploitasi B
+mungkin.
+
+**Perbaikan.** Jadikan tabel ini hanya-baca bagi client dan alirkan setiap
+penulisan lewat server.
+
+1. Ganti policy-nya:
+
+   ```sql
+   drop policy if exists "sms_order_owner" on public.sms_order;
+   create policy "sms_order_owner_read" on public.sms_order
+     for select using (user_id = (select auth.uid()));
+
+   drop policy if exists "sms_message_owner" on public.sms_message;
+   create policy "sms_message_owner_read" on public.sms_message
+     for select using (exists (
+       select 1 from public.sms_order o
+       where o.id = sms_message.sms_order_id and o.user_id = (select auth.uid())
+     ));
+   ```
+
+2. Pindahkan setiap insert/update di `sms-service.ts` (`createOrder`,
+   `applyPatch`, `recordMessage`, `resendOrder`) ke `createAdminClient()`,
+   masing-masing di-scope eksplisit dengan `.eq("user_id", userId)` / id baris
+   yang dimiliki — persis kontrak yang sudah tertulis di atas `admin.ts`.
+   Pembacaan yang mengisi dashboard boleh tetap di client cookie-scoped supaya
+   RLS tetap membatasinya.
+
+Uji ulang setelahnya: `PATCH` di Eksploitasi B harus mengembalikan **`42501`**,
+dan `POST` palsu di Eksploitasi A juga harus **`42501`**.
+
+---
+
+## 3. 🟠 High — Refund baru terjadi saat user kembali
+
+**Lokasi:** `settleRefund` hanya dicapai lewat `refreshOrders`
+(`sms-service.ts`), yang jalan saat polling dashboard.
+
+**Dampak.** User memesan nomor, SMS tak datang, tab ditutup. Tak ada yang
+merekonsiliasi order itu di sisi server, sehingga Rp5.000 miliknya tertahan
+sampai ia membuka halaman lagi — yang mungkin tak pernah. Ini uang milik user
+sendiri yang tersangkut, bukan uang operator, jadi ini soal
+kebenaran/kepercayaan, bukan pencurian — karena itu High, bukan Critical.
+
+**Perbaikan.** Job terjadwal (route cron atau worker) yang berkala memuat order
+`pending` yang telah melewati `expires_at` untuk semua user, menjalankan jalur
+rekonsiliasi-dan-penyelesaian yang sama, dan merefund di sisi server tanpa perlu
+kunjungan. Pakai ulang logika `refreshOrders` agar ada satu jalur penyelesaian,
+bukan dua.
+
+---
+
+## 4. 🟠 High — Resend berbayar bisa menelan charge saat gagal separuh jalan
+
+**Lokasi:** `resendOrder` di `sms-service.ts`.
+
+**Celahnya.** `resendOrder` kini memotong Rp5.000 sebelum memanggil provider dan
+merefund bila panggilan provider melempar error — bagus. Tapi bila `resendSms`
+**berhasil** lalu `applyPatch` berikutnya (menulis `charge_ref` baru ke baris)
+gagal, debit sudah terjadi dan tak ada lagi baris yang menunjuk ke `charge_ref`
+itu. Tak ada yang bisa menemukannya untuk direfund. Bandingkan dengan
+`createOrder` yang merefund saat insert gagal; jalur resend tak punya padanan
+untuk patch yang gagal.
+
+**Perbaikan.** Bungkus pekerjaan pasca-charge sehingga kegagalan apa pun setelah
+debit memanggil `refundCharge(supabase, chargeRef, price, …)` sebelum melempar
+ulang — cerminkan `try/catch` yang sudah menjaga panggilan provider, diperluas
+untuk mencakup patch-nya.
+
+---
+
+## 5. 🟡 Medium — `/api/sms/status` tanpa rate limit
+
+**Lokasi:** `src/app/api/sms/status/route.ts`.
+
+**Dampak.** Setiap panggilan menyebar ke tiga endpoint SMSPool (balance, price,
+stock). Ini satu-satunya route SMS tanpa `checkRateLimit`, sehingga user yang
+menahan tombol — atau sebuah skrip — berlipat ganda langsung ke provider dan
+bisa membakar kuota API operator atau memicu throttling di sisi provider.
+
+**Perbaikan.** Tambahkan bucket `ratelimits.smsStatus` (mis. 30/1m) dan jaga
+route ini seperti yang lain. Opsional, cache availability beberapa detik di sisi
+server, karena stock/price nyaris tak berubah.
+
+---
+
+## 6. 🟡 Medium — Tak ada idempotensi pada `sms_message`
+
+**Lokasi:** `recordMessage` / tabel `sms_message`.
+
+**Dampak.** Dua tab dashboard (atau dua polling yang tumpang tindih) bisa
+sama-sama mengamati transisi kode yang sama dan sama-sama `insert` ke
+`sms_message`. Tak ada unique constraint, jadi kode yang sama tercatat dua kali
+dan hitungan "delivered codes" seumur hidup (`deliveredCodeTotal`) menggelembung.
+Tak ada uang bergerak, tapi angka yang dilihat user jadi salah.
+
+**Perbaikan.** Tambahkan `unique (sms_order_id, code)` pada `sms_message` dan
+biarkan `recordMessage` menelan pelanggaran unik `23505` sebagai no-op — pola
+idempotensi yang sama yang sudah dipakai ledger.
+
+---
+
+## 7. 🔵 Low — `MAX_OPEN_ORDERS` diperiksa lalu ditulis, tidak atomik
+
+**Lokasi:** `createOrder` di `sms-service.ts`.
+
+**Dampak.** Count dan insert adalah dua statement terpisah. Rate limit order
+mengizinkan 5/menit sementara cap-nya 3, sehingga request beruntun bisa
+menyelipkan order terbuka keempat melewati pemeriksaan. Dampak kecil karena user
+tetap membayar setiap nomor.
+
+**Perbaikan.** Terapkan di database — partial unique/exclusion atau count di
+dalam trigger — alih-alih read-then-write di kode aplikasi.
+
+---
+
+## 8. 🔵 Low — `getBalance` di halaman SMS tak dijaga
+
+**Lokasi:** `src/app/dashboard/sms/page.tsx` — `await getBalance(...)` terakhir
+tidak dibungkus, sedangkan `getAvailability` dan `listOrders` di atasnya sengaja
+best-effort.
+
+**Dampak.** Bila pembacaan wallet gagal, seluruh halaman 500, padahal desain di
+sekitarnya memilih tetap render dengan data terdegradasi saat gagal.
+
+**Perbaikan.** Bungkus seperti tetangganya dan fallback ke `0` (atau keadaan
+"balance unavailable") agar error wallet sesaat tak menjatuhkan tool-nya.
+
+---
+
+## Checklist uji ulang
+
+Jalankan setelah perbaikan diterapkan. Temuan 1 dan 2 yang harus berbalik dari
+🔴 ke 🟢 sebelum tool ini dibuka ke siapa pun selain operator.
+
+- [ ] **#1** `POST /rpc/credit_balance` dengan publishable key → `42501`, bukan `P0001`.
+- [ ] **#1** `POST /rpc/debit_balance` dengan publishable key → `42501`.
+- [ ] **#2** `PATCH /sms_order?id=eq.<baris sendiri>` menyetel `charge_delivered:false` → `42501`.
+- [ ] **#2** `POST /sms_order` dengan `user_id` sendiri → `42501`.
+- [ ] Alur normal tetap jalan ujung-ke-ujung (order, terima kode, cancel, resend) lewat route API.
+- [ ] **#4** Simulasikan `applyPatch` gagal setelah resend berhasil → saldo direfund.
+- [ ] **#5** Menghajar `/api/sms/status` mengembalikan `429` setelah bucket habis.

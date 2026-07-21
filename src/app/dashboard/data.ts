@@ -1,5 +1,13 @@
 import type { LucideIcon } from "lucide-react";
-import { ImagePlus, MessageSquare, Server, Settings, Waypoints } from "lucide-react";
+import {
+  ImagePlus,
+  MessageSquare,
+  Server,
+  Settings,
+  Smartphone,
+  Wallet,
+  Waypoints,
+} from "lucide-react";
 
 /* -------------------------------------------------------------------------- */
 /*  Tools                                                                     */
@@ -11,7 +19,14 @@ import { ImagePlus, MessageSquare, Server, Settings, Waypoints } from "lucide-re
  * absent from `TOOLS` because the primary rail renders it separately at the
  * bottom (alongside the dedicated Settings rail button).
  */
-export type ToolId = "vps" | "ai" | "chat" | "image" | "settings";
+export type ToolId =
+  | "vps"
+  | "ai"
+  | "chat"
+  | "image"
+  | "sms"
+  | "balance"
+  | "settings";
 
 export type Tool = {
   id: ToolId;
@@ -63,6 +78,22 @@ export const TOOLS: readonly Tool[] = [
     icon: ImagePlus,
     createLabel: "New generation",
     searchLabel: "Search images",
+  },
+  {
+    id: "sms",
+    name: "SMS OTP",
+    tag: "Verification",
+    icon: Smartphone,
+    createLabel: "Get a number",
+    searchLabel: "Search numbers",
+  },
+  {
+    id: "balance",
+    name: "Balance",
+    tag: "Wallet",
+    icon: Wallet,
+    createLabel: "",
+    searchLabel: "Search transactions",
   },
 ] as const;
 

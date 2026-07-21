@@ -1,6 +1,7 @@
-import Link from "next/link";
 import { Suspense } from "react";
 import { cookies } from "next/headers";
+
+import { Pagination } from "@/components/ui/Pagination";
 
 import { aiDb } from "@/lib/db/ai";
 import { createClient } from "@/utils/supabase/server";
@@ -341,26 +342,13 @@ export default async function AiUsagePage({
             )}
           </div>
 
-          {/* Pagination — only shown when there are multiple pages */}
-          {totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-between text-[12px] text-white/40">
-              <Link
-                href={pageHref(page - 1)}
-                aria-disabled={page <= 1}
-                className={`rounded-md border border-white/[0.08] px-3 py-1.5 transition-colors hover:bg-white/[0.04] hover:text-white/70 ${page <= 1 ? "pointer-events-none opacity-30" : ""}`}
-              >
-                Previous
-              </Link>
-              <span>{PAGE_SIZE} per page</span>
-              <Link
-                href={pageHref(page + 1)}
-                aria-disabled={page >= totalPages}
-                className={`rounded-md border border-white/[0.08] px-3 py-1.5 transition-colors hover:bg-white/[0.04] hover:text-white/70 ${page >= totalPages ? "pointer-events-none opacity-30" : ""}`}
-              >
-                Next
-              </Link>
-            </div>
-          )}
+          {/* Hides itself on a single page; `pageHref` keeps the range filter. */}
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            pageSize={PAGE_SIZE}
+            hrefFor={pageHref}
+          />
         </section>
       </div>
     </div>

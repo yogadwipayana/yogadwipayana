@@ -37,8 +37,10 @@ import {
   Search,
   Server,
   Settings,
+  Smartphone,
   Terminal,
   Trash2,
+  Wallet,
   Waypoints,
   X,
   XCircle,
@@ -209,6 +211,32 @@ function buildSections(
       {
         title: "Reference",
         items: [{ id: "ai:models", label: "Models", href: "/dashboard/ai/models" }],
+      },
+    ];
+  }
+  if (toolId === "sms") {
+    return [
+      {
+        title: "Numbers",
+        items: [
+          { id: "sms:active", label: "Get a number", href: "/dashboard/sms" },
+          { id: "sms:history", label: "History", href: "/dashboard/sms/history" },
+        ],
+      },
+    ];
+  }
+  if (toolId === "balance") {
+    return [
+      {
+        title: "Wallet",
+        items: [
+          { id: "balance:active", label: "Overview", href: "/dashboard/balance" },
+          {
+            id: "balance:history",
+            label: "Transactions",
+            href: "/dashboard/balance/history",
+          },
+        ],
       },
     ];
   }
@@ -383,6 +411,8 @@ export function DashboardShell({
     ai: "ai:usage",
     chat: chatConversations[0]?.id ?? "",
     image: "",
+    sms: "sms:active",
+    balance: "balance:active",
     settings: initialActiveId ?? "settings:account",
   }));
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -456,14 +486,26 @@ export function DashboardShell({
   // then highlights the right item without relying on click state.
   const aiRoutedItem =
     toolId === "ai" && chatSegment ? `ai:${chatSegment}` : undefined;
-  // Effective active sub-sidebar item for the current tool. Chat and AI are
-  // URL-driven; every other tool still reads from local `activeItems` state.
+  // SMS follows the same URL-driven rule, with the bare /dashboard/sms route
+  // (no segment) resolving to the order panel.
+  const smsRoutedItem =
+    toolId === "sms" ? `sms:${chatSegment ?? "active"}` : undefined;
+  // Balance mirrors SMS: /dashboard/balance is the overview, its one sub-route
+  // is /dashboard/balance/history.
+  const balanceRoutedItem =
+    toolId === "balance" ? `balance:${chatSegment ?? "active"}` : undefined;
+  // Effective active sub-sidebar item for the current tool. Chat, AI, SMS, and
+  // Balance are URL-driven; every other tool reads from local `activeItems`.
   const activeItemId =
     toolId === "chat"
       ? activeChatId
       : toolId === "ai"
         ? aiRoutedItem ?? activeItems.ai
-        : activeItems[toolId];
+        : toolId === "sms"
+          ? smsRoutedItem ?? activeItems.sms
+          : toolId === "balance"
+            ? balanceRoutedItem ?? activeItems.balance
+            : activeItems[toolId];
 
   const handleSelectItem = useCallback(
     (id: string) => {
@@ -1118,6 +1160,9 @@ function CommandPalette({
       { label: "VPS Control", href: "/dashboard/vps", icon: Server, keywords: "infrastructure server instance" },
       { label: "AI Router", href: "/dashboard/ai", icon: Waypoints, keywords: "models routes" },
       { label: "Image Studio", href: "/dashboard/image", icon: ImagePlus, keywords: "media generate" },
+      { label: "Balance", href: "/dashboard/balance", icon: Wallet, keywords: "wallet saldo top up voucher credit" },
+      { label: "Balance transactions", href: "/dashboard/balance/history", icon: Wallet, keywords: "wallet ledger history" },
+      { label: "SMS OTP", href: "/dashboard/sms", icon: Smartphone, keywords: "number verification otp" },
       { label: "Settings", href: "/dashboard/settings", icon: Settings, keywords: "account preferences" },
       { label: "System prompts", href: "/dashboard/chat/system-prompts", icon: FileText, keywords: "chat instructions" },
       { label: "Memory", href: "/dashboard/chat/memory", icon: Brain, keywords: "chat facts" },

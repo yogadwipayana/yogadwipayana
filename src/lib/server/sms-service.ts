@@ -6,11 +6,22 @@
  * table is authoritative for *ownership* (one app-wide API key means SMSPool
  * cannot tell users apart) and for history once SMSPool drops the order.
  * `refreshOrders` reconciles the two.
+ *
+ * Reads and writes use different clients on purpose. Reads take the caller's
+ * cookie-scoped client so RLS confines them to that user's rows. Writes go
+ * through the service role, because `sms_order` and `sms_message` are read-only
+ * to the browser — the money decisions below hang off `charge_ref`,
+ * `charged_idr`, `charge_delivered` and `status`, and while owners could write
+ * those columns they could fabricate refundable orders and un-settle real ones.
+ * Every service-role write here is explicitly scoped to a row already proven to
+ * belong to `userId`.
  */
 
 import { randomUUID } from "node:crypto";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { createAdminClient } from "@/utils/supabase/admin";
 
 import { formatIdr } from "../money";
 import { SMS_PRICE_IDR } from "../sms-order";
@@ -290,14 +301,14 @@ async function getOwnedOrder(
  * Orders placed before the wallet existed have no charge to return.
  */
 async function refundCharge(
-  supabase: SupabaseClient,
+  userId: string,
   chargeRef: string | null,
   amountIdr: number | null,
   description: string,
 ): Promise<void> {
   if (!chargeRef || !amountIdr || amountIdr <= 0) return;
   try {
-    await creditBalance(supabase, {
+    await creditBalance(userId, {
       amountIdr,
       kind: "sms_refund",
       reference: chargeRef,
@@ -328,19 +339,13 @@ export async function createOrder(
     .in("status", OPEN_STATUSES);
   if (countError) throw countError;
 
-  if ((count ?? 0) >= MAX_OPEN_ORDERS) {
-    throw new ApiError(
-      409,
-      "TOO_MANY_OPEN_ORDERS",
-      `You already have ${MAX_OPEN_ORDERS} active numbers. Cancel one or wait for it to expire.`,
-    );
-  }
+  if ((count ?? 0) >= MAX_OPEN_ORDERS) throw tooManyOpenOrders();
 
   // Minted up front so the debit has an idempotency key that the order row can
   // later be matched to — including when the row never gets written.
   const chargeRef = randomUUID();
   const price = SMS_PRICE_IDR;
-  await debitBalance(supabase, {
+  await debitBalance(userId, {
     amountIdr: price,
     kind: "sms_order",
     reference: chargeRef,
@@ -356,12 +361,12 @@ export async function createOrder(
       maxPrice: smspoolMaxPrice(),
     });
   } catch (err) {
-    await refundCharge(supabase, chargeRef, price, "Refund — number unavailable");
+    await refundCharge(userId, chargeRef, price, "Refund — number unavailable");
     throw err;
   }
 
   const cost = Number(order.cost);
-  const { data, error } = await supabase
+  const { data, error } = await createAdminClient()
     .from("sms_order")
     .insert({
       user_id: userId,
@@ -388,7 +393,13 @@ export async function createOrder(
   // and surface the order id so the provider side can be recovered manually.
   if (error) {
     console.error("[sms] order persisted failed", order.order_id, error);
-    await refundCharge(supabase, chargeRef, price, "Refund — order could not be saved");
+    await refundCharge(userId, chargeRef, price, "Refund — order could not be saved");
+
+    // The database enforces the cap too, and it is the only check that holds
+    // under concurrency. Losing that race is the user's own fourth number, not
+    // a server fault, so it keeps the 409 the pre-check would have given.
+    if (isOpenOrderCapViolation(error)) throw tooManyOpenOrders();
+
     throw new ApiError(
       500,
       "SMS_ORDER_NOT_SAVED",
@@ -396,6 +407,19 @@ export async function createOrder(
     );
   }
   return data;
+}
+
+function tooManyOpenOrders(): ApiError {
+  return new ApiError(
+    409,
+    "TOO_MANY_OPEN_ORDERS",
+    `You already have ${MAX_OPEN_ORDERS} active numbers. Cancel one or wait for it to expire.`,
+  );
+}
+
+/** The `sms_order_open_cap` trigger firing — see the migration of that name. */
+function isOpenOrderCapViolation(error: { message?: string } | null): boolean {
+  return error?.message?.includes("TOO_MANY_OPEN_ORDERS") ?? false;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -416,27 +440,35 @@ type OrderPatch = {
   updated_at: string;
 };
 
+/** Postgres unique-violation — the `(sms_order_id, code)` index tripping. */
+const UNIQUE_VIOLATION = "23505";
+
 /**
  * Append a received SMS to the order's message log.
  *
  * Callers only invoke this on a *transition* — when the code SMSPool reports
- * differs from the one already on the order — so the 5-second poll can't append
- * the same message repeatedly.
+ * differs from the one already on the order — so one poll loop can't append the
+ * same message repeatedly. Two of them can: two dashboard tabs can observe the
+ * same transition at once. The unique index makes the loser a 23505, swallowed
+ * here as a no-op, which keeps the lifetime code count honest.
+ *
+ * `orderRowId` always comes from a row already read under the caller's own
+ * scope, which is what keeps this service-role write on the user's own order.
  */
 async function recordMessage(
-  supabase: SupabaseClient,
   orderRowId: string,
   code: string,
   fullSms: string | null,
 ): Promise<void> {
-  const { error } = await supabase.from("sms_message").insert({
+  const { error } = await createAdminClient().from("sms_message").insert({
     sms_order_id: orderRowId,
     code,
     full_sms: fullSms,
   });
+  if (!error || error.code === UNIQUE_VIOLATION) return;
   // The log is a record, not the source of truth — the code still lands on the
   // order row, so a failed append must not fail the refresh.
-  if (error) console.error("[sms] message log failed", orderRowId, error);
+  console.error("[sms] message log failed", orderRowId, error);
 }
 
 /**
@@ -461,15 +493,23 @@ async function resendInfoPatch(orderId: string): Promise<Partial<OrderPatch>> {
   }
 }
 
+/**
+ * Write an order transition.
+ *
+ * Runs as the service role, which bypasses RLS, so the `user_id` filter is what
+ * keeps the update on the caller's own row — it is not redundant with the
+ * owner-scoped read that produced `id`, it is the second half of it.
+ */
 async function applyPatch(
-  supabase: SupabaseClient,
+  userId: string,
   id: string,
   patch: OrderPatch,
 ): Promise<SmsOrderRow | null> {
-  const { data, error } = await supabase
+  const { data, error } = await createAdminClient()
     .from("sms_order")
     .update(patch)
     .eq("id", id)
+    .eq("user_id", userId)
     .select(ROW_COLS)
     .maybeSingle<SmsOrderRow>();
   if (error) throw error;
@@ -490,14 +530,13 @@ async function applyPatch(
  * describes the request that just ended.
  */
 async function settleRefund(
-  supabase: SupabaseClient,
   row: SmsOrderRow,
   status: SmsOrderStatus,
 ): Promise<void> {
   if (row.charge_delivered) return;
   if (status === "pending") return;
   await refundCharge(
-    supabase,
+    row.user_id,
     row.charge_ref,
     row.charged_idr,
     `Refund — request ${status}`,
@@ -553,8 +592,8 @@ export async function refreshOrders(
       const reported = live.code && live.code !== "0" ? live.code : null;
       const code = reported && reported !== row.code ? reported : null;
       if (code) {
-        await recordMessage(supabase, row.id, code, live.full_code || null);
-        const updated = await applyPatch(supabase, row.id, {
+        await recordMessage(row.id, code, live.full_code || null);
+        const updated = await applyPatch(userId, row.id, {
           status: "completed",
           code,
           full_sms: live.full_code || null,
@@ -568,13 +607,13 @@ export async function refreshOrders(
         // The first-SMS window lapsed while the number is still listed. It stays
         // resendable for days, so this is "no code yet", not a dead order.
         const status: SmsOrderStatus = row.code ? "completed" : "expired";
-        const updated = await applyPatch(supabase, row.id, {
+        const updated = await applyPatch(userId, row.id, {
           status,
           ...(await resendInfoPatch(row.order_id)),
           updated_at: now,
         });
         if (updated) patched.set(row.id, updated);
-        await settleRefund(supabase, row, status);
+        await settleRefund(row, status);
       }
       continue;
     }
@@ -617,13 +656,13 @@ export async function refreshOrders(
 
     if (next) {
       if (newCode) {
-        await recordMessage(supabase, row.id, newCode.code, newCode.fullSms);
+        await recordMessage(row.id, newCode.code, newCode.fullSms);
       }
-      const updated = await applyPatch(supabase, row.id, next);
+      const updated = await applyPatch(userId, row.id, next);
       if (updated) patched.set(row.id, updated);
       // A transition that carries a new code delivered what it was paid for;
       // `row` still shows the pre-patch flag, so skip it explicitly.
-      if (next.status && !newCode) await settleRefund(supabase, row, next.status);
+      if (next.status && !newCode) await settleRefund(row, next.status);
     }
   }
 
@@ -653,11 +692,11 @@ export async function cancelOrder(
   // currency, describing a refund to the operator's account, none of which is
   // the buyer's. What the buyer is told is what moved in THEIR wallet.
   await cancelSms(row.order_id);
-  const updated = await applyPatch(supabase, row.id, {
+  const updated = await applyPatch(userId, row.id, {
     status: "cancelled",
     updated_at: new Date().toISOString(),
   });
-  await settleRefund(supabase, row, "cancelled");
+  await settleRefund(row, "cancelled");
 
   // Mirrors settleRefund: a request that already delivered its code keeps its
   // money, so the wording must not promise a refund that didn't happen.
@@ -692,20 +731,33 @@ export async function resendOrder(
   // before the provider is asked, so an unpayable resend never happens.
   const chargeRef = randomUUID();
   const price = SMS_PRICE_IDR;
-  await debitBalance(supabase, {
+  await debitBalance(userId, {
     amountIdr: price,
     kind: "sms_order",
     reference: chargeRef,
     description: `${OPENAI_SERVICE_NAME} number — resend`,
   });
 
-  let message: string;
+  // Everything past the debit is inside one compensating block. It is not enough
+  // to refund a rejected provider call: if the resend SUCCEEDS and the patch that
+  // writes `charge_ref` onto the row then fails, the debit exists with nothing
+  // pointing at it, and no later code path can ever find it to refund.
   try {
-    message = await resendSms(row.order_id);
+    return await completeResend(userId, row, chargeRef, price);
   } catch (err) {
-    await refundCharge(supabase, chargeRef, price, "Refund — resend rejected");
+    await refundCharge(userId, chargeRef, price, "Refund — resend failed");
     throw err;
   }
+}
+
+/** The paid half of a resend: ask the provider, then hand the row to the new charge. */
+async function completeResend(
+  userId: string,
+  row: SmsOrderRow,
+  chargeRef: string,
+  price: number,
+): Promise<{ order: SmsOrderRow; message: string }> {
+  const message = await resendSms(row.order_id);
 
   // The delivered code stays on the row. It is still the latest code the user
   // has, and the refresh loop needs it to tell a genuinely new SMS from
@@ -724,7 +776,7 @@ export async function resendOrder(
   const expiresAt =
     windowMs > 0 ? new Date(Date.now() + windowMs).toISOString() : row.expires_at;
 
-  const updated = await applyPatch(supabase, row.id, {
+  const updated = await applyPatch(userId, row.id, {
     status: "pending",
     expires_at: expiresAt,
     // The new request owns the row's charge now, and has delivered nothing yet.
@@ -736,4 +788,58 @@ export async function resendOrder(
     updated_at: new Date().toISOString(),
   });
   return { order: updated ?? row, message };
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Reconciliation                                                             */
+/* -------------------------------------------------------------------------- */
+
+export type ReconcileSummary = {
+  /** Users who had at least one lapsed pending order to settle. */
+  users: number;
+  /** Orders that were still pending past their window when the sweep started. */
+  staleOrders: number;
+  /** Users whose sweep threw — logged, and retried on the next run. */
+  failures: number;
+};
+
+/**
+ * Settle orders whose window lapsed while nobody was watching.
+ *
+ * `refreshOrders` is the only thing that reconciles an order against SMSPool and
+ * releases its charge, and it only runs while a dashboard is open. Close the tab
+ * on a number that never receives its SMS and the money stays held indefinitely
+ * — it is the buyer's own money, so this is a correctness problem rather than a
+ * theft one, but it is still money we are sitting on.
+ *
+ * This runs the SAME path per affected user rather than a second settlement
+ * routine, so there is exactly one place that decides what a lapsed order owes.
+ * Reads go through the service role here because there is no session to scope
+ * them to; `refreshOrders` filters by `user_id` on every query regardless.
+ */
+export async function reconcileExpiredOrders(): Promise<ReconcileSummary> {
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("sms_order")
+    .select("user_id")
+    .eq("status", "pending")
+    .lt("expires_at", new Date().toISOString())
+    .returns<{ user_id: string }[]>();
+  if (error) throw error;
+
+  const userIds = [...new Set((data ?? []).map((row) => row.user_id))];
+  let failures = 0;
+
+  // Sequential on purpose: each user's sweep fans out to SMSPool, which
+  // rate-limits, and this job has no deadline worth racing it for.
+  for (const userId of userIds) {
+    try {
+      await refreshOrders(admin, userId);
+    } catch (err) {
+      failures += 1;
+      console.error("[sms] reconcile failed", userId, err);
+    }
+  }
+
+  return { users: userIds.length, staleOrders: data?.length ?? 0, failures };
 }

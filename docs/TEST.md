@@ -12,18 +12,28 @@ mengambil nomor SMS gratis dengan biaya ditanggung operator.
 > bisa dilakukan user tanpa menyentuh route API kita.
 > `NEXT_PUBLIC_SUPABASE_URL` bernilai `https://qdombcgzuhivuvfjivfq.supabase.co`.
 
-**Keterangan status:** 🔴 terbuka · 🟢 sudah ditutup
+**Keterangan status:** 🔴 terbuka · ⚪ perbaikan sudah ditulis, menunggu migrasi
+diterapkan dan uji ulang dijalankan · 🟢 ditutup dan terverifikasi
 
 | # | Keparahan | Temuan | Status |
 |---|-----------|--------|--------|
-| 1 | Critical | `credit_balance` / `debit_balance` bisa dipanggil langsung oleh user mana pun | 🔴 |
-| 2 | Critical | `sms_order` / `sms_message` bisa ditulis pemiliknya (memalsukan refund) | 🔴 |
-| 3 | High | Refund hanya jalan saat user membuka halaman (tak ada rekonsiliasi) | 🔴 |
-| 4 | High | Resend berbayar bisa menelan charge saat gagal separuh jalan | 🔴 |
-| 5 | Medium | `/api/sms/status` tanpa rate limit (membakar kuota provider) | 🔴 |
-| 6 | Medium | Tak ada idempotensi pada `sms_message` — dua tab menggelembungkan hitungan kode | 🔴 |
-| 7 | Low | Pemeriksaan `MAX_OPEN_ORDERS` tidak atomik | 🔴 |
-| 8 | Low | `getBalance` di halaman SMS tak dijaga — satu kegagalan baca membuat halaman 500 | 🔴 |
+| 1 | Critical | `credit_balance` / `debit_balance` bisa dipanggil langsung oleh user mana pun | 🟢 |
+| 2 | Critical | `sms_order` / `sms_message` bisa ditulis pemiliknya (memalsukan refund) | 🟢 |
+| 3 | High | Refund hanya jalan saat user membuka halaman (tak ada rekonsiliasi) | ⚪ |
+| 4 | High | Resend berbayar bisa menelan charge saat gagal separuh jalan | ⚪ |
+| 5 | Medium | `/api/sms/status` tanpa rate limit (membakar kuota provider) | ⚪ |
+| 6 | Medium | Tak ada idempotensi pada `sms_message` — dua tab menggelembungkan hitungan kode | ⚪ |
+| 7 | Low | Pemeriksaan `MAX_OPEN_ORDERS` tidak atomik | ⚪ |
+| 8 | Low | `getBalance` di halaman SMS tak dijaga — satu kegagalan baca membuat halaman 500 | ⚪ |
+
+Deskripsi tiap temuan di bawah dipertahankan apa adanya — itu catatan celah yang
+pernah ada. Apa yang berubah untuk menutupnya ada di bagian
+[Perbaikan yang diterapkan](#perbaikan-yang-diterapkan).
+
+Keempat migrasi sudah diterapkan ke database produksi pada 2026-07-21. Temuan 1
+dan 2 terverifikasi tertutup di sana. Sisanya (#3–#8) menunggu deploy kode
+dan/atau uji perilaku — perubahannya sudah lolos `tsc` dan `eslint`, tapi belum
+dijalankan sungguhan.
 
 ---
 
@@ -284,15 +294,55 @@ sekitarnya memilih tetap render dengan data terdegradasi saat gagal.
 
 ---
 
+## Perbaikan yang diterapkan
+
+Migrasi diterapkan satu per satu lewat `prisma db execute` — lihat
+`docs/MIGRATE.md` untuk urutannya. **Migrasi harus lebih dulu dari deploy kode:**
+`credit_balance` / `debit_balance` berganti tanda tangan.
+
+| # | Perubahan |
+|---|-----------|
+| 1 | `20260723000000_balance_server_only.sql` — signature lama di-`drop`, yang baru menerima `p_user uuid` menggantikan `auth.uid()`, dan `execute` dicabut dari `anon`+`authenticated` (bukan cuma `public`). `creditBalance`/`debitBalance` kini memakai `createAdminClient()` dan menerima `userId` yang di-resolve dari sesi. |
+| 2 | `20260723010000_sms_client_read_only.sql` — policy `for all` diganti `for select`. Seluruh tulis di `sms-service.ts` (`createOrder`, `applyPatch`, `recordMessage`) pindah ke service role, masing-masing di-scope `.eq("user_id", userId)`. |
+| 3 | `reconcileExpiredOrders()` + `GET /api/cron/sms-reconcile` (dijaga `CRON_SECRET`), memakai ulang `refreshOrders` supaya jalur penyelesaian tetap satu. |
+| 4 | Seluruh kerja pasca-debit di `resendOrder` masuk satu blok kompensasi (`completeResend`), jadi patch yang gagal setelah provider sukses tetap merefund. |
+| 5 | Bucket `ratelimits.smsStatus` (30/1m) dipasang di `/api/sms/status`. |
+| 6 | `20260723020000_sms_message_unique_code.sql` — unique parsial `(sms_order_id, code)`; `recordMessage` menelan `23505` sebagai no-op. |
+| 7 | `20260723030000_sms_open_order_cap.sql` — trigger `before insert` dengan `pg_advisory_xact_lock` per user. Pemeriksaan di aplikasi tetap ada sebagai jalur cepat; pelanggaran dari database dipetakan kembali ke 409 yang sama. |
+| 8 | `getBalance` di `dashboard/sms/page.tsx` dibungkus `try/catch`, fallback `0`, seperti `getAvailability`/`listOrders` di atasnya. |
+
+Yang sengaja **tidak** berubah: penjagaan `UNAUTHORIZED`/`INVALID_*` di dalam
+badan function tetap ada. Sekarang mereka bukan lagi satu-satunya penghalang —
+grant-nya yang menghentikan panggilan client — tapi masih menangkap bug server
+yang memanggilnya dengan argumen null atau ngawur.
+
+---
+
 ## Checklist uji ulang
 
 Jalankan setelah perbaikan diterapkan. Temuan 1 dan 2 yang harus berbalik dari
 🔴 ke 🟢 sebelum tool ini dibuka ke siapa pun selain operator.
 
-- [ ] **#1** `POST /rpc/credit_balance` dengan publishable key → `42501`, bukan `P0001`.
-- [ ] **#1** `POST /rpc/debit_balance` dengan publishable key → `42501`.
-- [ ] **#2** `PATCH /sms_order?id=eq.<baris sendiri>` menyetel `charge_delivered:false` → `42501`.
-- [ ] **#2** `POST /sms_order` dengan `user_id` sendiri → `42501`.
+- [x] **#1** `POST /rpc/credit_balance` dengan publishable key →
+      `42501 permission denied for function credit_balance`. ✅ 2026-07-21
+      Panggil dengan signature **baru** (sertakan `p_user`). Body lama balas
+      `PGRST202 Could not find the function` — itu lolos karena signature-nya
+      berubah, bukan karena grant-nya dicabut, jadi tidak membuktikan apa-apa.
+- [x] **#1** `POST /rpc/debit_balance` dengan publishable key → `42501`. ✅ 2026-07-21
+- [x] **#2** `PATCH /sms_order?id=eq.<baris>` menyetel `charge_delivered:false`
+      → `42501 permission denied for table sms_order`. ✅ 2026-07-21
+      Catatan: yang menghasilkan `42501` di sini adalah GRANT yang dicabut, bukan
+      RLS. RLS pada UPDATE hanya *menyaring* — tanpa policy UPDATE, 0 baris
+      terubah dan PostgREST balas `204`, sukses semu yang mudah disalahbaca.
+- [x] **#2** `POST /sms_order` dengan `user_id` sendiri → `42501`. ✅ 2026-07-21
+- [x] **#1/#2** Verifikasi katalog, bukan cuma respons HTTP: write grant
+      `anon`/`authenticated` di kedua tabel `NONE`; ACL kedua function hanya
+      `postgres` + `service_role`; policy tersisa `SELECT` saja. ✅ 2026-07-21
+      Ini yang membuktikan role **`authenticated`** ikut tertutup — probe curl di
+      atas berjalan sebagai `anon`, yang memang sudah terblokir sejak semula.
 - [ ] Alur normal tetap jalan ujung-ke-ujung (order, terima kode, cancel, resend) lewat route API.
 - [ ] **#4** Simulasikan `applyPatch` gagal setelah resend berhasil → saldo direfund.
 - [ ] **#5** Menghajar `/api/sms/status` mengembalikan `429` setelah bucket habis.
+- [ ] **#6** Dua tab dashboard membaca kode yang sama → `sms_message` hanya bertambah satu baris.
+- [ ] **#7** 4 order beruntun dalam satu detik → yang keempat `409 TOO_MANY_OPEN_ORDERS`.
+- [ ] **#3** `GET /api/cron/sms-reconcile` tanpa header → `401`; dengan `CRON_SECRET` → order kedaluwarsa milik user yang tabnya tertutup ikut direfund.

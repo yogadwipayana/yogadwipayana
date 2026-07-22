@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /**
  * Service-role Supabase client for SERVER-SIDE BACKGROUND WORK ONLY.
@@ -12,9 +12,12 @@ import { createClient } from "@supabase/supabase-js";
  * the owning user (e.g. .eq("user_id", userId) / .eq("id", ownedRowId)). Never
  * pass this client untrusted input without scoping.
  */
-let _admin: ReturnType<typeof createClient> | null = null;
+// Typed as the untyped-schema `SupabaseClient`, matching the cookie-scoped
+// client the services already take, so the same query can be written against
+// either one.
+let _admin: SupabaseClient | null = null;
 
-export function createAdminClient() {
+export function createAdminClient(): SupabaseClient {
   if (_admin) return _admin;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;

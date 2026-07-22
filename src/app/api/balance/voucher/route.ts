@@ -1,5 +1,5 @@
 import { ApiError, fail, ok } from "@/lib/server/api-response";
-import { requireUserWithClient } from "@/lib/server/auth-session";
+import { requireUser } from "@/lib/server/auth-session";
 import { redeemVoucher } from "@/lib/server/balance-service";
 import {
   checkRateLimit,
@@ -13,7 +13,7 @@ export const runtime = "nodejs";
 /** Redeem a voucher code and credit its rupiah value to the caller's wallet. */
 export async function POST(request: Request) {
   try {
-    const { user, supabase } = await requireUserWithClient();
+    const user = await requireUser();
     await checkRateLimit(
       ratelimits.balanceVoucher,
       getRateLimitIdentifier(user.id, getClientIp(request.headers)),
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
       throw new ApiError(400, "INVALID_CODE", "Voucher code is required.");
     }
 
-    const result = await redeemVoucher(supabase, user.email, code);
+    const result = await redeemVoucher(user.id, user.email, code);
     return ok(result);
   } catch (err) {
     return fail(err);

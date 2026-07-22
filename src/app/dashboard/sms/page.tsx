@@ -41,7 +41,14 @@ export default async function SmsPage({
     console.error("[sms] order list failed", err);
   }
 
-  const balanceIdr = await getBalance(supabase, user.id);
+  // Guarded like its neighbours: a momentary wallet read failure should degrade
+  // the panel, not 500 the whole tool. The client re-reads it on next refresh.
+  let balanceIdr = 0;
+  try {
+    balanceIdr = await getBalance(supabase, user.id);
+  } catch (err) {
+    console.error("[sms] balance lookup failed", err);
+  }
 
   return (
     <SmsWorkspace

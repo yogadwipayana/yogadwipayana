@@ -6,9 +6,20 @@
  * transaction, and the ledger's unique (kind, reference) index makes both
  * operations idempotent. Nothing here writes to the tables directly, and RLS
  * grants no INSERT/UPDATE, so a bug in this file cannot mint credit.
+ *
+ * Those two functions are NOT callable by the browser: EXECUTE is revoked from
+ * `anon` and `authenticated`, and they take the wallet's owner as an explicit
+ * `p_user` argument rather than reading `auth.uid()`. This module — running as
+ * the service role — is their only caller. That makes `userId` load-bearing:
+ * it must always come from the resolved session, never from a request body.
+ *
+ * Reads keep taking the caller's cookie-scoped client, so RLS still confines
+ * them to that user's own rows.
  */
 
 import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
+
+import { createAdminClient } from "@/utils/supabase/admin";
 
 import { ApiError } from "./api-response";
 import {
@@ -210,12 +221,17 @@ export type CreditResult = {
 /**
  * Add credit. Re-crediting the same reference is a no-op rather than an error,
  * which is what lets a refund be retried safely from more than one code path.
+ *
+ * `userId` must be the id resolved from the session — it names the wallet that
+ * grows, and the database no longer double-checks it against `auth.uid()`.
  */
 export async function creditBalance(
-  supabase: SupabaseClient,
+  userId: string,
   { amountIdr, kind, reference = null, description = null }: MovementArgs,
 ): Promise<CreditResult> {
-  const { data, error } = await supabase.rpc("credit_balance", {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("credit_balance", {
+    p_user: userId,
     p_amount: amountIdr,
     p_kind: kind,
     p_reference: reference,
@@ -223,7 +239,7 @@ export async function creditBalance(
   });
 
   if (isDuplicate(error)) {
-    return { balanceIdr: await currentBalance(supabase), duplicate: true };
+    return { balanceIdr: await currentBalance(userId), duplicate: true };
   }
   if (error) throw error;
   return { balanceIdr: Number(data ?? 0), duplicate: false };
@@ -235,10 +251,12 @@ export async function creditBalance(
  * pass it.
  */
 export async function debitBalance(
-  supabase: SupabaseClient,
+  userId: string,
   { amountIdr, kind, reference = null, description = null }: MovementArgs,
 ): Promise<number> {
-  const { data, error } = await supabase.rpc("debit_balance", {
+  const admin = createAdminClient();
+  const { data, error } = await admin.rpc("debit_balance", {
+    p_user: userId,
     p_amount: amountIdr,
     p_kind: kind,
     p_reference: reference,
@@ -258,11 +276,17 @@ export async function debitBalance(
   return Number(data ?? 0);
 }
 
-/** Balance read used after a duplicate credit, where the RPC returned nothing. */
-async function currentBalance(supabase: SupabaseClient): Promise<number> {
-  const { data, error } = await supabase
+/**
+ * Balance read used after a duplicate credit, where the RPC returned nothing.
+ *
+ * Runs on the service-role client, which bypasses RLS — the `user_id` filter is
+ * the only thing keeping this to one wallet, so it is not optional.
+ */
+async function currentBalance(userId: string): Promise<number> {
+  const { data, error } = await createAdminClient()
     .from("user_balance")
     .select("balance_idr")
+    .eq("user_id", userId)
     .maybeSingle<{ balance_idr: number }>();
   if (error) throw error;
   return data?.balance_idr ?? 0;
@@ -288,7 +312,7 @@ export type RedeemResult = {
  * and no balance.
  */
 export async function redeemVoucher(
-  supabase: SupabaseClient,
+  userId: string,
   email: string,
   rawCode: string,
 ): Promise<RedeemResult> {
@@ -312,7 +336,7 @@ export async function redeemVoucher(
   }
 
   try {
-    const { balanceIdr, duplicate } = await creditBalance(supabase, {
+    const { balanceIdr, duplicate } = await creditBalance(userId, {
       amountIdr: claimed.amountIdr,
       kind: "topup",
       reference: claimed.code,

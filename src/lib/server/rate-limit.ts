@@ -53,6 +53,9 @@ export const ratelimits = {
   // Each order spends real SMSPool credit, so this is deliberately tight.
   smsOrder: createRatelimit("ratelimit:sms-order", 5, "1m"),
   smsPoll: createRatelimit("ratelimit:sms-poll", 90, "1m"),
+  // Availability fans out to three SMSPool endpoints per call, so an unthrottled
+  // button press burns the operator's provider quota faster than anything else.
+  smsStatus: createRatelimit("ratelimit:sms-status", 30, "1m"),
   // Voucher codes are guessable in principle, so redemption is throttled harder
   // than a normal write.
   balanceVoucher: createRatelimit("ratelimit:balance-voucher", 10, "1m"),

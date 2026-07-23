@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
-import { PageBackdrop } from "@/components/ui/PageBackdrop";
 import { pageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = pageMetadata({
@@ -17,7 +16,6 @@ const UPDATED = "June 2026";
 export default function TermsPage() {
   return (
     <>
-      <PageBackdrop />
       <Navbar />
 
       <main className="flex-1">

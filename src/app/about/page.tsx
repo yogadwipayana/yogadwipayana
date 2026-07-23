@@ -17,7 +17,6 @@ import { Footer } from "@/components/layout/Footer";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbSchema, pageMetadata, personSchema } from "@/lib/seo";
 import { Button } from "@/components/ui/button";
-import { PageBackdrop } from "@/components/ui/PageBackdrop";
 import { Reveal } from "@/components/ui/Reveal";
 
 const figtree = Figtree({ subsets: ["latin"], display: "swap" });
@@ -27,12 +26,7 @@ export const metadata: Metadata = pageMetadata({
   description:
     "Who Yoga is and what this site is: a personal portfolio and the working hub for a small set of AI-powered developer tools, built and run in the open.",
   path: "/about",
-  keywords: [
-    "Yoga Dwipayana",
-    "software engineer portfolio",
-    "AI developer tools",
-    "indie developer",
-  ],
+  noIndex: true,
 });
 
 const PRINCIPLES = [
@@ -61,7 +55,7 @@ const TOOLS = [
     icon: Waypoints,
     name: "AI Router",
     blurb: "One OpenAI-compatible key for top models, billed pay as you go.",
-    href: "/ai",
+    href: "/store",
   },
   {
     icon: MessageSquare,
@@ -112,7 +106,6 @@ export default function About() {
           breadcrumbSchema([{ name: "About", path: "/about" }]),
         ]}
       />
-      <PageBackdrop />
       <Navbar />
 
       <main className="flex-1">
@@ -163,7 +156,7 @@ export default function About() {
                 </Link>
               </Button>
               <Button size="lg" variant="secondary" asChild>
-                <Link href="/ai">Get an API key</Link>
+                <Link href="/store">Get an API key</Link>
               </Button>
             </div>
           </div>
@@ -338,7 +331,7 @@ export default function About() {
                       </Link>
                     </Button>
                     <Button size="lg" variant="secondary" asChild>
-                      <Link href="/ai">Get an API key</Link>
+                      <Link href="/store">Get an API key</Link>
                     </Button>
                   </div>
                 </div>

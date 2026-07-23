@@ -8,6 +8,7 @@ import {
   KeyRound,
   MessageSquare,
   Server,
+  Smartphone,
   Terminal,
   Wallet,
   Waypoints,
@@ -15,13 +16,13 @@ import {
 
 import { ChatMockLive } from "./chat-mock";
 import { ImageMockLive } from "./image-mock";
+import { SmsMockLive } from "./sms-mock";
 import { VpsMockLive } from "./vps-mock";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbSchema, itemListSchema, pageMetadata } from "@/lib/seo";
 import { Button } from "@/components/ui/button";
-import { PageBackdrop } from "@/components/ui/PageBackdrop";
 import { ProviderIcon } from "@/components/ui/ProviderIcons";
 import { Reveal } from "@/components/ui/Reveal";
 
@@ -30,7 +31,7 @@ const figtree = Figtree({ subsets: ["latin"], display: "swap" });
 export const metadata: Metadata = pageMetadata({
   title: "Tools",
   description:
-    "A small set of tools that share one account, one key, and one billing balance: VPS Control, AI Router, Chat AI, and Image Studio.",
+    "A small set of tools that share one account, one key, and one billing balance: VPS Control, AI Router, Chat AI, Image Studio, and SMS OTP.",
   path: "/tools",
   keywords: [
     "AI router",
@@ -39,6 +40,8 @@ export const metadata: Metadata = pageMetadata({
     "browser SSH terminal",
     "AI chat",
     "AI image studio",
+    "SMS OTP verification",
+    "disposable phone number",
     "developer tools",
   ],
 });
@@ -66,6 +69,12 @@ const TOOL_SCHEMA = [
     name: "Image Studio",
     description: "Generate images from text prompts and keep them in one gallery.",
     path: "/tools#image",
+  },
+  {
+    name: "SMS OTP",
+    description:
+      "Rent a disposable number and receive the OpenAI verification code for Codex, billed per number.",
+    path: "/tools#sms",
   },
 ];
 
@@ -146,6 +155,23 @@ const TOOLS: ToolSection[] = [
       "Paginated history grid with delete",
       "Reload any past image as a reference",
       "Shared backend with Chat AI's image mode",
+    ],
+  },
+  {
+    id: "sms",
+    icon: Smartphone,
+    tag: "Verification",
+    name: "SMS OTP",
+    blurb:
+      "Rent a disposable number and receive the OpenAI verification code for Codex. Live provider stock and success rate up front, billed per number from the same wallet.",
+    href: "/dashboard/sms",
+    features: [
+      "One-tap disposable number rental",
+      "Codes arrive live with a ticking timer",
+      "Cancel before delivery for a full refund",
+      "Numbers stay reusable for about 120 hours",
+      "Provider stock and success rate on screen",
+      "Flat Rp5.000 per number from your balance",
     ],
   },
 ];
@@ -266,7 +292,7 @@ function RouterMock() {
         </tbody>
       </table>
       <Link
-        href="/ai"
+        href="/store"
         className="flex items-center justify-between border-t border-white/[0.08] px-4 py-3 text-[13px] text-white/60 transition-colors hover:text-white"
       >
         See the full model list and pricing
@@ -312,11 +338,24 @@ function ImageMock() {
   );
 }
 
+/** SMS OTP — a compact card that replays itself: a number is reserved, waits on
+    its SMS with a live countdown, then the verification code lands in green. */
+function SmsMock() {
+  return (
+    <div className="mx-auto w-full max-w-md">
+      <MockWindow label="sms — otp" badge="Verification">
+        <SmsMockLive />
+      </MockWindow>
+    </div>
+  );
+}
+
 const MOCKUPS: Record<string, () => React.ReactElement> = {
   ai: RouterMock,
   chat: ChatMock,
   vps: VpsMock,
   image: ImageMock,
+  sms: SmsMock,
 };
 
 export default function Tools() {
@@ -328,7 +367,6 @@ export default function Tools() {
           breadcrumbSchema([{ name: "Tools", path: "/tools" }]),
         ]}
       />
-      <PageBackdrop />
       <Navbar />
 
       <main className="flex-1">
@@ -349,7 +387,7 @@ export default function Tools() {
                 className="rise-in mt-4 text-balance text-4xl font-semibold leading-[1.08] tracking-[-0.02em] text-white sm:text-5xl"
                 style={{ animationDelay: "60ms" }}
               >
-                Four tools, one place to run them.
+                Five tools, one place to run them.
               </h1>
 
               <p

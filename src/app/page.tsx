@@ -24,7 +24,6 @@ import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { CopyValue } from "@/components/ui/CopyValue";
 import { HeroBackdrop } from "@/components/ui/HeroBackdrop";
-import { PageBackdrop } from "@/components/ui/PageBackdrop";
 import { ProviderIcon } from "@/components/ui/ProviderIcons";
 import { Reveal } from "@/components/ui/Reveal";
 
@@ -70,7 +69,7 @@ const TOOLS: ToolCard[] = [
     tag: "Models",
     blurb:
       "One OpenAI-compatible key that reaches GPT and Claude alike. Fallback chains, per-token billing, and live usage tracking.",
-    href: "/ai",
+    href: "/store",
     span: "lg:col-span-3",
     image: "/images/tools/router.png",
     accent: true,
@@ -107,7 +106,7 @@ const TOOLS: ToolCard[] = [
     tag: "For sale",
     blurb:
       "Router vouchers, verified ChatGPT Plus, and Kiro dev accounts, all ready to buy.",
-    href: "/ai",
+    href: "/store",
     span: "lg:col-span-2",
     image: "/images/tools/store.png",
   },
@@ -294,7 +293,6 @@ export default async function Home() {
   return (
     <div className={`${figtree.className} flex flex-1 flex-col tracking-[0]`}>
       <JsonLd schema={[websiteSchema(), personSchema()]} />
-      <PageBackdrop />
       <Navbar />
 
       <main className="flex-1">
@@ -313,7 +311,7 @@ export default async function Home() {
             <div className="mx-auto flex w-full max-w-4xl flex-col items-center text-center">
               {/* Announcement pill → /ai */}
               <Link
-                href="/ai"
+                href="/store"
                 className="rise-in group inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-white/[0.04] py-1 pl-1.5 pr-3 text-[13px] text-white/70 transition-colors hover:border-[#3ecf8e]/30 hover:text-white"
               >
                 <span className="inline-flex items-center rounded-full bg-[#3ecf8e]/12 px-2 py-0.5 text-[12px] font-medium text-[#3ecf8e]">
@@ -339,14 +337,14 @@ export default async function Home() {
               >
                 One{" "}
                 <Link
-                  href="/ai"
+                  href="/store"
                   className="text-white underline decoration-white/30 underline-offset-4 transition-colors hover:decoration-white"
                 >
                   key
                 </Link>
                 ,{" "}
                 <Link
-                  href="/ai"
+                  href="/store"
                   className="text-white underline decoration-white/30 underline-offset-4 transition-colors hover:decoration-white"
                 >
                   pay as you go
@@ -363,7 +361,7 @@ export default async function Home() {
                   className="shadow-[0_0_28px_rgba(62,207,142,0.3)]"
                   asChild
                 >
-                  <Link href="/ai">Get an API key</Link>
+                  <Link href="/store">Get an API key</Link>
                 </Button>
                 <Button size="lg" variant="secondary" asChild>
                   <Link href="/tools">
@@ -722,13 +720,13 @@ export default async function Home() {
 
                 <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
                   <Button asChild>
-                    <Link href="/ai">
+                    <Link href="/store">
                       Get a key
                       <ArrowRight aria-hidden />
                     </Link>
                   </Button>
                   <Button variant="outline" asChild>
-                    <Link href="/ai">See model pricing</Link>
+                    <Link href="/ai#models">See model pricing</Link>
                   </Button>
                 </div>
               </div>
@@ -803,7 +801,7 @@ export default async function Home() {
                   </p>
                 </div>
                 <Button variant="outline" size="sm" asChild>
-                  <Link href="/ai">
+                  <Link href="/store">
                     Visit the store
                     <ArrowRight aria-hidden />
                   </Link>
@@ -811,7 +809,7 @@ export default async function Home() {
               </div>
             </Reveal>
 
-            <ul className="mt-10 grid grid-cols-1 gap-3 md:grid-cols-3">
+            <ul className="mt-10 grid grid-cols-1 items-stretch gap-4 md:grid-cols-3">
               {STORE.map((item, i) => {
                 const Icon = item.icon;
                 const featured = "featured" in item && item.featured;
@@ -819,57 +817,81 @@ export default async function Home() {
                   <li key={item.name}>
                     <Reveal delay={i * 80} className="h-full">
                       <Link
-                        href="/ai"
-                        className={`card-sheen group flex h-full flex-col rounded-xl border p-6 transition-all duration-200 hover:-translate-y-0.5 ${
+                        href="/store"
+                        className={`card-sheen group relative flex h-full flex-col overflow-hidden rounded-2xl border p-6 transition-all duration-200 hover:-translate-y-1 sm:p-7 ${
                           featured
-                            ? "border-[#3ecf8e]/30 bg-[#3ecf8e]/[0.04] hover:border-[#3ecf8e]/50"
-                            : "border-white/[0.08] bg-[#1c1c1c] hover:border-white/20"
+                            ? "border-[#3ecf8e]/40 bg-[#101d17] shadow-[0_1px_0_0_rgba(62,207,142,0.12)_inset,0_24px_60px_-32px_rgba(62,207,142,0.45)] hover:border-[#3ecf8e]/60 hover:shadow-[0_1px_0_0_rgba(62,207,142,0.16)_inset,0_28px_70px_-30px_rgba(62,207,142,0.55)] md:-my-2"
+                            : "border-white/[0.08] bg-[#1c1c1c] hover:border-white/20 hover:shadow-[0_24px_60px_-40px_rgba(0,0,0,0.8)]"
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-3">
+                        {featured && (
                           <span
                             aria-hidden
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-[#3ecf8e]"
+                            className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-[#3ecf8e]/20 blur-3xl"
+                          />
+                        )}
+
+                        <div className="relative flex items-center justify-between gap-3">
+                          <span
+                            aria-hidden
+                            className={`inline-flex h-10 w-10 items-center justify-center rounded-xl border ${
+                              featured
+                                ? "border-[#3ecf8e]/30 bg-[#3ecf8e]/10 text-[#3ecf8e]"
+                                : "border-white/[0.08] bg-white/[0.03] text-[#3ecf8e]"
+                            }`}
                           >
-                            <Icon className="h-4 w-4" />
+                            <Icon className="h-[18px] w-[18px]" />
                           </span>
                           {"badge" in item && (
-                            <span className="rounded-full border border-[#3ecf8e]/20 bg-[#3ecf8e]/10 px-2.5 py-0.5 text-[11px] font-medium text-[#3ecf8e]">
+                            <span className="inline-flex items-center gap-1 rounded-full border border-[#3ecf8e]/25 bg-[#3ecf8e]/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide text-[#3ecf8e]">
+                              <Sparkles className="h-3 w-3" aria-hidden />
                               {item.badge}
                             </span>
                           )}
                         </div>
-                        <h3 className="mt-4 text-lg font-medium text-white">
+
+                        <h3 className="relative mt-5 text-lg font-medium text-white">
                           {item.name}
                         </h3>
-                        <p className="mt-1 text-[14px] leading-relaxed text-white/55">
+                        <p className="relative mt-1.5 text-[13px] leading-relaxed text-white/55">
                           {item.detail}
                         </p>
-                        <ul className="mt-4 space-y-2">
+
+                        <div className="relative mt-5 flex items-baseline gap-1.5">
+                          <span className="text-[32px] font-semibold leading-none tracking-[-0.03em] text-white tabular-nums">
+                            {item.price}
+                          </span>
+                          <span className="text-[13px] text-white/40">
+                            {item.priceNote}
+                          </span>
+                        </div>
+
+                        <div className="relative my-6 h-px w-full bg-white/[0.07]" />
+
+                        <ul className="relative space-y-3">
                           {item.features.map((feature) => (
                             <li
                               key={feature}
-                              className="flex items-start gap-2 text-[13px] text-white/60"
+                              className="flex items-start gap-2.5 text-[13px] text-white/70"
                             >
-                              <Check
-                                className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#3ecf8e]"
+                              <span
                                 aria-hidden
-                              />
+                                className={`mt-px inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${
+                                  featured
+                                    ? "bg-[#3ecf8e]/15 text-[#3ecf8e]"
+                                    : "bg-white/[0.06] text-[#3ecf8e]"
+                                }`}
+                              >
+                                <Check className="h-2.5 w-2.5" aria-hidden />
+                              </span>
                               {feature}
                             </li>
                           ))}
                         </ul>
-                        <div className="mt-auto pt-6">
-                          <div className="flex items-baseline gap-1.5">
-                            <span className="text-2xl font-semibold tracking-[-0.02em] text-white tabular-nums">
-                              {item.price}
-                            </span>
-                            <span className="text-[13px] text-white/40">
-                              {item.priceNote}
-                            </span>
-                          </div>
+
+                        <div className="relative mt-auto pt-7">
                           <span
-                            className={`mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-md px-4 py-2 text-[14px] font-medium transition-colors ${
+                            className={`inline-flex w-full items-center justify-center gap-1.5 rounded-lg px-4 py-2.5 text-[14px] font-medium transition-colors ${
                               featured
                                 ? "bg-[#3ecf8e] text-[#171717] group-hover:bg-[#34b27b]"
                                 : "border border-white/[0.14] bg-white/[0.03] text-white group-hover:border-white/25 group-hover:bg-white/[0.06]"
@@ -907,7 +929,7 @@ export default async function Home() {
                     </h2>
                     <p className="mt-3 text-base leading-relaxed text-white/60">
                       Create an account to unlock the router, chat, VPS console,
-                      and image studio, or read a bit about who I am first.
+                      and image studio.
                     </p>
                   </div>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -916,9 +938,6 @@ export default async function Home() {
                         Create an account
                         <ArrowRight aria-hidden />
                       </Link>
-                    </Button>
-                    <Button size="lg" variant="secondary" asChild>
-                      <Link href="/about">About me</Link>
                     </Button>
                   </div>
                 </div>

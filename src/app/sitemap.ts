@@ -14,8 +14,8 @@ const ROUTES: {
 }[] = [
   { path: "/", priority: 1, changeFrequency: "weekly" },
   { path: "/tools", priority: 0.9, changeFrequency: "weekly" },
-  { path: "/ai", priority: 0.9, changeFrequency: "daily" },
-  { path: "/about", priority: 0.7, changeFrequency: "monthly" },
+  { path: "/store", priority: 0.9, changeFrequency: "daily" },
+  { path: "/ai", priority: 0.8, changeFrequency: "daily" },
   { path: "/privacy", priority: 0.3, changeFrequency: "yearly" },
   { path: "/terms", priority: 0.3, changeFrequency: "yearly" },
 ];

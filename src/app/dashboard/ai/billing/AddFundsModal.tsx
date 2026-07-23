@@ -8,9 +8,8 @@ import { ExternalLink, Ticket, X } from "lucide-react";
 /*  Constants                                                                  */
 /* -------------------------------------------------------------------------- */
 
-const VOUCHER_URL = `https://wa.me/6287889640714?text=${encodeURIComponent(
-  "Hi, I want to buy an AI Router credit voucher — clicked from the billing dashboard.",
-)}`;
+const VOUCHER_URL =
+  "https://marketku.id/ai/product/ai-router-opus-4-8-sonnet-5-dan-gpt-5-6-c10f5333-679c-405b-a4bc-f746e318bf46";
 
 /* -------------------------------------------------------------------------- */
 /*  Shared modal pieces                                                        */
@@ -173,7 +172,7 @@ export default function AddFundsModal() {
                     target="_blank" rel="noopener noreferrer"
                     className="mt-2 inline-flex items-center gap-1 text-[11px] text-white/40 hover:text-white/70 transition-colors"
                   >
-                    Don&apos;t have one? Order a voucher via WhatsApp
+                    Don&apos;t have one? Order a voucher
                     <ExternalLink className="h-3 w-3" />
                   </a>
                   {error && <p role="alert" className="mt-1.5 text-[12px] text-red-400">{error}</p>}

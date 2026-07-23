@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { KeyRound, LayoutGrid, UserRound, Wallet } from "lucide-react";
 
 import { Navbar } from "@/components/layout/Navbar";
-import { PageBackdrop } from "@/components/ui/PageBackdrop";
 
 const FEATURES = [
   {
@@ -52,7 +51,6 @@ export function AuthShell({
 }: AuthShellProps) {
   return (
     <>
-      <PageBackdrop />
       <Navbar />
       <main className="grid flex-1 lg:grid-cols-2">
         {/* Brand / feature panel */}

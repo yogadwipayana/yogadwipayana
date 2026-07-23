@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 
 import { Navbar } from "@/components/layout/Navbar";
-import { PageBackdrop } from "@/components/ui/PageBackdrop";
 import { pageMetadata } from "@/lib/seo";
 
 import ConsoleClient from "./console-client";
@@ -18,7 +17,6 @@ export const metadata: Metadata = pageMetadata({
 export default function ConsolePage() {
   return (
     <>
-      <PageBackdrop />
       <Navbar />
       <ConsoleClient />
     </>

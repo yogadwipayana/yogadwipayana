@@ -409,12 +409,14 @@ function KeyGate({
 
           <p className="mt-6 text-center text-[12px] text-white/35">
             Need a key?{" "}
-            <Link
-              href="/ai"
+            <a
+              href="https://marketku.id/ai/product/api-model-frontier-opus-4-8-sonnet-5-dan-gpt-5-6-sol-terra-luna-a4bf07d2-85a0-49ed-a9b8-766703a9c75e"
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-white/60 underline decoration-white/20 underline-offset-2 transition-colors hover:text-white"
             >
               Visit the AI store
-            </Link>
+            </a>
           </p>
         </div>
       </div>

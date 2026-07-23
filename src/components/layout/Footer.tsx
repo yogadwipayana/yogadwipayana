@@ -4,8 +4,7 @@ import { Logo } from "@/components/ui/Logo";
 
 const LINKS = [
   { label: "Tools", href: "/tools" },
-  { label: "AI", href: "/ai" },
-  { label: "About", href: "/about" },
+  { label: "AI", href: "/store" },
 ] as const;
 
 export function Footer() {

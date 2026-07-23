@@ -15,9 +15,9 @@ type NavItem = {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Home" },
-  { href: "/about", label: "About" },
   { href: "/tools", label: "Tools" },
-  { href: "/ai", label: "AI" },
+  { href: "/store", label: "Store" },
+  { href: "/ai", label: "AI Router" },
 ];
 
 type NavbarClientProps = {

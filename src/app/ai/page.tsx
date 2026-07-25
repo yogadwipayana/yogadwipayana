@@ -107,6 +107,14 @@ const MODELS = [
     output: "$10.00",
   },
   {
+    name: "Claude Opus 5",
+    id: "claude-opus-5",
+    provider: "Anthropic",
+    context: "1,000,000",
+    input: "$5.00",
+    output: "$25.00",
+  },
+  {
     name: "Claude Opus 4.8",
     id: "claude-opus-4.8",
     provider: "Anthropic",

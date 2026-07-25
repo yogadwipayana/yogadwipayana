@@ -208,6 +208,12 @@ const MODELS = [
     io: "$5.00 / $25.00",
   },
   {
+    name: "Claude Opus 5",
+    provider: "Anthropic",
+    context: "1,000,000",
+    io: "$5.00 / $25.00",
+  },
+  {
     name: "Claude Sonnet 5",
     provider: "Anthropic",
     context: "1,000,000",

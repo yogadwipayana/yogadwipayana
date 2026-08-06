@@ -114,27 +114,38 @@ const TOOLS: ToolCard[] = [
 
 const MARQUEE_MODELS = [
   { name: "GPT 5.6 Sol", provider: "OpenAI" },
+  { name: "Claude Fable 5", provider: "Anthropic" },
+  { name: "Kimi K3", provider: "Moonshot AI" },
   { name: "Claude Opus 5", provider: "Anthropic" },
+  { name: "GLM 5.2", provider: "Z.ai" },
   { name: "Claude Opus 4.8", provider: "Anthropic" },
   { name: "GPT 5.6 Terra", provider: "OpenAI" },
   { name: "Claude Sonnet 5", provider: "Anthropic" },
   { name: "GPT 5.6 Luna", provider: "OpenAI" },
   { name: "Claude Opus 4.7", provider: "Anthropic" },
   { name: "GPT 5.5", provider: "OpenAI" },
+  { name: "DeepSeek V4 Pro", provider: "DeepSeek" },
   { name: "Claude Sonnet 4.6", provider: "Anthropic" },
+  { name: "Qwen3.8 Max", provider: "Qwen" },
+  { name: "MiniMax M3", provider: "MiniMax" },
+  { name: "DeepSeek V4 Flash", provider: "DeepSeek" },
 ] as const;
 
-/** OpenAI's mono mark inherits this tint; Claude ships its own brand color. */
+/** Mono marks inherit this tint; Claude and Kimi ship their own brand colors. */
 function providerTint(provider: string) {
   return provider === "Anthropic" ? "" : "text-white/80";
 }
 
 const ROUTER_MODELS = [
+  { name: "Claude Fable 5", provider: "Anthropic", io: "$10 / $50" },
   { name: "GPT 5.6 Sol", provider: "OpenAI", io: "$5 / $30" },
   { name: "Claude Opus 5", provider: "Anthropic", io: "$5 / $25" },
   { name: "Claude Opus 4.8", provider: "Anthropic", io: "$5 / $25" },
   { name: "Claude Sonnet 5", provider: "Anthropic", io: "$2 / $10" },
+  { name: "Kimi K3", provider: "Moonshot AI", io: "$2.50 / $14" },
+  { name: "GLM 5.2", provider: "Z.ai", io: "$1.20 / $3" },
   { name: "GPT 5.6 Luna", provider: "OpenAI", io: "$1 / $6" },
+  { name: "DeepSeek V4 Flash", provider: "DeepSeek", io: "$0.09 / $0.18" },
 ] as const;
 
 const STORE = [

@@ -196,6 +196,12 @@ const SHARED = [
 
 const MODELS = [
   {
+    name: "Claude Fable 5",
+    provider: "Anthropic",
+    context: "1,000,000",
+    io: "$10.00 / $50.00",
+  },
+  {
     name: "GPT 5.6 Sol",
     provider: "OpenAI",
     context: "1,050,000",
@@ -220,14 +226,32 @@ const MODELS = [
     io: "$2.00 / $10.00",
   },
   {
+    name: "Kimi K3",
+    provider: "Moonshot AI",
+    context: "1,000,000",
+    io: "$2.50 / $14.00",
+  },
+  {
+    name: "GLM 5.2",
+    provider: "Z.ai",
+    context: "1,000,000",
+    io: "$1.20 / $3.00",
+  },
+  {
     name: "GPT 5.6 Luna",
     provider: "OpenAI",
     context: "1,050,000",
     io: "$1.00 / $6.00",
   },
+  {
+    name: "DeepSeek V4 Flash",
+    provider: "DeepSeek",
+    context: "1,000,000",
+    io: "$0.09 / $0.18",
+  },
 ] as const;
 
-/** OpenAI's mono mark inherits this tint; Claude ships its own brand color. */
+/** Mono marks inherit this tint; Claude and Kimi ship their own brand colors. */
 function providerTint(provider: string) {
   return provider === "Anthropic" ? "" : "text-white/80";
 }

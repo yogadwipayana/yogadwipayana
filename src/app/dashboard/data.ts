@@ -172,11 +172,18 @@ export const AI_MODELS: AiModel[] = [
   { slug: "gpt-5.6-terra",    name: "GPT 5.6 Terra",    provider: "OpenAI",    providerCode: "OA", contextWindow: "1,050,000", inputPrice: "$2.50",  outputPrice: "$15.00", modelId: "gpt-5.6-terra" },
   { slug: "gpt-5.6-luna",     name: "GPT 5.6 Luna",     provider: "OpenAI",    providerCode: "OA", contextWindow: "1,050,000", inputPrice: "$1.00",  outputPrice: "$6.00",  modelId: "gpt-5.6-luna" },
   { slug: "gpt-5.5",          name: "GPT 5.5",          provider: "OpenAI",    providerCode: "OA", contextWindow: "1,000,000", inputPrice: "$5.00",  outputPrice: "$30.00", modelId: "gpt-5.5" },
+  { slug: "claude-fable-5",   name: "Claude Fable 5",   provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$10.00", outputPrice: "$50.00", modelId: "claude-fable-5" },
   { slug: "claude-sonnet-5",  name: "Claude Sonnet 5",  provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$2.00",  outputPrice: "$10.00", modelId: "claude-sonnet-5" },
   { slug: "claude-opus-5",    name: "Claude Opus 5",    provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$5.00",  outputPrice: "$25.00", modelId: "claude-opus-5" },
   { slug: "claude-opus-4.8",  name: "Claude Opus 4.8",  provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$5.00",  outputPrice: "$25.00", modelId: "claude-opus-4.8" },
   { slug: "claude-opus-4.7",  name: "Claude Opus 4.7",  provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$5.00",  outputPrice: "$25.00", modelId: "claude-opus-4.7" },
   { slug: "claude-sonnet-4.6", name: "Claude Sonnet 4.6", provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$3.00",  outputPrice: "$15.00", modelId: "claude-sonnet-4.6" },
+  { slug: "kimi-k3",          name: "Kimi K3",          provider: "Moonshot AI", providerCode: "MS", contextWindow: "1,000,000", inputPrice: "$2.50",  outputPrice: "$14.00", modelId: "kimi-k3" },
+  { slug: "glm-5.2",          name: "GLM 5.2",          provider: "Z.ai",      providerCode: "ZA", contextWindow: "1,000,000", inputPrice: "$1.20",  outputPrice: "$3.00",  modelId: "glm-5.2" },
+  { slug: "deepseek-v4-pro",  name: "DeepSeek V4 Pro",  provider: "DeepSeek",  providerCode: "DS", contextWindow: "1,000,000", inputPrice: "$0.435", outputPrice: "$0.87",  modelId: "deepseek-v4-pro" },
+  { slug: "deepseek-v4-flash", name: "DeepSeek V4 Flash", provider: "DeepSeek", providerCode: "DS", contextWindow: "1,000,000", inputPrice: "$0.09", outputPrice: "$0.18",  modelId: "deepseek-v4-flash" },
+  { slug: "minimax-m3",       name: "MiniMax M3",       provider: "MiniMax",   providerCode: "MM", contextWindow: "1,000,000", inputPrice: "$0.30",  outputPrice: "$1.20",  modelId: "minimax-m3" },
+  { slug: "qwen3.8-max",      name: "Qwen3.8 Max",      provider: "Qwen",      providerCode: "QW", contextWindow: "1,000,000", inputPrice: "$2.00",  outputPrice: "$6.00",  modelId: "qwen3.8-max" },
 ];
 
 /* -------------------------------------------------------------------------- */

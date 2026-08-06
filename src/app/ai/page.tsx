@@ -12,7 +12,7 @@ import { ProviderIcon } from "@/components/ui/ProviderIcons";
 import { Reveal } from "@/components/ui/Reveal";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbSchema, pageMetadata } from "@/lib/seo";
-import { ModelIdCopy } from "./ModelIdCopy";
+import { ModelTable, type PricingModel } from "./ModelTable";
 
 const figtree = Figtree({ subsets: ["latin"], display: "swap" });
 
@@ -65,78 +65,160 @@ async function getEnabledModelIds(): Promise<Set<string>> {
   }
 }
 
-const MODELS = [
+/**
+ * Models the `auto` combo tries, in order — the router moves to the next one
+ * when the previous errors. Ids drive its availability badge, names are what
+ * the page shows.
+ */
+const AUTO_CHAIN = [
+  { id: "claude-opus-5", name: "Claude Opus 5", provider: "Anthropic" },
+  { id: "gpt-5.6-sol", name: "GPT 5.6 Sol", provider: "OpenAI" },
+  { id: "kimi-k3", name: "Kimi K3", provider: "Moonshot AI" },
+] as const;
+
+/**
+ * Context windows in tokens and prices in USD per million tokens — kept
+ * numeric so the table can sort on them and format at render time. A null
+ * price means the row bills at whatever model its fallback chain lands on.
+ */
+const MODELS: Omit<PricingModel, "available">[] = [
+  {
+    name: "Auto",
+    id: "auto",
+    provider: "Fallback chain",
+    // Every model in the chain carries at least a 1M window.
+    context: 1_000_000,
+    input: null,
+    output: null,
+    fallback: AUTO_CHAIN.map((m) => m.name),
+  },
   {
     name: "GPT 5.6 Sol",
     id: "gpt-5.6-sol",
     provider: "OpenAI",
-    context: "1,050,000",
-    input: "$5.00",
-    output: "$30.00",
+    context: 1_050_000,
+    input: 5,
+    output: 30,
   },
   {
     name: "GPT 5.6 Terra",
     id: "gpt-5.6-terra",
     provider: "OpenAI",
-    context: "1,050,000",
-    input: "$2.50",
-    output: "$15.00",
+    context: 1_050_000,
+    input: 2.5,
+    output: 15,
   },
   {
     name: "GPT 5.6 Luna",
     id: "gpt-5.6-luna",
     provider: "OpenAI",
-    context: "1,050,000",
-    input: "$1.00",
-    output: "$6.00",
+    context: 1_050_000,
+    input: 1,
+    output: 6,
   },
   {
     name: "GPT 5.5",
     id: "gpt-5.5",
     provider: "OpenAI",
-    context: "1,000,000",
-    input: "$5.00",
-    output: "$30.00",
+    context: 1_000_000,
+    input: 5,
+    output: 30,
+  },
+  {
+    name: "Claude Fable 5",
+    id: "claude-fable-5",
+    provider: "Anthropic",
+    context: 1_000_000,
+    input: 10,
+    output: 50,
   },
   {
     name: "Claude Sonnet 5",
     id: "claude-sonnet-5",
     provider: "Anthropic",
-    context: "1,000,000",
-    input: "$2.00",
-    output: "$10.00",
+    context: 1_000_000,
+    input: 2,
+    output: 10,
   },
   {
     name: "Claude Opus 5",
     id: "claude-opus-5",
     provider: "Anthropic",
-    context: "1,000,000",
-    input: "$5.00",
-    output: "$25.00",
+    context: 1_000_000,
+    input: 5,
+    output: 25,
   },
   {
     name: "Claude Opus 4.8",
     id: "claude-opus-4.8",
     provider: "Anthropic",
-    context: "1,000,000",
-    input: "$5.00",
-    output: "$25.00",
+    context: 1_000_000,
+    input: 5,
+    output: 25,
   },
   {
     name: "Claude Opus 4.7",
     id: "claude-opus-4.7",
     provider: "Anthropic",
-    context: "1,000,000",
-    input: "$5.00",
-    output: "$25.00",
+    context: 1_000_000,
+    input: 5,
+    output: 25,
   },
   {
     name: "Claude Sonnet 4.6",
     id: "claude-sonnet-4.6",
     provider: "Anthropic",
-    context: "1,000,000",
-    input: "$3.00",
-    output: "$15.00",
+    context: 1_000_000,
+    input: 3,
+    output: 15,
+  },
+  {
+    name: "Kimi K3",
+    id: "kimi-k3",
+    provider: "Moonshot AI",
+    context: 1_000_000,
+    input: 2.5,
+    output: 14,
+  },
+  {
+    name: "GLM 5.2",
+    id: "glm-5.2",
+    provider: "Z.ai",
+    context: 1_000_000,
+    input: 1.2,
+    output: 3,
+  },
+  {
+    name: "DeepSeek V4 Pro",
+    id: "deepseek-v4-pro",
+    provider: "DeepSeek",
+    context: 1_000_000,
+    input: 0.435,
+    output: 0.87,
+  },
+  {
+    name: "DeepSeek V4 Flash",
+    id: "deepseek-v4-flash",
+    provider: "DeepSeek",
+    context: 1_000_000,
+    input: 0.09,
+    output: 0.18,
+  },
+  {
+    name: "MiniMax M3",
+    id: "minimax-m3",
+    provider: "MiniMax",
+    context: 1_000_000,
+    input: 0.3,
+    output: 1.2,
+  },
+  {
+    name: "Qwen3.8 Max",
+    id: "qwen3.8-max",
+    provider: "Qwen",
+    context: 1_000_000,
+    input: 2,
+    output: 6,
   },
 ];
 
@@ -144,7 +226,10 @@ export default async function AiRouterPricing() {
   const enabledModelIds = await getEnabledModelIds();
   const models = MODELS.map((model) => ({
     ...model,
-    available: enabledModelIds.has(model.id),
+    // A fallback combo still serves traffic as long as one of its legs is up.
+    available: model.fallback
+      ? AUTO_CHAIN.some((m) => enabledModelIds.has(m.id))
+      : enabledModelIds.has(model.id),
   }));
   return (
     <div className={`${figtree.className} flex flex-1 flex-col tracking-[0]`}>
@@ -232,83 +317,49 @@ export default async function AiRouterPricing() {
             </Reveal>
 
             <Reveal delay={140}>
-              <div className="mt-4 overflow-hidden rounded-xl border border-white/[0.08] bg-[#171717]">
-                <table className="w-full table-fixed text-left text-[13px] sm:text-sm">
-                  <thead>
-                    <tr className="border-b border-white/[0.08] text-white/40">
-                      <th className="w-[30%] px-4 py-3 font-medium sm:w-[24%] sm:px-5">
-                        Model
-                      </th>
-                      <th className="w-[26%] px-4 py-3 font-medium sm:w-[22%] sm:px-5">
-                        Model ID
-                      </th>
-                      <th className="hidden w-[16%] px-5 py-3 font-medium sm:table-cell">
-                        Context
-                      </th>
-                      <th className="w-[24%] px-4 py-3 text-right font-medium sm:w-[20%] sm:px-5">
-                        In / Out
-                        <span className="text-white/25"> /M</span>
-                      </th>
-                      <th className="w-[20%] px-4 py-3 text-right font-medium sm:w-[18%] sm:px-5">
-                        Status
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {models.map((model) => (
-                      <tr
-                        key={model.name}
-                        className="border-b border-white/[0.06] transition-colors last:border-0 hover:bg-white/[0.02]"
-                      >
-                        <td className="px-4 py-3.5 font-medium text-white sm:px-5">
-                          <span className="flex items-center gap-2.5">
+              <div className="mt-4 rounded-lg border border-[#3ecf8e]/15 bg-[#3ecf8e]/[0.04] px-4 py-3.5">
+                <div className="flex items-start gap-3">
+                  <Waypoints
+                    className="mt-0.5 h-4 w-4 shrink-0 text-[#3ecf8e]"
+                    aria-hidden
+                  />
+                  <div className="min-w-0">
+                    <p className="text-[13px] leading-relaxed text-white/55">
+                      <code className="rounded border border-white/[0.08] bg-[#171717] px-1.5 py-0.5 font-mono text-[12px] text-white">
+                        auto
+                      </code>{" "}
+                      is a fallback combo: one model ID that steps to the next
+                      model when the previous one errors. You are billed at the
+                      rate of whichever model answers.
+                    </p>
+                    <ol className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+                      {AUTO_CHAIN.map((model, index) => (
+                        <li key={model.id} className="flex items-center gap-2">
+                          {index > 0 && (
+                            <ArrowRight
+                              className="h-3.5 w-3.5 shrink-0 text-white/25"
+                              aria-hidden
+                            />
+                          )}
+                          <span className="inline-flex items-center gap-1.5 rounded-md border border-white/[0.08] bg-[#171717] px-2 py-1 text-[12px] text-white/75">
                             <ProviderIcon
                               provider={model.provider}
-                              className={`h-4 w-4 shrink-0 ${
-                                model.provider === "OpenAI"
-                                  ? "text-white/80"
-                                  : ""
+                              className={`h-3.5 w-3.5 shrink-0 ${
+                                model.provider === "Anthropic"
+                                  ? ""
+                                  : "text-white/80"
                               }`}
                             />
-                            <span>
-                              {model.name}
-                              <span className="mt-0.5 block text-[12px] font-normal text-white/40">
-                                {model.provider}
-                              </span>
-                            </span>
+                            {model.name}
                           </span>
-                        </td>
-                        <td className="px-4 py-3.5 sm:px-5">
-                          <ModelIdCopy id={model.id} />
-                        </td>
-                        <td className="hidden px-5 py-3.5 text-white/60 sm:table-cell">
-                          {model.context}
-                        </td>
-                        <td className="px-4 py-3.5 text-right font-mono text-white/60 sm:px-5">
-                          {model.input} / {model.output}
-                        </td>
-                        <td className="px-4 py-3.5 text-right sm:px-5">
-                          <span
-                            className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium sm:px-2.5 sm:text-[12px] ${
-                              model.available
-                                ? "border-[#3ecf8e]/20 bg-[#3ecf8e]/10 text-[#3ecf8e]"
-                                : "border-white/[0.08] bg-white/[0.03] text-white/40"
-                            }`}
-                          >
-                            <span
-                              aria-hidden
-                              className={`h-1.5 w-1.5 rounded-full ${
-                                model.available ? "bg-[#3ecf8e]" : "bg-white/30"
-                              }`}
-                            />
-                            {model.available ? "Available" : "Not available"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                </div>
               </div>
+
+              <ModelTable models={models} />
 
               <p className="mt-4 text-[12px] text-white/35">
                 Prices shown in USD per million tokens.

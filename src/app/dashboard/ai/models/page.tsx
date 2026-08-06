@@ -14,6 +14,11 @@ import { AI_MODELS } from "../../data";
 const PROVIDER_COLORS: Record<string, string> = {
   Anthropic: "bg-[#d4a574]/10 text-[#d4a574]",
   OpenAI:    "bg-[#3ecf8e]/10 text-[#3ecf8e]",
+  "Moonshot AI": "bg-[#1783FF]/10 text-[#5da8ff]",
+  "Z.ai":    "bg-sky-500/10 text-sky-300",
+  DeepSeek:  "bg-[#4D6BFE]/10 text-[#8399ff]",
+  MiniMax:   "bg-[#FE603C]/10 text-[#ff8b70]",
+  Qwen:      "bg-[#6F69F7]/10 text-[#9d99ff]",
   Meta:      "bg-blue-500/10 text-blue-300",
   Mistral:   "bg-orange-500/10 text-orange-300",
   Google:    "bg-yellow-500/10 text-yellow-300",
@@ -28,6 +33,11 @@ function providerColor(provider: string) {
 const PROVIDER_TILES: Record<string, string> = {
   OpenAI: "border-white/[0.1] bg-white/[0.05] text-white/90",
   Anthropic: "border-[#d97757]/25 bg-[#d97757]/[0.08] text-[#d97757]",
+  "Moonshot AI": "border-[#1783FF]/25 bg-[#1783FF]/[0.08] text-[#5da8ff]",
+  "Z.ai": "border-sky-400/25 bg-sky-400/[0.08] text-sky-300",
+  DeepSeek: "border-[#4D6BFE]/25 bg-[#4D6BFE]/[0.08] text-[#8399ff]",
+  MiniMax: "border-[#FE603C]/25 bg-[#FE603C]/[0.08] text-[#ff8b70]",
+  Qwen: "border-[#6F69F7]/25 bg-[#6F69F7]/[0.08] text-[#9d99ff]",
 };
 
 function providerTile(provider: string) {

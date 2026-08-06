@@ -101,6 +101,11 @@ const CHAT_MODEL_GROUPS = CHAT_MODELS.reduce<
 const PROVIDER_TILE: Record<string, string> = {
   OpenAI: "border-white/[0.1] bg-white/[0.05] text-white/90",
   Anthropic: "border-[#d97757]/25 bg-[#d97757]/[0.08] text-[#d97757]",
+  "Moonshot AI": "border-[#1783FF]/25 bg-[#1783FF]/[0.08] text-[#5da8ff]",
+  "Z.ai": "border-sky-400/25 bg-sky-400/[0.08] text-sky-300",
+  DeepSeek: "border-[#4D6BFE]/25 bg-[#4D6BFE]/[0.08] text-[#8399ff]",
+  MiniMax: "border-[#FE603C]/25 bg-[#FE603C]/[0.08] text-[#ff8b70]",
+  Qwen: "border-[#6F69F7]/25 bg-[#6F69F7]/[0.08] text-[#9d99ff]",
 };
 
 const HIGHLIGHT_CACHE = new Map<string, string>();

@@ -34,11 +34,16 @@ const BASE_URL = "https://ai.yogathedev.com/v1";
 
 export const metadata: Metadata = {
   ...pageMetadata({
-    title: "Yoga | AI Router, Chat, VPS & Image tools in one hub",
+    // Leads with the brand people actually search for, so the query term lives
+    // in the title and description themselves. Without it Google has to hunt
+    // "yogathedev" down in the body and builds the snippet from whatever it
+    // finds there — which is how the curl block ended up in the result.
+    title: "yogathedev | AI Router, Chat, VPS & Image tools in one hub",
     description:
-      "One OpenAI-compatible key for GPT and Claude, plus a browser VPS console, chat, and image studio. Pay as you go, built and run in the open.",
+      "yogathedev is Yoga Dwipayana's tool hub: one OpenAI-compatible key for GPT and Claude, plus a browser VPS console, chat, and an image studio. Pay as you go.",
     path: "/",
     keywords: [
+      "yogathedev",
       "AI router",
       "OpenAI-compatible API",
       "GPT and Claude API key",
@@ -50,7 +55,9 @@ export const metadata: Metadata = {
     ],
   }),
   // The home page owns the site title verbatim rather than the "%s · Yoga" template.
-  title: { absolute: "Yoga | AI Router, Chat, VPS & Image tools in one hub" },
+  title: {
+    absolute: "yogathedev | AI Router, Chat, VPS & Image tools in one hub",
+  },
 };
 
 type ToolCard = {
@@ -105,7 +112,7 @@ const TOOLS: ToolCard[] = [
     name: "AI Store",
     tag: "For sale",
     blurb:
-      "Router vouchers, verified ChatGPT Plus, and Kiro dev accounts, all ready to buy.",
+      "Router credit and SMS verification numbers, plus verified ChatGPT Plus and Kiro Pro accounts.",
     href: "/store",
     span: "lg:col-span-2",
     image: "/images/tools/store.png",
@@ -117,15 +124,13 @@ const MARQUEE_MODELS = [
   { name: "Claude Fable 5", provider: "Anthropic" },
   { name: "Kimi K3", provider: "Moonshot AI" },
   { name: "Claude Opus 5", provider: "Anthropic" },
-  { name: "GLM 5.2", provider: "Z.ai" },
-  { name: "Claude Opus 4.8", provider: "Anthropic" },
+  { name: "GLM 5.3", provider: "Z.ai" },
   { name: "GPT 5.6 Terra", provider: "OpenAI" },
   { name: "Claude Sonnet 5", provider: "Anthropic" },
   { name: "GPT 5.6 Luna", provider: "OpenAI" },
-  { name: "Claude Opus 4.7", provider: "Anthropic" },
+  { name: "GLM 5.2", provider: "Z.ai" },
   { name: "GPT 5.5", provider: "OpenAI" },
   { name: "DeepSeek V4 Pro", provider: "DeepSeek" },
-  { name: "Claude Sonnet 4.6", provider: "Anthropic" },
   { name: "Qwen3.8 Max", provider: "Qwen" },
   { name: "MiniMax M3", provider: "MiniMax" },
   { name: "DeepSeek V4 Flash", provider: "DeepSeek" },
@@ -140,9 +145,9 @@ const ROUTER_MODELS = [
   { name: "Claude Fable 5", provider: "Anthropic", io: "$10 / $50" },
   { name: "GPT 5.6 Sol", provider: "OpenAI", io: "$5 / $30" },
   { name: "Claude Opus 5", provider: "Anthropic", io: "$5 / $25" },
-  { name: "Claude Opus 4.8", provider: "Anthropic", io: "$5 / $25" },
   { name: "Claude Sonnet 5", provider: "Anthropic", io: "$2 / $10" },
   { name: "Kimi K3", provider: "Moonshot AI", io: "$2.50 / $14" },
+  { name: "GLM 5.3", provider: "Z.ai", io: "$1.50 / $4" },
   { name: "GLM 5.2", provider: "Z.ai", io: "$1.20 / $3" },
   { name: "GPT 5.6 Luna", provider: "OpenAI", io: "$1 / $6" },
   { name: "DeepSeek V4 Flash", provider: "DeepSeek", io: "$0.09 / $0.18" },
@@ -282,7 +287,7 @@ export default async function Home() {
   ]);
 
   // The curl example always mirrors the request the response pane describes.
-  const exampleModel = latest?.model ?? "claude-opus-4.8";
+  const exampleModel = latest?.model ?? "claude-opus-5";
 
   const heroStats = [
     {
@@ -330,7 +335,7 @@ export default async function Home() {
                 <span className="inline-flex items-center rounded-full bg-[#3ecf8e]/12 px-2 py-0.5 text-[12px] font-medium text-[#3ecf8e]">
                   New
                 </span>
-                GPT 5.6 &amp; Claude Opus 4.8 live on the router
+                GPT 5.6 &amp; Claude Opus 5 live on the router
                 <ArrowRight
                   className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
                   aria-hidden
@@ -344,23 +349,25 @@ export default async function Home() {
                 One Hub For Every Model
               </h1>
 
+              {/* Names the brand in prose. Search engines had nothing but the
+                  API base URL to match "yogathedev" against before this. */}
               <p
                 className="rise-in mt-5 text-pretty text-base text-white/70 sm:text-lg"
                 style={{ animationDelay: "120ms" }}
               >
-                One{" "}
+                yogathedev routes GPT, Claude, and more through one{" "}
                 <Link
                   href="/store"
                   className="text-white underline decoration-white/30 underline-offset-4 transition-colors hover:decoration-white"
                 >
                   key
                 </Link>
-                ,{" "}
+                .{" "}
                 <Link
                   href="/store"
                   className="text-white underline decoration-white/30 underline-offset-4 transition-colors hover:decoration-white"
                 >
-                  pay as you go
+                  Pay as you go
                 </Link>
                 , no subscriptions.
               </p>
@@ -384,8 +391,10 @@ export default async function Home() {
                 </Button>
               </div>
 
-              {/* Live router usage strip */}
+              {/* Live router usage strip. Bare counters make a poor snippet, so
+                  they are excluded from it the same way the console is. */}
               <div
+                data-nosnippet
                 className="rise-in mt-10 w-full overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur-sm sm:mt-12"
                 style={{ animationDelay: "260ms" }}
               >
@@ -440,8 +449,12 @@ export default async function Home() {
           </div>
         </section>
 
-        {/* Router console: how to call the base URL */}
-        <section>
+        {/* Router console: how to call the base URL.
+            `data-nosnippet` keeps this block out of Google's snippet: it is the
+            only place "yogathedev" appeared in prose-like text, so Google was
+            stitching the search result out of the curl command and the relative
+            "2d ago" stamp below it. Still indexed, just never quoted. */}
+        <section data-nosnippet>
           <div className="mx-auto w-full max-w-3xl px-6 py-12 sm:px-8 sm:py-16">
             <Reveal>
               <div className="overflow-hidden rounded-xl border border-white/[0.1] bg-[#171717] shadow-[0_24px_80px_-24px_rgba(0,0,0,0.7)]">
@@ -598,7 +611,9 @@ export default async function Home() {
                 One key reaches every model
               </p>
             </Reveal>
-            <div className="marquee-mask relative flex overflow-hidden">
+            {/* The track renders the model list twice for the seamless loop,
+                so every name is duplicated in the DOM — never snippet material. */}
+            <div data-nosnippet className="marquee-mask relative flex overflow-hidden">
               <div className="marquee-track flex shrink-0 items-center gap-3 pr-3">
                 {[...MARQUEE_MODELS, ...MARQUEE_MODELS].map((model, i) => (
                   <span

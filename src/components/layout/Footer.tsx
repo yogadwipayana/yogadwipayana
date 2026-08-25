@@ -20,7 +20,7 @@ export function Footer() {
             <span className="font-medium text-white">Yoga</span>
           </Link>
           <span className="text-white/35" suppressHydrationWarning>
-            © {new Date().getFullYear()} All rights reserved.
+            © {new Date().getFullYear()} yogathedev. Built by Yoga Dwipayana.
           </span>
         </div>
 

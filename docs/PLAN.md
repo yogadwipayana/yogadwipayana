@@ -257,9 +257,9 @@ Batas: maks 6 lampiran, 50 MB/file. Tipe: PNG/JPEG/WebP/GIF, PDF, DOCX/XLSX/XLS/
 
 Buka dropdown model, ganti antar model dan kirim prompt pendek tiap kali:
 - GPT-5.5
-- Claude Opus 4.8
-- Claude Opus 4.7
-- Claude Sonnet 4.6
+- Claude Opus 5
+- Claude Sonnet 5
+- GLM 5.3
 
 ✅ Pilihan tersimpan per-percakapan (cek dengan pindah halaman lalu balik).
 

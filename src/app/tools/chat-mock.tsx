@@ -89,7 +89,7 @@ export function ChatMockLive() {
         switched to
         <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.1] bg-white/[0.03] px-2 py-0.5 font-medium text-white/70">
           <ProviderIcon provider="Anthropic" className="h-3 w-3 shrink-0" />
-          Claude Opus 4.8
+          Claude Opus 5
         </span>
         <span className="h-px flex-1 bg-white/[0.06]" />
       </div>

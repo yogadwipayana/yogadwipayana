@@ -17,7 +17,7 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]["id"];
 
-const OG_PAGES = ["/", "/about", "/tools", "/dashboard"] as const;
+const OG_PAGES = ["/", "/tools", "/store", "/dashboard"] as const;
 
 const DEFAULT_PROMPTS: Record<TabId, string> = {
   avatar:

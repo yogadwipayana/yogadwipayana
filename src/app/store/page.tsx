@@ -26,7 +26,7 @@ import { breadcrumbSchema, pageMetadata } from "@/lib/seo";
 const figtree = Figtree({ subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = pageMetadata({
-  title: "AI Store",
+  title: "AI Store — API keys, credit vouchers & accounts",
   description:
     "In-house tools — my AI Router and disposable SMS verification — plus verified ChatGPT Plus and Kiro dev accounts ordered via WhatsApp.",
   path: "/store",
@@ -135,9 +135,9 @@ const MARKETPLACE_PRODUCTS: Product[] = [
     name: "API Model Frontier",
     tag: "Frontier API",
     blurb:
-      "Instant API access to the frontier line-up — Claude Opus 4.8, Sonnet 5, and GPT-5.6 Sol, Terra & Luna — on one pay-as-you-go key.",
+      "Instant API access to the frontier line-up — Claude Opus 5, Sonnet 5, and GPT-5.6 Sol, Terra & Luna — on one pay-as-you-go key.",
     highlights: [
-      "Claude Opus 4.8 & Sonnet 5",
+      "Claude Opus 5 & Sonnet 5",
       "GPT-5.6 Sol, Terra & Luna",
       "One OpenAI-compatible key",
     ],
@@ -435,7 +435,7 @@ export default function AiStore() {
                         yogathedev Router API
                       </h3>
                       <p className="mt-2 text-[14px] leading-relaxed text-white/55">
-                        Many AI models on one endpoint — Claude Opus 4.8 and
+                        Many AI models on one endpoint — Claude Opus 5 and
                         GPT-5.6 Sol among them. Pick a plan by how long you need
                         it; each carries a fair-use token allowance with no
                         per-minute rate limit.

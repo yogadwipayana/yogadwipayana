@@ -127,7 +127,7 @@ export default async function AiBillingPage() {
             <ul className="space-y-2.5 text-white/50 leading-relaxed">
               <li>• Order a credit voucher from the store</li>
               <li>• Redeem the code here to top up instantly</li>
-              <li>• Exchange rate: <span className="text-white/70">Rp 10.000 = $25</span></li>
+              <li>• Exchange rate: <span className="text-white/70">Rp 15.000 = $25</span></li>
               <li>• Requests are charged at standard model rates per 1M tokens</li>
               <li>• No subscription · balance never expires</li>
             </ul>

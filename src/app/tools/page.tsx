@@ -29,7 +29,7 @@ import { Reveal } from "@/components/ui/Reveal";
 const figtree = Figtree({ subsets: ["latin"], display: "swap" });
 
 export const metadata: Metadata = pageMetadata({
-  title: "Tools",
+  title: "Tools — AI Router, VPS, Chat, Image & SMS OTP",
   description:
     "A small set of tools that share one account, one key, and one billing balance: VPS Control, AI Router, Chat AI, Image Studio, and SMS OTP.",
   path: "/tools",
@@ -208,12 +208,6 @@ const MODELS = [
     io: "$5.00 / $30.00",
   },
   {
-    name: "Claude Opus 4.8",
-    provider: "Anthropic",
-    context: "1,000,000",
-    io: "$5.00 / $25.00",
-  },
-  {
     name: "Claude Opus 5",
     provider: "Anthropic",
     context: "1,000,000",
@@ -230,6 +224,12 @@ const MODELS = [
     provider: "Moonshot AI",
     context: "1,000,000",
     io: "$2.50 / $14.00",
+  },
+  {
+    name: "GLM 5.3",
+    provider: "Z.ai",
+    context: "1,000,000",
+    io: "$1.50 / $4.00",
   },
   {
     name: "GLM 5.2",

@@ -16,8 +16,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "Yoga | AI Router, Chat, VPS & Image tools in one hub",
-    template: "%s · Yoga",
+    default: "yogathedev | AI Router, Chat, VPS & Image tools in one hub",
+    // Every sub-page title carries the brand people search for, so sitelinks
+    // read as part of one site instead of four unrelated headings.
+    template: "%s · yogathedev",
   },
   description: siteConfig.description,
   applicationName: siteConfig.name,

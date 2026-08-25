@@ -28,11 +28,13 @@ export const SITE_URL = resolveSiteUrl();
 
 export const siteConfig = {
   name: "Yoga",
+  /** The brand people actually type into search. Keep it in prose, not just URLs. */
+  brand: "yogathedev",
   author: "Yoga Dwipayana",
   locale: "en_US",
   github: "https://github.com/yogadwipayana",
   description:
-    "One OpenAI-compatible key for GPT and Claude, a browser VPS console, chat, and an image studio — built and run in the open by Yoga Dwipayana.",
+    "yogathedev is Yoga Dwipayana's tool hub: one OpenAI-compatible key for GPT and Claude, a browser VPS console, chat, and an image studio.",
 } as const;
 
 export function absoluteUrl(path: string): string {
@@ -93,6 +95,11 @@ export function pageMetadata({
 /*  Structured data                                                            */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * `alternateName` is what lets Google resolve the brand people actually search
+ * for ("yogathedev") to this site, and is the signal behind the site name shown
+ * above the result title.
+ */
 export function websiteSchema() {
   return {
     "@context": "https://schema.org",
@@ -100,6 +107,7 @@ export function websiteSchema() {
     "@id": `${SITE_URL}/#website`,
     url: SITE_URL,
     name: siteConfig.name,
+    alternateName: [siteConfig.brand, "yogathedev.com", siteConfig.author],
     description: siteConfig.description,
     inLanguage: "en",
     publisher: { "@id": `${SITE_URL}/#person` },
@@ -112,11 +120,11 @@ export function personSchema() {
     "@type": "Person",
     "@id": `${SITE_URL}/#person`,
     name: siteConfig.author,
-    alternateName: siteConfig.name,
+    alternateName: [siteConfig.name, siteConfig.brand],
     url: SITE_URL,
     jobTitle: "Software Engineer",
     description:
-      "Builder shipping AI-powered developer tools: an OpenAI-compatible AI router, a browser VPS console, chat, and an image studio.",
+      "Yoga Dwipayana (yogathedev) builds and runs AI-powered developer tools: an OpenAI-compatible AI router, a browser VPS console, chat, and an image studio.",
     sameAs: [siteConfig.github],
     knowsAbout: [
       "AI infrastructure",

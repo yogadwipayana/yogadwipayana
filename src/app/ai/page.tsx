@@ -149,36 +149,20 @@ const MODELS: Omit<PricingModel, "available">[] = [
     output: 25,
   },
   {
-    name: "Claude Opus 4.8",
-    id: "claude-opus-4.8",
-    provider: "Anthropic",
-    context: 1_000_000,
-    input: 5,
-    output: 25,
-  },
-  {
-    name: "Claude Opus 4.7",
-    id: "claude-opus-4.7",
-    provider: "Anthropic",
-    context: 1_000_000,
-    input: 5,
-    output: 25,
-  },
-  {
-    name: "Claude Sonnet 4.6",
-    id: "claude-sonnet-4.6",
-    provider: "Anthropic",
-    context: 1_000_000,
-    input: 3,
-    output: 15,
-  },
-  {
     name: "Kimi K3",
     id: "kimi-k3",
     provider: "Moonshot AI",
     context: 1_000_000,
     input: 2.5,
     output: 14,
+  },
+  {
+    name: "GLM 5.3",
+    id: "glm-5.3",
+    provider: "Z.ai",
+    context: 1_000_000,
+    input: 1.5,
+    output: 4,
   },
   {
     name: "GLM 5.2",
@@ -281,7 +265,7 @@ export default async function AiRouterPricing() {
                     Top-up rate
                   </span>
                   <span className="text-[15px] font-semibold text-[#3ecf8e]">
-                    Rp 10.000 = $25
+                    Rp 15.000 = $25
                   </span>
                 </div>
               </div>

@@ -5,7 +5,6 @@ This is a personal portfolio site that doubles as a hub for a small set of perso
 Pages:
 
 - `/` — Landing page. Portfolio entry point that introduces the owner and the site at a glance.
-- `/about` — Explains what this website is and who the owner is.
 - `/tools` — Public catalogue of the available tools, currently:
   - VPS control
   - AI router
@@ -53,8 +52,6 @@ yogadwipayana/
 │   │   ├── page.tsx             <- home page (/)
 │   │   ├── globals.css
 │   │   │
-│   │   ├── about/
-│   │   │   └── page.tsx         <- /about
 │   │   ├── ai/
 │   │   │   └── page.tsx         <- /ai
 │   │   ├── chat/

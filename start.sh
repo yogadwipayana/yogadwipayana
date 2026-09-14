@@ -13,6 +13,10 @@ git pull
 npm install
 
 rm -rf "$BUILD_DIR"
+# tsconfig includes .next/types and .next/dev/types. Type definitions from the
+# live build or an old `next dev` run clash with the new build's route types,
+# and the running production server never reads either directory.
+rm -rf .next/types .next/dev
 NEXT_DIST_DIR="$BUILD_DIR" npm run build
 
 # Keep the previous build in .next-old for a quick manual rollback.

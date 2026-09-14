@@ -181,6 +181,14 @@ const MODELS: Omit<PricingModel, "available">[] = [
     output: 0.87,
   },
   {
+    name: "DeepSeek V4.1 Flash",
+    id: "deepseek-v4.1-flash",
+    provider: "DeepSeek",
+    context: 1_000_000,
+    input: 0.15,
+    output: 0.6,
+  },
+  {
     name: "DeepSeek V4 Flash",
     id: "deepseek-v4-flash",
     provider: "DeepSeek",

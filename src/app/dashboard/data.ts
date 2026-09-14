@@ -179,6 +179,7 @@ export const AI_MODELS: AiModel[] = [
   { slug: "glm-5.3",          name: "GLM 5.3",          provider: "Z.ai",      providerCode: "ZA", contextWindow: "1,000,000", inputPrice: "$1.50",  outputPrice: "$4.00",  modelId: "glm-5.3" },
   { slug: "glm-5.2",          name: "GLM 5.2",          provider: "Z.ai",      providerCode: "ZA", contextWindow: "1,000,000", inputPrice: "$1.20",  outputPrice: "$3.00",  modelId: "glm-5.2" },
   { slug: "deepseek-v4-pro",  name: "DeepSeek V4 Pro",  provider: "DeepSeek",  providerCode: "DS", contextWindow: "1,000,000", inputPrice: "$0.435", outputPrice: "$0.87",  modelId: "deepseek-v4-pro" },
+  { slug: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", provider: "DeepSeek", providerCode: "DS", contextWindow: "1,000,000", inputPrice: "$0.15", outputPrice: "$0.60",  modelId: "deepseek-v4.1-flash" },
   { slug: "deepseek-v4-flash", name: "DeepSeek V4 Flash", provider: "DeepSeek", providerCode: "DS", contextWindow: "1,000,000", inputPrice: "$0.09", outputPrice: "$0.18",  modelId: "deepseek-v4-flash" },
   { slug: "minimax-m3",       name: "MiniMax M3",       provider: "MiniMax",   providerCode: "MM", contextWindow: "1,000,000", inputPrice: "$0.30",  outputPrice: "$1.20",  modelId: "minimax-m3" },
   { slug: "qwen3.8-max",      name: "Qwen3.8 Max",      provider: "Qwen",      providerCode: "QW", contextWindow: "1,000,000", inputPrice: "$2.00",  outputPrice: "$6.00",  modelId: "qwen3.8-max" },

@@ -133,6 +133,7 @@ const MARQUEE_MODELS = [
   { name: "DeepSeek V4 Pro", provider: "DeepSeek" },
   { name: "Qwen3.8 Max", provider: "Qwen" },
   { name: "MiniMax M3", provider: "MiniMax" },
+  { name: "DeepSeek V4.1 Flash", provider: "DeepSeek" },
   { name: "DeepSeek V4 Flash", provider: "DeepSeek" },
 ] as const;
 
@@ -150,6 +151,7 @@ const ROUTER_MODELS = [
   { name: "GLM 5.3", provider: "Z.ai", io: "$1.50 / $4" },
   { name: "GLM 5.2", provider: "Z.ai", io: "$1.20 / $3" },
   { name: "GPT 5.6 Luna", provider: "OpenAI", io: "$1 / $6" },
+  { name: "DeepSeek V4.1 Flash", provider: "DeepSeek", io: "$0.15 / $0.60" },
   { name: "DeepSeek V4 Flash", provider: "DeepSeek", io: "$0.09 / $0.18" },
 ] as const;
 

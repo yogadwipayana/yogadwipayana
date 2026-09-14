@@ -244,6 +244,12 @@ const MODELS = [
     io: "$1.00 / $6.00",
   },
   {
+    name: "DeepSeek V4.1 Flash",
+    provider: "DeepSeek",
+    context: "1,000,000",
+    io: "$0.15 / $0.60",
+  },
+  {
     name: "DeepSeek V4 Flash",
     provider: "DeepSeek",
     context: "1,000,000",

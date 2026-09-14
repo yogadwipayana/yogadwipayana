@@ -168,6 +168,7 @@ export type AiModel = {
 };
 
 export const AI_MODELS: AiModel[] = [
+  { slug: "gpt-6-astra",      name: "GPT 6 Astra",      provider: "OpenAI",    providerCode: "OA", contextWindow: "1,050,000", inputPrice: "$10.00", outputPrice: "$50.00", modelId: "gpt-6-astra" },
   { slug: "gpt-5.6-sol",      name: "GPT 5.6 Sol",      provider: "OpenAI",    providerCode: "OA", contextWindow: "1,050,000", inputPrice: "$5.00",  outputPrice: "$30.00", modelId: "gpt-5.6-sol" },
   { slug: "gpt-5.6-terra",    name: "GPT 5.6 Terra",    provider: "OpenAI",    providerCode: "OA", contextWindow: "1,050,000", inputPrice: "$2.50",  outputPrice: "$15.00", modelId: "gpt-5.6-terra" },
   { slug: "gpt-5.6-luna",     name: "GPT 5.6 Luna",     provider: "OpenAI",    providerCode: "OA", contextWindow: "1,050,000", inputPrice: "$1.00",  outputPrice: "$6.00",  modelId: "gpt-5.6-luna" },

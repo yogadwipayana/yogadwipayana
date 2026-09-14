@@ -93,6 +93,14 @@ const MODELS: Omit<PricingModel, "available">[] = [
     fallback: AUTO_CHAIN.map((m) => m.name),
   },
   {
+    name: "GPT 6 Astra",
+    id: "gpt-6-astra",
+    provider: "OpenAI",
+    context: 1_050_000,
+    input: 10,
+    output: 50,
+  },
+  {
     name: "GPT 5.6 Sol",
     id: "gpt-5.6-sol",
     provider: "OpenAI",

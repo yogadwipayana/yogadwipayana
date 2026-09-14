@@ -120,6 +120,7 @@ const TOOLS: ToolCard[] = [
 ];
 
 const MARQUEE_MODELS = [
+  { name: "GPT 6 Astra", provider: "OpenAI" },
   { name: "GPT 5.6 Sol", provider: "OpenAI" },
   { name: "Claude Fable 5", provider: "Anthropic" },
   { name: "Kimi K3", provider: "Moonshot AI" },
@@ -143,6 +144,7 @@ function providerTint(provider: string) {
 }
 
 const ROUTER_MODELS = [
+  { name: "GPT 6 Astra", provider: "OpenAI", io: "$10 / $50" },
   { name: "Claude Fable 5", provider: "Anthropic", io: "$10 / $50" },
   { name: "GPT 5.6 Sol", provider: "OpenAI", io: "$5 / $30" },
   { name: "Claude Opus 5", provider: "Anthropic", io: "$5 / $25" },

@@ -196,6 +196,12 @@ const SHARED = [
 
 const MODELS = [
   {
+    name: "GPT 6 Astra",
+    provider: "OpenAI",
+    context: "1,050,000",
+    io: "$10.00 / $50.00",
+  },
+  {
     name: "Claude Fable 5",
     provider: "Anthropic",
     context: "1,000,000",

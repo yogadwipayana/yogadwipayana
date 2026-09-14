@@ -22,6 +22,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // start.sh builds into a separate directory and swaps it in afterwards, so
+  // the running server keeps serving from .next until it is restarted.
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
   allowedDevOrigins: ["yogathedev.com"],
   pageExtensions: ["ts", "tsx", "js", "jsx", "md", "mdx"],
   serverExternalPackages: ["ssh2", "pdf-parse", "docx"],

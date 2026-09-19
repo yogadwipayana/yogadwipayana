@@ -238,12 +238,6 @@ const MODELS = [
     io: "$1.50 / $4.00",
   },
   {
-    name: "GLM 5.2",
-    provider: "Z.ai",
-    context: "1,000,000",
-    io: "$1.20 / $3.00",
-  },
-  {
     name: "GPT 5.6 Luna",
     provider: "OpenAI",
     context: "1,050,000",

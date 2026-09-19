@@ -173,14 +173,6 @@ const MODELS: Omit<PricingModel, "available">[] = [
     output: 4,
   },
   {
-    name: "GLM 5.2",
-    id: "glm-5.2",
-    provider: "Z.ai",
-    context: 1_000_000,
-    input: 1.2,
-    output: 3,
-  },
-  {
     name: "DeepSeek V4 Pro",
     id: "deepseek-v4-pro",
     provider: "DeepSeek",

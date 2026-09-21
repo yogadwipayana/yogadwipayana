@@ -27,7 +27,7 @@ export function AccountForm({
         <div>
           <h3 className="text-[14px] font-medium text-white">Display name</h3>
           <p className="mt-1 text-[12px] text-white/40">
-            Shown next to your avatar across the dashboard.
+            Sets the initials on your avatar across the dashboard.
           </p>
         </div>
         <div>

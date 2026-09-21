@@ -1986,11 +1986,12 @@ export function ChatView({
                   if (e.key === "Escape") { e.preventDefault(); setHeaderRenaming(false); }
                 }}
                 maxLength={200}
-                className="w-full rounded border border-white/[0.12] bg-white/[0.04] px-2 py-1 text-center text-[13px] text-white/80 outline-none focus:border-[#3ecf8e]/40"
+                className="w-full rounded border border-white/[0.12] bg-white/[0.04] px-2 py-1 text-center text-[16px] text-white/80 outline-none focus:border-[#3ecf8e]/40 sm:text-[13px]"
               />
             </div>
           ) : (
-            <div className="flex h-[52px] flex-1 items-stretch pr-24">
+            // Right padding reserves room for the absolutely-positioned actions.
+            <div className="flex h-[52px] min-w-0 flex-1 items-stretch pr-[88px] sm:pr-24">
               <ConversationTab
                 icon={Sparkles}
                 label="Answer"
@@ -2023,7 +2024,7 @@ export function ChatView({
               type="button"
               onClick={() => { setMoreOpen((v) => !v); setShareOpen(false); }}
               aria-label="More options"
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-md transition-colors sm:h-8 sm:w-8 ${
                 moreOpen
                   ? "bg-white/[0.07] text-white/70"
                   : "text-white/40 hover:bg-white/[0.06] hover:text-white/60"
@@ -2041,7 +2042,7 @@ export function ChatView({
                   aria-label="Close menu"
                   onClick={() => setMoreOpen(false)}
                 />
-                <div className="absolute right-16 top-full z-20 mt-2 w-72 overflow-hidden rounded-xl border border-white/[0.08] bg-[#1c1c1c] shadow-[0_16px_48px_rgba(0,0,0,0.65)] ring-1 ring-black/20">
+                <div className="absolute right-0 top-full z-20 mt-2 w-[calc(100vw-2rem)] max-w-[288px] overflow-hidden rounded-xl sm:right-16 sm:w-72 border border-white/[0.08] bg-[#1c1c1c] shadow-[0_16px_48px_rgba(0,0,0,0.65)] ring-1 ring-black/20">
                   {/* Thread info */}
                   <div className="border-b border-white/[0.06] px-4 py-3.5">
                     <p className="line-clamp-2 text-[14px] font-medium leading-snug text-white">
@@ -2101,14 +2102,15 @@ export function ChatView({
             <button
               type="button"
               onClick={() => { setShareOpen((v) => !v); setMoreOpen(false); }}
-              className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12px] font-medium transition-colors ${
+              aria-label="Share"
+              className={`inline-flex h-9 w-9 items-center justify-center gap-1.5 rounded-lg border text-[12px] font-medium transition-colors sm:h-8 sm:w-auto sm:px-3 ${
                 shareOpen
                   ? "border-[#3ecf8e]/30 bg-[#3ecf8e]/[0.08] text-[#3ecf8e]/80"
                   : "border-white/[0.1] text-white/55 hover:border-white/[0.18] hover:text-white/80"
               }`}
             >
               <Share2 className="h-3.5 w-3.5" aria-hidden />
-              Share
+              <span className="hidden sm:inline">Share</span>
             </button>
 
             {/* Share dropdown */}
@@ -2393,8 +2395,8 @@ export function ChatView({
             }}
           />
 
-          {/* Prompt box */}
-          <div className="rounded-2xl bg-[#141414]">
+          {/* Prompt box — `relative` anchors the full-width selector popups on mobile */}
+          <div className="relative rounded-2xl bg-[#141414]">
             {/* Text area */}
             <textarea
               ref={textareaRef}
@@ -2405,7 +2407,7 @@ export function ChatView({
               onPaste={handlePaste}
               disabled={isStreaming}
               placeholder={messages.length === 0 ? "Ask anything..." : "Ask a follow-up"}
-              className="block w-full resize-none bg-transparent px-4 pt-4 pb-2 text-[14px] leading-relaxed text-white placeholder:text-white/30 focus:outline-none disabled:opacity-60"
+              className="block w-full resize-none bg-transparent px-4 pt-4 pb-2 text-[16px] leading-relaxed sm:text-[14px] text-white placeholder:text-white/30 focus:outline-none disabled:opacity-60"
               style={{ minHeight: "52px", maxHeight: "200px" }}
             />
 
@@ -2445,15 +2447,16 @@ export function ChatView({
             <div className="mx-4 h-px bg-white/[0.06]" />
 
             {/* Toolbar */}
-            <div className="flex items-center justify-between gap-2 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2 px-2 py-2 sm:px-3 sm:py-2.5">
               {/* Left — attach + mode */}
-              <div className="flex items-center gap-1.5">
+              <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isStreaming || attachments.length >= MAX_ATTACHMENTS}
                   title="Attach file"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40"
+                  aria-label="Attach file"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-white/40 sm:h-7 sm:w-7 transition-colors hover:bg-white/[0.06] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Plus className="h-4 w-4" aria-hidden />
                 </button>
@@ -2467,13 +2470,13 @@ export function ChatView({
               </div>
 
               {/* Right — model + send */}
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <ModelSelector model={model} onSelect={handleSelectModel} />
                 {isStreaming ? (
                   <button
                     type="button"
                     onClick={handleStop}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.12] bg-white/[0.04] text-white/70 transition-colors hover:border-white/[0.2] hover:bg-white/[0.08]"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border sm:h-8 sm:w-8 border-white/[0.12] bg-white/[0.04] text-white/70 transition-colors hover:border-white/[0.2] hover:bg-white/[0.08]"
                     aria-label="Stop generating"
                   >
                     <Square className="h-3 w-3 fill-current" aria-hidden />
@@ -2483,7 +2486,7 @@ export function ChatView({
                     type="button"
                     onClick={() => handleSend()}
                     disabled={!canSend}
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#3ecf8e] text-[#0a0a0a] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-white/25"
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full sm:h-8 sm:w-8 bg-[#3ecf8e] text-[#0a0a0a] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-white/25"
                     aria-label="Send message"
                   >
                     {anyUploading ? (
@@ -2539,16 +2542,20 @@ function ConversationTab({
   active: boolean;
   onClick: () => void;
 }) {
+  // On mobile only the active tab shows its label, so all three tabs fit
+  // beside the header actions; every tab is labelled from `sm` up.
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`relative flex h-[52px] items-center gap-1.5 px-3 text-[13px] font-medium transition-colors ${
+      aria-label={count ? `${label} (${count})` : label}
+      title={label}
+      className={`relative flex h-[52px] shrink-0 items-center gap-1.5 px-2 text-[13px] font-medium transition-colors sm:px-3 ${
         active ? "text-white" : "text-white/40 hover:text-white/65"
       }`}
     >
       <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden />
-      {label}
+      <span className={active ? undefined : "hidden sm:inline"}>{label}</span>
       {count != null && count > 0 ? (
         <span
           className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
@@ -2672,8 +2679,8 @@ function ImagesTabView({
                 alt={img.prompt}
                 className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
               />
-              {/* Hover overlay */}
-              <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/75 via-black/20 to-transparent p-3 opacity-0 transition-opacity group-hover:opacity-100">
+              {/* Hover overlay — always visible on touch screens, which can't hover */}
+              <div className="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-black/75 via-black/20 to-transparent p-3 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100">
                 <p className="line-clamp-2 text-[12px] leading-snug text-white/90">
                   {img.prompt}
                 </p>
@@ -2970,6 +2977,8 @@ export function ChatLanding({
           }}
         />
 
+        {/* `relative` anchors the selector popups, which span the full composer
+            width on mobile instead of hanging off their (narrow) trigger. */}
         <div className="relative rounded-xl border border-white/[0.1] bg-[#171717] transition-colors focus-within:border-[#3ecf8e]/40">
           {/* Slash command autocomplete */}
           {slashOpen && filteredCommands.length > 0 && (
@@ -3012,7 +3021,7 @@ export function ChatLanding({
             rows={1}
             placeholder={mode === "image" ? "Describe an image to generate…" : "Ask anything…"}
             autoFocus
-            className="block max-h-[200px] w-full resize-none bg-transparent px-4 pt-4 pb-2 text-[14px] leading-relaxed text-white placeholder:text-white/30 focus:outline-none disabled:opacity-60"
+            className="block max-h-[200px] w-full resize-none bg-transparent px-4 pt-4 pb-2 text-[16px] leading-relaxed sm:text-[14px] text-white placeholder:text-white/30 focus:outline-none disabled:opacity-60"
           />
 
           {/* Attachment previews */}
@@ -3051,14 +3060,15 @@ export function ChatLanding({
           <div className="mx-4 h-px bg-white/[0.06]" />
 
           {/* Toolbar — mirrors the in-conversation composer */}
-          <div className="flex items-center justify-between gap-2 px-3 py-2.5">
-            <div className="flex items-center gap-1.5">
+          <div className="flex items-center justify-between gap-2 px-2 py-2 sm:px-3 sm:py-2.5">
+            <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={starting || atCapacity}
                 title="Attach file"
-                className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-white/[0.06] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Attach file"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-white/40 sm:h-7 sm:w-7 transition-colors hover:bg-white/[0.06] hover:text-white/70 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Plus className="h-4 w-4" aria-hidden />
               </button>
@@ -3070,14 +3080,14 @@ export function ChatLanding({
                 loading={promptsLoading}
               />
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               <ModelSelector model={model} onSelect={setModel} />
               <button
                 type="button"
                 onClick={submit}
                 disabled={!canSend}
                 aria-label="Send message"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#3ecf8e] text-[#0a0a0a] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-white/25"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full sm:h-8 sm:w-8 bg-[#3ecf8e] text-[#0a0a0a] transition-colors hover:bg-[#24b47e] disabled:cursor-not-allowed disabled:bg-white/[0.08] disabled:text-white/25"
               >
                 {starting || anyUploading ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -4135,20 +4145,26 @@ function PromptSelector({
   const selected = prompts.find((p) => p.id === selectedId) ?? null;
   const buttonLabel = selected ? selected.name : "No prompt";
 
+  // Positioned only from `sm` up: on mobile the popup anchors to the composer
+  // box instead, so it can span its full width rather than overflow the screen.
   return (
-    <div className="relative">
+    <div className="sm:relative">
+      {/* Icon-only on mobile (the icon turns green once a prompt is attached)
+          so the toolbar fits narrow screens; the label returns from `sm` up. */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         title="System prompt"
-        className={`group flex items-center gap-1 text-[12px] transition-colors ${
+        aria-label={`System prompt: ${buttonLabel}`}
+        aria-expanded={open}
+        className={`group flex h-9 items-center gap-1 rounded-md px-2 text-[12px] transition-colors sm:h-auto sm:px-0 ${
           selected ? "text-[#3ecf8e]/80 hover:text-[#3ecf8e]" : "text-white/50 hover:text-white/80"
         }`}
       >
-        <FileText className="h-3 w-3 shrink-0" aria-hidden />
-        <span className="max-w-[100px] truncate sm:max-w-[130px]">{buttonLabel}</span>
+        <FileText className="h-3.5 w-3.5 shrink-0 sm:h-3 sm:w-3" aria-hidden />
+        <span className="hidden truncate sm:block sm:max-w-[130px]">{buttonLabel}</span>
         <ChevronDown
-          className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`}
+          className={`h-3 w-3 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
           aria-hidden
         />
       </button>
@@ -4161,7 +4177,7 @@ function PromptSelector({
             aria-label="Close prompt picker"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute bottom-full left-0 z-20 mb-2 w-[calc(100vw-2rem)] max-w-[280px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30">
+          <div className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30 sm:inset-x-auto sm:left-0 sm:w-[280px]">
             <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
               <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">
                 System prompt
@@ -4255,12 +4271,14 @@ function ModelSelector({
   // option — show the raw slug so the UI mirrors the database.
   const buttonLabel = known?.name ?? model ?? "Model";
 
+  // `min-w-0` lets the label truncate when the toolbar runs out of room;
+  // positioned only from `sm` up (see PromptSelector).
   return (
-    <div className="relative">
+    <div className="min-w-0 sm:relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`group flex items-center gap-1.5 rounded-md border px-2 py-1.5 font-mono text-[11px] tracking-tight transition-colors sm:py-1 ${
+        className={`group flex h-9 min-w-0 max-w-full items-center gap-1.5 rounded-md border px-2.5 font-mono text-[11px] tracking-tight transition-colors sm:h-auto sm:px-2 sm:py-1 ${
           open
             ? "border-white/[0.14] bg-white/[0.05] text-white/80"
             : "border-white/[0.08] bg-white/[0.02] text-white/55 hover:border-white/[0.14] hover:bg-white/[0.04] hover:text-white/80"
@@ -4278,9 +4296,9 @@ function ModelSelector({
         ) : (
           <Sparkles className="h-3 w-3 shrink-0 text-white/40" aria-hidden />
         )}
-        <span className="max-w-[100px] truncate sm:max-w-[140px]">{buttonLabel}</span>
+        <span className="min-w-0 max-w-[100px] truncate sm:max-w-[140px]">{buttonLabel}</span>
         <ChevronUp
-          className={`h-3 w-3 text-white/30 transition-transform group-hover:text-white/55 ${
+          className={`h-3 w-3 shrink-0 text-white/30 transition-transform group-hover:text-white/55 ${
             open ? "rotate-180" : ""
           }`}
           aria-hidden
@@ -4298,7 +4316,7 @@ function ModelSelector({
           />
 
           {/* Popup panel — opens upward */}
-          <div className="absolute bottom-full right-0 z-20 mb-2 w-[calc(100vw-2rem)] max-w-[300px] overflow-hidden rounded-xl border border-white/[0.08] bg-[#161616] shadow-[0_16px_48px_rgba(0,0,0,0.6)] ring-1 ring-black/40">
+          <div className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-xl sm:inset-x-auto sm:right-0 sm:w-[300px] border border-white/[0.08] bg-[#161616] shadow-[0_16px_48px_rgba(0,0,0,0.6)] ring-1 ring-black/40">
             <div className="flex items-center justify-between border-b border-white/[0.06] px-3.5 py-2.5">
               <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">
                 Choose model
@@ -4405,26 +4423,29 @@ function ModeSelector({
   const [open, setOpen] = useState(false);
   const current = CHAT_MODES.find((m) => m.slug === mode) ?? CHAT_MODES[0];
 
+  // Positioned only from `sm` up (see PromptSelector).
   return (
-    <div className="relative">
+    <div className="sm:relative">
+      {/* Icon-only on mobile (the icon already reflects the mode); label from `sm` up. */}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`group flex items-center gap-1.5 rounded-md border px-2 py-1.5 font-mono text-[11px] tracking-tight transition-colors sm:py-1 ${
+        className={`group flex h-9 items-center gap-1.5 rounded-md border px-2.5 font-mono text-[11px] tracking-tight transition-colors sm:h-auto sm:px-2 sm:py-1 ${
           open
             ? "border-white/[0.14] bg-white/[0.05] text-white/80"
             : "border-white/[0.08] bg-white/[0.02] text-white/55 hover:border-white/[0.14] hover:bg-white/[0.04] hover:text-white/80"
         }`}
-        aria-label="Choose conversation mode"
+        aria-label={`Conversation mode: ${current.name}`}
+        aria-expanded={open}
       >
         {mode === "image" ? (
-          <ImagePlus className="h-3 w-3 text-[#3ecf8e]/80" aria-hidden />
+          <ImagePlus className="h-3 w-3 shrink-0 text-[#3ecf8e]/80" aria-hidden />
         ) : (
-          <MessageSquare className="h-3 w-3 text-white/40" aria-hidden />
+          <MessageSquare className="h-3 w-3 shrink-0 text-white/40" aria-hidden />
         )}
-        <span className="max-w-[80px] truncate sm:max-w-[120px]">{current.name}</span>
+        <span className="hidden truncate sm:block sm:max-w-[120px]">{current.name}</span>
         <ChevronUp
-          className={`h-3 w-3 text-white/30 transition-transform group-hover:text-white/55 ${
+          className={`h-3 w-3 shrink-0 text-white/30 transition-transform group-hover:text-white/55 ${
             open ? "rotate-180" : ""
           }`}
           aria-hidden
@@ -4440,7 +4461,7 @@ function ModeSelector({
             onClick={() => setOpen(false)}
           />
 
-          <div className="absolute bottom-full left-0 z-20 mb-2 w-[calc(100vw-2rem)] max-w-[240px] overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30 backdrop-blur-sm">
+          <div className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-lg border border-white/[0.08] bg-[#1a1a1a] shadow-[0_12px_40px_rgba(0,0,0,0.55)] ring-1 ring-black/30 backdrop-blur-sm sm:inset-x-auto sm:left-0 sm:w-[240px]">
             <div className="flex items-center justify-between border-b border-white/[0.06] px-3 py-2">
               <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-white/40">
                 Mode

@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
 
+import { getCurrentUser, readDisplayName } from "@/lib/server/current-user";
+
+import { DashboardUserProvider } from "./user-context";
+
 /**
  * Every dashboard route is behind auth and personal to the signed-in user.
  * Child segments override title and description but inherit these robots
@@ -13,10 +17,25 @@ export const metadata: Metadata = {
   },
 };
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <>{children}</>;
+  const user = await getCurrentUser();
+
+  return (
+    <DashboardUserProvider
+      user={
+        user
+          ? {
+              email: user.email ?? null,
+              displayName: readDisplayName(user) || null,
+            }
+          : null
+      }
+    >
+      {children}
+    </DashboardUserProvider>
+  );
 }

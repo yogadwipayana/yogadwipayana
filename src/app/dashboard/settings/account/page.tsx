@@ -1,7 +1,7 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { createClient } from "@/utils/supabase/server";
+import { Avatar } from "@/components/ui/Avatar";
+import { getCurrentUser, readDisplayName } from "@/lib/server/current-user";
 import { AccountForm } from "./account-form";
 
 export const metadata = {
@@ -10,18 +10,13 @@ export const metadata = {
 };
 
 export default async function AccountSettingsPage() {
-  const supabase = createClient(await cookies());
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
 
   if (!user) {
     redirect("/sign-in?next=/dashboard/settings/account");
   }
 
-  const metadata = (user.user_metadata ?? {}) as Record<string, unknown>;
-  const displayName =
-    typeof metadata.display_name === "string" ? metadata.display_name : "";
+  const displayName = readDisplayName(user);
 
   return (
     <div className="pb-12 text-white">
@@ -35,12 +30,7 @@ export default async function AccountSettingsPage() {
 
         <section className="rounded-lg border border-white/[0.08] bg-[#171717]">
           <div className="flex items-center gap-4 border-b border-white/[0.05] px-5 py-5">
-            <span
-              aria-hidden
-              className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#3ecf8e] to-[#24b47e] font-mono text-[18px] font-medium text-[#171717]"
-            >
-              {(user.email?.[0] ?? "y").toUpperCase()}
-            </span>
+            <Avatar name={displayName} email={user.email} size="lg" />
             <div className="min-w-0">
               <p className="truncate text-[14px] font-medium text-white">
                 {displayName || user.email || "Anonymous"}

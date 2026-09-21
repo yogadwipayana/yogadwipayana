@@ -69,7 +69,9 @@ import { ArchivedView } from "./chat/archived";
 import { CustomCommandsView } from "./chat/custom-commands";
 import { SystemPromptsView } from "./chat/system-prompts";
 import { UsageView } from "./chat/usage";
+import { Avatar } from "@/components/ui/Avatar";
 import { Logo } from "@/components/ui/Logo";
+import { useDashboardUser } from "./user-context";
 import { vpsApi, type VpsInstance as ApiVpsInstance } from "@/lib/client/vps-api";
 import { normalizeStatus, toUiInstance } from "@/lib/client/vps-mappers";
 
@@ -899,7 +901,9 @@ export function DashboardShell({
         : undefined;
 
   return (
-    <div className={`${figtree.className} flex h-screen flex-col overflow-hidden bg-[#1c1c1c] tracking-[0] text-white selection:bg-[#3ecf8e]/30 selection:text-white`}>
+    // `h-dvh` (not `h-screen`) tracks the visible viewport on mobile browsers, so
+    // bottom-pinned UI like the chat composer isn't hidden behind the URL bar.
+    <div className={`${figtree.className} flex h-dvh flex-col overflow-hidden bg-[#1c1c1c] tracking-[0] text-white selection:bg-[#3ecf8e]/30 selection:text-white`}>
       <TopBar
         tool={tool}
         onMenuOpen={() => setDrawerOpen(true)}
@@ -1688,6 +1692,7 @@ function TopBar({
 }
 
 function AccountMenu() {
+  const user = useDashboardUser();
   const [open, setOpen] = useState(false);
   const [signingOut, startSignOut] = useTransition();
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -1718,17 +1723,20 @@ function AccountMenu() {
     });
   };
 
+  const who = user?.displayName || user?.email;
+
   return (
     <div ref={containerRef} className="relative ml-1">
       <button
         type="button"
-        aria-label="Account"
+        aria-label={who ? `Account menu for ${who}` : "Account menu"}
+        title={who ?? undefined}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-[#3ecf8e] to-[#24b47e] font-mono text-[11px] font-medium text-[#171717] hover:opacity-90"
+        className="inline-flex rounded-full hover:opacity-90"
       >
-        y
+        <Avatar name={user?.displayName} email={user?.email} />
       </button>
       {open ? (
         <div
@@ -2113,7 +2121,7 @@ function SubSidebarSearch({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="w-full rounded-md border border-white/[0.06] bg-white/[0.03] pl-7 pr-2 py-1.5 text-[12px] text-white placeholder:text-white/25 outline-none transition-colors focus:border-white/[0.16]"
+          className="w-full rounded-md border border-white/[0.06] bg-white/[0.03] pl-7 pr-2 py-1.5 text-[16px] text-white placeholder:text-white/25 outline-none transition-colors focus:border-white/[0.16] sm:text-[12px]"
         />
       </div>
     </div>

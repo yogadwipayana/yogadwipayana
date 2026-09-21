@@ -65,7 +65,9 @@ export async function updateDisplayName(
     return { ok: false, error: error.message };
   }
 
-  revalidatePath("/dashboard/settings/account");
+  // The dashboard layout feeds the name to the header avatar, so refresh the
+  // whole /dashboard subtree, not just the account page.
+  revalidatePath("/dashboard", "layout");
   return { ok: true, message: "Display name updated." };
 }
 

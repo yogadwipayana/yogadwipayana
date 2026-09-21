@@ -24,6 +24,7 @@ import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { CopyValue } from "@/components/ui/CopyValue";
 import { HeroBackdrop } from "@/components/ui/HeroBackdrop";
+import { PriceCut } from "@/components/ui/PriceCut";
 import { ProviderIcon } from "@/components/ui/ProviderIcons";
 import { Reveal } from "@/components/ui/Reveal";
 
@@ -146,8 +147,18 @@ const ROUTER_MODELS = [
   { name: "GPT 6 Astra", provider: "OpenAI", io: "$10 / $50" },
   { name: "Claude Fable 5", provider: "Anthropic", io: "$10 / $50" },
   { name: "GPT 5.6 Sol", provider: "OpenAI", io: "$5 / $30" },
-  { name: "Claude Opus 5", provider: "Anthropic", io: "$5 / $25" },
-  { name: "Claude Sonnet 5", provider: "Anthropic", io: "$2 / $10" },
+  {
+    name: "Claude Opus 5",
+    provider: "Anthropic",
+    io: "$1.50 / $7.50",
+    promo: { percent: 70, regular: "$5 / $25" },
+  },
+  {
+    name: "Claude Sonnet 5",
+    provider: "Anthropic",
+    io: "$0.60 / $3",
+    promo: { percent: 70, regular: "$2 / $10" },
+  },
   { name: "Kimi K3", provider: "Moonshot AI", io: "$2.50 / $14" },
   { name: "GLM 5.3", provider: "Z.ai", io: "$1.50 / $4" },
   { name: "GPT 5.6 Luna", provider: "OpenAI", io: "$1 / $6" },
@@ -795,6 +806,13 @@ export default async function Home() {
                         </td>
                         <td className="px-4 py-3.5 text-right font-mono text-white/60">
                           {model.io}
+                          {"promo" in model && (
+                            <PriceCut
+                              percent={model.promo.percent}
+                              regular={model.promo.regular}
+                              className="justify-end"
+                            />
+                          )}
                         </td>
                       </tr>
                     ))}

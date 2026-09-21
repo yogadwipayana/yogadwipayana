@@ -80,6 +80,7 @@ const AUTO_CHAIN = [
  * Context windows in tokens and prices in USD per million tokens — kept
  * numeric so the table can sort on them and format at render time. A null
  * price means the row bills at whatever model its fallback chain lands on.
+ * Prices are list prices; `discount` (percent) is applied at render time.
  */
 const MODELS: Omit<PricingModel, "available">[] = [
   {
@@ -147,6 +148,7 @@ const MODELS: Omit<PricingModel, "available">[] = [
     context: 1_000_000,
     input: 2,
     output: 10,
+    discount: 70,
   },
   {
     name: "Claude Opus 5",
@@ -155,6 +157,7 @@ const MODELS: Omit<PricingModel, "available">[] = [
     context: 1_000_000,
     input: 5,
     output: 25,
+    discount: 70,
   },
   {
     name: "Kimi K3",

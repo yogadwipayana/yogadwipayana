@@ -23,7 +23,6 @@ import { Footer } from "@/components/layout/Footer";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbSchema, itemListSchema, pageMetadata } from "@/lib/seo";
 import { Button } from "@/components/ui/button";
-import { PriceCut } from "@/components/ui/PriceCut";
 import { ProviderIcon } from "@/components/ui/ProviderIcons";
 import { Reveal } from "@/components/ui/Reveal";
 
@@ -218,21 +217,25 @@ const MODELS = [
     name: "Claude Opus 5",
     provider: "Anthropic",
     context: "1,000,000",
-    io: "$1.50 / $7.50",
-    promo: { percent: 70, regular: "$5.00 / $25.00" },
+    io: "$5.00 / $25.00",
   },
   {
     name: "Claude Sonnet 5",
     provider: "Anthropic",
     context: "1,000,000",
-    io: "$0.60 / $3.00",
-    promo: { percent: 70, regular: "$2.00 / $10.00" },
+    io: "$2.00 / $10.00",
   },
   {
     name: "Kimi K3",
     provider: "Moonshot AI",
     context: "1,000,000",
     io: "$2.50 / $14.00",
+  },
+  {
+    name: "GPT 6 Sol",
+    provider: "OpenAI",
+    context: "1,050,000",
+    io: "$2.00 / $10.00",
   },
   {
     name: "GLM 5.3",
@@ -251,6 +254,12 @@ const MODELS = [
     provider: "DeepSeek",
     context: "1,000,000",
     io: "$0.15 / $0.60",
+  },
+  {
+    name: "GPT 6 Luna",
+    provider: "OpenAI",
+    context: "1,050,000",
+    io: "$0.10 / $0.50",
   },
   {
     name: "DeepSeek V4 Flash",
@@ -325,13 +334,6 @@ function RouterMock() {
               </td>
               <td className="px-4 py-3.5 text-right font-mono text-white/60">
                 {model.io}
-                {"promo" in model && (
-                  <PriceCut
-                    percent={model.promo.percent}
-                    regular={model.promo.regular}
-                    className="justify-end"
-                  />
-                )}
               </td>
             </tr>
           ))}

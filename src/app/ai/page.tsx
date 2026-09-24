@@ -80,7 +80,6 @@ const AUTO_CHAIN = [
  * Context windows in tokens and prices in USD per million tokens — kept
  * numeric so the table can sort on them and format at render time. A null
  * price means the row bills at whatever model its fallback chain lands on.
- * Prices are list prices; `discount` (percent) is applied at render time.
  */
 const MODELS: Omit<PricingModel, "available">[] = [
   {
@@ -118,6 +117,14 @@ const MODELS: Omit<PricingModel, "available">[] = [
     output: 15,
   },
   {
+    name: "GPT 6 Sol",
+    id: "gpt-6-sol",
+    provider: "OpenAI",
+    context: 1_050_000,
+    input: 2,
+    output: 10,
+  },
+  {
     name: "GPT 5.6 Luna",
     id: "gpt-5.6-luna",
     provider: "OpenAI",
@@ -126,12 +133,12 @@ const MODELS: Omit<PricingModel, "available">[] = [
     output: 6,
   },
   {
-    name: "GPT 5.5",
-    id: "gpt-5.5",
+    name: "GPT 6 Luna",
+    id: "gpt-6-luna",
     provider: "OpenAI",
-    context: 1_000_000,
-    input: 5,
-    output: 30,
+    context: 1_050_000,
+    input: 0.1,
+    output: 0.5,
   },
   {
     name: "Claude Fable 5",
@@ -148,7 +155,6 @@ const MODELS: Omit<PricingModel, "available">[] = [
     context: 1_000_000,
     input: 2,
     output: 10,
-    discount: 70,
   },
   {
     name: "Claude Opus 5",
@@ -157,7 +163,6 @@ const MODELS: Omit<PricingModel, "available">[] = [
     context: 1_000_000,
     input: 5,
     output: 25,
-    discount: 70,
   },
   {
     name: "Kimi K3",

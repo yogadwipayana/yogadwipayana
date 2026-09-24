@@ -24,7 +24,6 @@ import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
 import { CopyValue } from "@/components/ui/CopyValue";
 import { HeroBackdrop } from "@/components/ui/HeroBackdrop";
-import { PriceCut } from "@/components/ui/PriceCut";
 import { ProviderIcon } from "@/components/ui/ProviderIcons";
 import { Reveal } from "@/components/ui/Reveal";
 
@@ -128,13 +127,14 @@ const MARQUEE_MODELS = [
   { name: "Claude Opus 5", provider: "Anthropic" },
   { name: "GLM 5.3", provider: "Z.ai" },
   { name: "GPT 5.6 Terra", provider: "OpenAI" },
+  { name: "GPT 6 Sol", provider: "OpenAI" },
   { name: "Claude Sonnet 5", provider: "Anthropic" },
   { name: "GPT 5.6 Luna", provider: "OpenAI" },
-  { name: "GPT 5.5", provider: "OpenAI" },
   { name: "DeepSeek V4 Pro", provider: "DeepSeek" },
   { name: "Qwen3.8 Max", provider: "Qwen" },
   { name: "MiniMax M3", provider: "MiniMax" },
   { name: "DeepSeek V4.1 Flash", provider: "DeepSeek" },
+  { name: "GPT 6 Luna", provider: "OpenAI" },
   { name: "DeepSeek V4 Flash", provider: "DeepSeek" },
 ] as const;
 
@@ -147,22 +147,14 @@ const ROUTER_MODELS = [
   { name: "GPT 6 Astra", provider: "OpenAI", io: "$10 / $50" },
   { name: "Claude Fable 5", provider: "Anthropic", io: "$10 / $50" },
   { name: "GPT 5.6 Sol", provider: "OpenAI", io: "$5 / $30" },
-  {
-    name: "Claude Opus 5",
-    provider: "Anthropic",
-    io: "$1.50 / $7.50",
-    promo: { percent: 70, regular: "$5 / $25" },
-  },
-  {
-    name: "Claude Sonnet 5",
-    provider: "Anthropic",
-    io: "$0.60 / $3",
-    promo: { percent: 70, regular: "$2 / $10" },
-  },
+  { name: "Claude Opus 5", provider: "Anthropic", io: "$5 / $25" },
+  { name: "Claude Sonnet 5", provider: "Anthropic", io: "$2 / $10" },
   { name: "Kimi K3", provider: "Moonshot AI", io: "$2.50 / $14" },
+  { name: "GPT 6 Sol", provider: "OpenAI", io: "$2 / $10" },
   { name: "GLM 5.3", provider: "Z.ai", io: "$1.50 / $4" },
   { name: "GPT 5.6 Luna", provider: "OpenAI", io: "$1 / $6" },
   { name: "DeepSeek V4.1 Flash", provider: "DeepSeek", io: "$0.15 / $0.60" },
+  { name: "GPT 6 Luna", provider: "OpenAI", io: "$0.10 / $0.50" },
   { name: "DeepSeek V4 Flash", provider: "DeepSeek", io: "$0.09 / $0.18" },
 ] as const;
 
@@ -806,13 +798,6 @@ export default async function Home() {
                         </td>
                         <td className="px-4 py-3.5 text-right font-mono text-white/60">
                           {model.io}
-                          {"promo" in model && (
-                            <PriceCut
-                              percent={model.promo.percent}
-                              regular={model.promo.regular}
-                              className="justify-end"
-                            />
-                          )}
                         </td>
                       </tr>
                     ))}

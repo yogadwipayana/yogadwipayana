@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Check, Copy, Search, Terminal } from "lucide-react";
 
-import { DiscountBadge, RegularPrice } from "@/components/ui/PriceCut";
 import { ProviderIcon } from "@/components/ui/ProviderIcons";
 
 import { AI_MODELS } from "../../data";
@@ -182,7 +181,6 @@ export default function AiModelsPage() {
                         <ProviderIcon provider={model.provider} className="h-3.5 w-3.5" />
                       </span>
                       <span className="font-medium text-white">{model.name}</span>
-                      {model.promo && <DiscountBadge percent={model.promo.percent} />}
                     </div>
                   </td>
                   <td className="px-4 py-3">
@@ -191,14 +189,8 @@ export default function AiModelsPage() {
                     </span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-white/60">{model.contextWindow}</td>
-                  <td className="whitespace-nowrap px-4 py-3 font-mono text-[#3ecf8e]">
-                    {model.promo && <><RegularPrice>{model.promo.regularInput}</RegularPrice>{" "}</>}
-                    {model.inputPrice}
-                  </td>
-                  <td className="whitespace-nowrap px-4 py-3 font-mono text-[#3ecf8e]">
-                    {model.promo && <><RegularPrice>{model.promo.regularOutput}</RegularPrice>{" "}</>}
-                    {model.outputPrice}
-                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 font-mono text-[#3ecf8e]">{model.inputPrice}</td>
+                  <td className="whitespace-nowrap px-4 py-3 font-mono text-[#3ecf8e]">{model.outputPrice}</td>
                   <td className="px-4 py-3">
                     <button
                       type="button"
@@ -240,19 +232,15 @@ export default function AiModelsPage() {
                           <ProviderIcon provider={model.provider} className="h-3.5 w-3.5" />
                         </span>
                         <p className="truncate font-medium text-white">{model.name}</p>
-                        {model.promo && <DiscountBadge percent={model.promo.percent} />}
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="font-mono text-[12px] text-[#3ecf8e]">
-                          {model.promo && <><RegularPrice>{model.promo.regularInput}</RegularPrice>{" "}</>}
-                          {model.inputPrice}
-                        </p>
+                        <p className="font-mono text-[12px] text-[#3ecf8e]">{model.inputPrice}</p>
                         <p className="font-mono text-[11px] text-white/40">in / 1M</p>
                       </div>
                     </div>
                     <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-[11px]">
                       <div><dt className="text-white/30">Context</dt><dd className="mt-0.5 font-mono text-white/70">{model.contextWindow}</dd></div>
-                      <div><dt className="text-white/30">Output / 1M</dt><dd className="mt-0.5 font-mono text-[#3ecf8e]">{model.promo && <><RegularPrice>{model.promo.regularOutput}</RegularPrice>{" "}</>}{model.outputPrice}</dd></div>
+                      <div><dt className="text-white/30">Output / 1M</dt><dd className="mt-0.5 font-mono text-[#3ecf8e]">{model.outputPrice}</dd></div>
                       <div className="col-span-2">
                         <dt className="text-white/30">Model ID</dt>
                         <dd className="mt-0.5">

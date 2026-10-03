@@ -71,9 +71,9 @@ async function getEnabledModelIds(): Promise<Set<string>> {
  * the page shows.
  */
 const AUTO_CHAIN = [
+  { id: "gpt-6-astra", name: "GPT 6 Astra", provider: "OpenAI" },
   { id: "claude-opus-5", name: "Claude Opus 5", provider: "Anthropic" },
-  { id: "gpt-5.6-sol", name: "GPT 5.6 Sol", provider: "OpenAI" },
-  { id: "kimi-k3", name: "Kimi K3", provider: "Moonshot AI" },
+  { id: "glm-5.3", name: "GLM 5.3", provider: "Z.ai" },
 ] as const;
 
 /**

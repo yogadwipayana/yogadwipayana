@@ -1640,7 +1640,7 @@ function TopBar({
           href="/"
           className="flex h-8 items-center gap-2 rounded-md px-2 text-[13px] font-medium tracking-[-0.01em] text-white/85 transition-colors hover:bg-white/5 hover:text-white"
         >
-          <Logo className="h-4 w-4" />
+          <Logo className="h-5 w-5" />
           yoga
         </Link>
 
@@ -2460,7 +2460,7 @@ function MobileDrawer({
               onClick={onClose}
               className="flex items-center gap-2 px-1 text-[13px] font-medium tracking-[-0.01em]"
             >
-              <Logo className="h-4 w-4" />
+              <Logo className="h-5 w-5" />
               yoga
             </Link>
             <button

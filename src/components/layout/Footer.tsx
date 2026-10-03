@@ -16,7 +16,7 @@ export function Footer() {
             href="/"
             className="inline-flex items-center gap-2 transition-opacity hover:opacity-80"
           >
-            <Logo className="h-5 w-5" />
+            <Logo className="h-6 w-6" />
             <span className="font-medium text-white">Yoga</span>
           </Link>
           <span className="text-white/35" suppressHydrationWarning>

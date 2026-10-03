@@ -75,7 +75,7 @@ export function NavbarClient({ user }: NavbarClientProps) {
           onClick={close}
           className="flex items-center gap-2 justify-self-start text-[15px] font-medium tracking-[-0.01em] text-white"
         >
-          <Logo className="h-6 w-6" />
+          <Logo className="h-7 w-7" />
           yoga
         </Link>
 

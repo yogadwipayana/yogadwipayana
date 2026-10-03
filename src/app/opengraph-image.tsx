@@ -3,6 +3,8 @@ import { join } from "node:path";
 
 import { ImageResponse } from "next/og";
 
+import { Logo } from "@/components/ui/Logo";
+
 export const alt =
   "Yoga — AI Router, Chat, VPS, and Image tools behind one key";
 export const size = { width: 1200, height: 630 };
@@ -63,19 +65,7 @@ export default async function OpengraphImage() {
             position: "relative",
           }}
         >
-          <svg width="46" height="46" viewBox="0 0 32 32" fill="none">
-            <path d="M16 3 L29 9.5 L16 16 L3 9.5 Z" fill={GREEN} />
-            <path
-              d="M3 9.5 L16 16 L16 29 L3 22.5 Z"
-              fill={GREEN}
-              fillOpacity="0.5"
-            />
-            <path
-              d="M29 9.5 L16 16 L16 29 L29 22.5 Z"
-              fill={GREEN}
-              fillOpacity="0.75"
-            />
-          </svg>
+          <Logo width={46} height={46} />
           <div style={{ fontSize: 34, color: "#ffffff", fontWeight: 600 }}>
             Yoga
           </div>

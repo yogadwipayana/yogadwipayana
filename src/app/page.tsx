@@ -342,7 +342,7 @@ export default async function Home() {
                 <span className="inline-flex items-center rounded-full bg-[#3ecf8e]/12 px-2 py-0.5 text-[12px] font-medium text-[#3ecf8e]">
                   New
                 </span>
-                GPT 5.6 &amp; Claude Opus 5 live on the router
+                GPT 6 Astra &amp; Claude Opus 5 live on the router
                 <ArrowRight
                   className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5"
                   aria-hidden

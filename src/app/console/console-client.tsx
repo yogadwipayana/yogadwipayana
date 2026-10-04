@@ -15,6 +15,8 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { ROUTER_API_WHATSAPP_URL } from "@/lib/whatsapp";
+
 /* -------------------------------------------------------------------------- */
 /*  API types — mirror the response of POST /api/console                       */
 /* -------------------------------------------------------------------------- */
@@ -410,12 +412,12 @@ function KeyGate({
           <p className="mt-6 text-center text-[12px] text-white/35">
             Need a key?{" "}
             <a
-              href="https://marketku.id/ai/product/api-model-frontier-opus-4-8-sonnet-5-dan-gpt-5-6-sol-terra-luna-a4bf07d2-85a0-49ed-a9b8-766703a9c75e"
+              href={ROUTER_API_WHATSAPP_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="text-white/60 underline decoration-white/20 underline-offset-2 transition-colors hover:text-white"
             >
-              Visit the AI store
+              Order one via WhatsApp
             </a>
           </p>
         </div>

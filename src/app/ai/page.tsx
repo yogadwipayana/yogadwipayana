@@ -12,6 +12,7 @@ import { ProviderIcon } from "@/components/ui/ProviderIcons";
 import { Reveal } from "@/components/ui/Reveal";
 import { JsonLd } from "@/components/seo/JsonLd";
 import { breadcrumbSchema, pageMetadata } from "@/lib/seo";
+import { AI_VOUCHER_WHATSAPP_URL } from "@/lib/whatsapp";
 import { ModelTable, type PricingModel } from "./ModelTable";
 
 const figtree = Figtree({ subsets: ["latin"], display: "swap" });
@@ -30,9 +31,6 @@ export const metadata: Metadata = pageMetadata({
     "AI credit voucher",
   ],
 });
-
-const VOUCHER_LINK =
-  "https://marketku.id/ai/product/ai-router-opus-4-8-sonnet-5-dan-gpt-5-6-c10f5333-679c-405b-a4bc-f746e318bf46";
 
 const BASE_URL = "https://ai.yogathedev.com/v1";
 
@@ -302,14 +300,14 @@ export default async function AiRouterPricing() {
                   aria-hidden
                 />
                 <p className="text-[13px] leading-relaxed text-white/55">
-                  Top up by redeeming a voucher ordered from the{" "}
+                  Top up by redeeming a voucher ordered via{" "}
                   <a
-                    href={VOUCHER_LINK}
+                    href={AI_VOUCHER_WHATSAPP_URL}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-white/80 underline decoration-white/20 underline-offset-2 transition-colors hover:text-white"
                   >
-                    store
+                    WhatsApp
                   </a>
                   . Purchase a credit voucher, then redeem its code in the
                   dashboard to add balance instantly.
@@ -404,7 +402,7 @@ export default async function AiRouterPricing() {
                     </Button>
                     <Button size="lg" variant="secondary" asChild>
                       <a
-                        href={VOUCHER_LINK}
+                        href={AI_VOUCHER_WHATSAPP_URL}
                         target="_blank"
                         rel="noopener noreferrer"
                       >

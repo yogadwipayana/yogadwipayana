@@ -16,6 +16,11 @@ import {
 
 import { formatIdr } from "@/lib/money";
 import { SMS_PRICE_IDR } from "@/lib/sms-order";
+import {
+  AI_VOUCHER_WHATSAPP_URL,
+  ROUTER_API_WHATSAPP_URL,
+  whatsappUrl,
+} from "@/lib/whatsapp";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
@@ -28,7 +33,7 @@ const figtree = Figtree({ subsets: ["latin"], display: "swap" });
 export const metadata: Metadata = pageMetadata({
   title: "AI Store — API keys, credit vouchers & accounts",
   description:
-    "In-house tools — my AI Router and disposable SMS verification — plus verified ChatGPT Plus and Kiro dev accounts ordered via WhatsApp.",
+    "In-house tools — my AI Router and disposable SMS verification — plus verified ChatGPT Plus and Kiro Pro / Pro+ / Power accounts ordered via WhatsApp.",
   path: "/store",
   keywords: [
     "AI router",
@@ -36,30 +41,25 @@ export const metadata: Metadata = pageMetadata({
     "SMS OTP number",
     "OpenAI verification number",
     "buy ChatGPT Plus",
-    "Kiro dev account",
+    "Kiro Pro account",
+    "Kiro Pro+ account",
+    "Kiro Power account",
     "AI credit voucher",
     "GPT and Claude access",
     "pay as you go AI",
   ],
 });
 
-const MARKETPLACE = {
-  chatgptPlus:
-    "https://marketku.id/chatgpt/product/chatgpt-plus-private-1-bulan-bergaransi-support-codex-ea6de138-5e57-4dbb-8cba-0623b18321fd",
-  kiro: "https://marketku.id/kiro/product/kiro-pro-bergaransi-9f7731d0-3215-44b3-8e9f-fd0dbb9e4bc1",
-  smsVerif:
-    "https://marketku.id/jasa-verif/product/jasa-verif-codex-bbcd9849-26d1-4c51-b1b2-cd5ab2eb0170",
-  voucher:
-    "https://marketku.id/ai/product/ai-router-opus-4-8-sonnet-5-dan-gpt-5-6-c10f5333-679c-405b-a4bc-f746e318bf46",
+/** WhatsApp order links, each prefilled with the product being asked about. */
+const WHATSAPP_ORDER = {
+  chatgptPlus: whatsappUrl("Hi, I want to order a ChatGPT Plus account (1 month)."),
+  kiro: whatsappUrl("Hi, I want to pre-order a Kiro account (Pro / Pro+ / Power)."),
+  smsVerif: whatsappUrl("Hi, I want to order the Codex SMS verification service."),
 };
 
-/** Marketku listing for the frontier Router API (unlimited, fair-use plans). */
-const ROUTER_API_URL =
-  "https://marketku.id/ai/product/api-model-frontier-opus-4-8-sonnet-5-dan-gpt-5-6-sol-terra-luna-a4bf07d2-85a0-49ed-a9b8-766703a9c75e";
-
 /**
- * Fair-use token allowance per unlimited-plan duration, taken from the
- * Marketku listing. "Avg / day" is derived (total ÷ days) as a value cue.
+ * Fair-use token allowance per unlimited-plan duration. "Avg / day" is
+ * derived (total ÷ days) as a value cue.
  */
 const ROUTER_PLANS = [
   { duration: "1 day", tokens: "10M tokens", perDay: "10M / day" },
@@ -104,7 +104,7 @@ const IN_HOUSE: Product[] = [
     href: "/dashboard/ai",
     external: false,
     secondaryCta: "Buy voucher",
-    secondaryHref: MARKETPLACE.voucher,
+    secondaryHref: AI_VOUCHER_WHATSAPP_URL,
   },
   {
     icon: Smartphone,
@@ -123,13 +123,13 @@ const IN_HOUSE: Product[] = [
     cta: "Get a number",
     href: "/dashboard/sms",
     external: false,
-    secondaryCta: "Buy on Marketku",
-    secondaryHref: MARKETPLACE.smsVerif,
+    secondaryCta: "Order via WhatsApp",
+    secondaryHref: WHATSAPP_ORDER.smsVerif,
   },
 ];
 
-/** Accounts and access ordered through the marketplace or WhatsApp. */
-const MARKETPLACE_PRODUCTS: Product[] = [
+/** Accounts and access ordered through WhatsApp. */
+const ACCOUNT_PRODUCTS: Product[] = [
   {
     icon: Cpu,
     name: "API Model Frontier",
@@ -143,8 +143,8 @@ const MARKETPLACE_PRODUCTS: Product[] = [
     ],
     price: "Pay as you go",
     unit: "One OpenAI-compatible key",
-    cta: "Buy on Marketku",
-    href: ROUTER_API_URL,
+    cta: "Order via WhatsApp",
+    href: ROUTER_API_WHATSAPP_URL,
     external: true,
   },
   {
@@ -154,27 +154,27 @@ const MARKETPLACE_PRODUCTS: Product[] = [
     blurb:
       "A verified ChatGPT Plus account for one month: faster responses, priority access, and the latest models.",
     highlights: ["Verified account", "1 month access", "Codex support"],
-    price: "Rp25.000",
+    price: "Rp75.000",
     unit: "1 month · warranty",
-    cta: "Buy on Marketku",
-    href: MARKETPLACE.chatgptPlus,
+    cta: "Order via WhatsApp",
+    href: WHATSAPP_ORDER.chatgptPlus,
     external: true,
   },
   {
     icon: Bot,
-    name: "Kiro Pro",
-    tag: "Pro · warranty",
+    name: "Kiro Pro / Pro+ / Power",
+    tag: "Pre-order",
     blurb:
-      "A Kiro Pro account for the spec-driven agentic IDE — warranted and ready to use.",
+      "Pre-order a Kiro Pro, Pro+, or Power account for the spec-driven agentic IDE — delivered as soon as access opens.",
     highlights: [
-      "Kiro Pro account",
-      "Spec-driven agentic IDE",
+      "Pro, Pro+ or Power tier",
+      "Delivered when access opens",
       "Warranty included",
     ],
-    price: "Rp80.000",
-    unit: "Kiro Pro · warranty",
-    cta: "Buy on Marketku",
-    href: MARKETPLACE.kiro,
+    price: "Rp100.000",
+    unit: "Pre-order · warranty",
+    cta: "Pre-order via WhatsApp",
+    href: WHATSAPP_ORDER.kiro,
     external: true,
   },
 ];
@@ -272,7 +272,7 @@ function InHouseCard({ product, index }: { product: Product; index: number }) {
   );
 }
 
-/** Compact card for marketplace accounts. */
+/** Compact card for accounts ordered via WhatsApp. */
 function AccessCard({ product, index }: { product: Product; index: number }) {
   const Icon = product.icon;
   return (
@@ -364,8 +364,8 @@ export default function AiStore() {
               style={{ animationDelay: "120ms" }}
             >
               In-house tools like my AI Router and disposable SMS verification,
-              plus verified ChatGPT Plus and Kiro dev accounts ordered directly
-              via WhatsApp.
+              plus verified ChatGPT Plus and Kiro Pro / Pro+ / Power accounts
+              ordered directly via WhatsApp.
             </p>
 
             <div
@@ -406,10 +406,10 @@ export default function AiStore() {
             <div>
               <SectionHeading
                 title="Accounts & access"
-                note="Ordered via WhatsApp & marketplace"
+                note="Ordered via WhatsApp"
               />
               <ul className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {MARKETPLACE_PRODUCTS.map((product, i) => (
+                {ACCOUNT_PRODUCTS.map((product, i) => (
                   <li key={product.name}>
                     <AccessCard product={product} index={i} />
                   </li>
@@ -443,11 +443,11 @@ export default function AiStore() {
                       <div className="mt-5 flex flex-col gap-2 sm:flex-row">
                         <Button size="sm" asChild>
                           <a
-                            href={ROUTER_API_URL}
+                            href={ROUTER_API_WHATSAPP_URL}
                             target="_blank"
                             rel="noopener noreferrer"
                           >
-                            Buy on Marketku
+                            Order via WhatsApp
                             <ExternalLink aria-hidden />
                           </a>
                         </Button>
@@ -521,8 +521,8 @@ export default function AiStore() {
 
             <p className="text-[13px] leading-relaxed text-white/40">
               AI Router and SMS Verification run in-house from the dashboard.
-              API Model Frontier, ChatGPT Plus, and Kiro Pro open on Marketku in
-              a new tab.
+              API Model Frontier, ChatGPT Plus, and Kiro Pro / Pro+ / Power are
+              ordered via WhatsApp.
             </p>
           </div>
         </section>
@@ -555,7 +555,7 @@ export default function AiStore() {
                     </Button>
                     <Button size="lg" variant="secondary" asChild>
                       <a
-                        href={MARKETPLACE.voucher}
+                        href={AI_VOUCHER_WHATSAPP_URL}
                         target="_blank"
                         rel="noopener noreferrer"
                       >

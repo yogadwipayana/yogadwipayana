@@ -7,3 +7,14 @@
 export function formatIdr(value: number): string {
   return `Rp${Math.round(value).toLocaleString("id-ID")}`;
 }
+
+/** "$1.50" — four decimals for sub-cent amounts so they don't read as $0.00. */
+export function formatUsd(value: number): string {
+  const decimals = value > 0 && value <= 0.01 ? 4 : 2;
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(value);
+}

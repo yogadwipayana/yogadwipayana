@@ -1,21 +1,9 @@
 import { cookies } from "next/headers";
 import { createClient } from "@/utils/supabase/server";
-import { aiDb } from "@/lib/db/ai";
+import { formatUsd } from "@/lib/money";
+import { getAiCredit } from "@/lib/server/ai-credit";
+import { AiCreditStatusBadge } from "../../ai-credit-status";
 import AddFundsModal from "./AddFundsModal";
-
-/* -------------------------------------------------------------------------- */
-/*  Helpers                                                                    */
-/* -------------------------------------------------------------------------- */
-
-function formatUsd(value: number): string {
-  const decimals = value > 0 && value <= 0.01 ? 4 : 2;
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(value);
-}
 
 /* -------------------------------------------------------------------------- */
 /*  Page                                                                       */
@@ -33,54 +21,17 @@ export default async function AiBillingPage() {
   const email = user?.email ?? null;
 
   /* ── DB queries (skip entirely when not logged in) ── */
-  // Spend comes from the pre-aggregated `ownerSpend` table — one row per owner,
-  // maintained upstream. Verified to match SUM(usageHistory.cost) exactly, at a
-  // fraction of the cost of scanning the full history.
-  const [owner, spend] = email
-    ? await Promise.all([
-        aiDb.ownerUsers.findUnique({ where: { email } }),
-        aiDb.ownerSpend.findUnique({ where: { owner: email } }),
-      ])
-    : [null, null];
-
-  const spentUsd     = spend?.spentUsd ?? 0;
-  const budgetUsd    = owner?.budgetUsd ?? 0;
-  const remainingUsd = Math.max(0, budgetUsd - spentUsd);
+  const credit = email ? await getAiCredit(email) : null;
 
   /* ── Derived display values ── */
   const isLoggedIn = email !== null;
 
-  type BadgeVariant = "active" | "inactive" | "not-configured" | "sign-in";
-  let badgeVariant: BadgeVariant;
-  let badgeLabel: string;
+  const balanceDisplay = credit ? formatUsd(credit.remainingUsd) : "—";
 
-  if (!isLoggedIn) {
-    badgeVariant = "sign-in";
-    badgeLabel   = "Sign in";
-  } else if (!owner) {
-    badgeVariant = "not-configured";
-    badgeLabel   = "Not configured";
-  } else if (owner.isActive === 1) {
-    badgeVariant = "active";
-    badgeLabel   = "Active";
-  } else {
-    badgeVariant = "inactive";
-    badgeLabel   = "Inactive";
-  }
-
-  const badgeClass =
-    badgeVariant === "active"
-      ? "text-[#3ecf8e]"
-      : badgeVariant === "inactive"
-        ? "text-yellow-400"
-        : "text-white/40";
-
-  const balanceDisplay = isLoggedIn ? formatUsd(remainingUsd) : "—";
-
-  const subtext = isLoggedIn
-    ? owner
-      ? `Budget ${formatUsd(budgetUsd)} · Spent ${formatUsd(spentUsd)}`
-      : "Top up to activate your AI account"
+  const subtext = credit
+    ? credit.status === "not-configured"
+      ? "Top up to activate your AI account"
+      : `Budget ${formatUsd(credit.budgetUsd)} · Spent ${formatUsd(credit.spentUsd)}`
     : null;
 
   return (
@@ -103,9 +54,7 @@ export default async function AiBillingPage() {
           <div className="flex flex-col rounded-lg border border-white/[0.08] bg-[#171717] p-5">
             <div className="flex items-start justify-between gap-4">
               <p className="text-[10px] uppercase tracking-[0.1em] text-white/30">Credit Balance</p>
-              <span className={`text-[10px] uppercase tracking-[0.1em] ${badgeClass}`}>
-                {badgeLabel}
-              </span>
+              <AiCreditStatusBadge status={credit?.status ?? null} />
             </div>
             <h3 className="mt-4 text-[30px] font-medium tracking-[-0.03em] text-[#3ecf8e]">
               {balanceDisplay}

@@ -4,12 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ExternalLink, Ticket, X } from "lucide-react";
 
-/* -------------------------------------------------------------------------- */
-/*  Constants                                                                  */
-/* -------------------------------------------------------------------------- */
-
-const VOUCHER_URL =
-  "https://marketku.id/ai/product/ai-router-opus-4-8-sonnet-5-dan-gpt-5-6-c10f5333-679c-405b-a4bc-f746e318bf46";
+import { AI_VOUCHER_WHATSAPP_URL } from "@/lib/whatsapp";
 
 /* -------------------------------------------------------------------------- */
 /*  Shared modal pieces                                                        */
@@ -54,7 +49,22 @@ function ModalHeader({ title, onClose }: { title: string; onClose: () => void })
 /*  AddFundsModal                                                              */
 /* -------------------------------------------------------------------------- */
 
-export default function AddFundsModal() {
+const TRIGGER_STYLES = {
+  /** Small inline button, used inside the billing card footer. */
+  compact:
+    "rounded-md border border-white/[0.08] px-3 py-1.5 text-[12px] text-white/60 hover:bg-white/[0.04] hover:text-white/80 transition-colors",
+  /** Page-header button, sized to sit next to the wallet's redeem button. */
+  header:
+    "inline-flex items-center justify-center gap-1.5 rounded-md border border-white/[0.1] px-3.5 py-2 text-[13px] font-medium text-white/80 transition-colors hover:bg-white/[0.04] hover:text-white",
+};
+
+export default function AddFundsModal({
+  label = "Redeem voucher",
+  variant = "compact",
+}: {
+  label?: string;
+  variant?: keyof typeof TRIGGER_STYLES;
+}) {
   const router = useRouter();
   const [open, setOpen]       = useState(false);
   const [code, setCode]       = useState("");
@@ -116,9 +126,10 @@ export default function AddFundsModal() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-md border border-white/[0.08] px-3 py-1.5 text-[12px] text-white/60 hover:bg-white/[0.04] hover:text-white/80 transition-colors"
+        className={TRIGGER_STYLES[variant]}
       >
-        Redeem voucher
+        {variant === "header" && <Ticket className="h-4 w-4" aria-hidden />}
+        {label}
       </button>
 
       {open && (
@@ -168,11 +179,11 @@ export default function AddFundsModal() {
                     />
                   </div>
                   <a
-                    href={VOUCHER_URL}
+                    href={AI_VOUCHER_WHATSAPP_URL}
                     target="_blank" rel="noopener noreferrer"
                     className="mt-2 inline-flex items-center gap-1 text-[11px] text-white/40 hover:text-white/70 transition-colors"
                   >
-                    Don&apos;t have one? Order a voucher
+                    Don&apos;t have one? Order a voucher via WhatsApp
                     <ExternalLink className="h-3 w-3" />
                   </a>
                   {error && <p role="alert" className="mt-1.5 text-[12px] text-red-400">{error}</p>}

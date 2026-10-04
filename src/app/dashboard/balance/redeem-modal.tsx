@@ -5,11 +5,7 @@ import { useRouter } from "next/navigation";
 import { ExternalLink, Ticket, X } from "lucide-react";
 
 import { formatIdr } from "@/lib/money";
-
-/** Where a buyer without a code goes to get one. */
-export const VOUCHER_WHATSAPP_URL = `https://wa.me/6287889640714?text=${encodeURIComponent(
-  "Hi, I want to buy a balance voucher for the SMS OTP tool — clicked from the balance dashboard.",
-)}`;
+import { SMS_VOUCHER_WHATSAPP_URL } from "@/lib/whatsapp";
 
 type RedeemResponse = {
   code: string;
@@ -82,10 +78,10 @@ export function RedeemVoucherModal() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-md bg-[#3ecf8e] px-3.5 py-2 text-[13px] font-medium text-[#171717] transition-colors hover:bg-[#24b47e]"
+        className="inline-flex items-center justify-center gap-1.5 rounded-md bg-[#3ecf8e] px-3.5 py-2 text-[13px] font-medium text-[#171717] transition-colors hover:bg-[#24b47e]"
       >
         <Ticket className="h-4 w-4" aria-hidden />
-        Redeem voucher
+        Redeem SMS voucher
       </button>
 
       {open && (
@@ -108,7 +104,7 @@ export function RedeemVoucherModal() {
                   id="redeem-balance-title"
                   className="text-[16px] font-medium text-white"
                 >
-                  Redeem voucher
+                  Redeem SMS voucher
                 </h3>
                 <button
                   type="button"
@@ -172,7 +168,7 @@ export function RedeemVoucherModal() {
                       />
                     </div>
                     <a
-                      href={VOUCHER_WHATSAPP_URL}
+                      href={SMS_VOUCHER_WHATSAPP_URL}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="mt-2 inline-flex items-center gap-1 text-[11px] text-white/40 transition-colors hover:text-white/70"

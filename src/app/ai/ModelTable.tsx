@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 
+import { PriceCut } from "@/components/ui/PriceCut";
 import { ProviderIcon } from "@/components/ui/ProviderIcons";
 import { ModelIdCopy } from "./ModelIdCopy";
 
@@ -24,6 +25,8 @@ export type PricingModel = {
   input: number | null;
   /** USD per million output tokens; null when the rate follows `fallback`. */
   output: number | null;
+  /** Promotional cut in percent off `input` and `output`, which stay list prices. */
+  discount?: number;
   available: boolean;
   /** Display names of the models a fallback combo tries, in order. */
   fallback?: readonly string[];
@@ -66,6 +69,16 @@ const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: "status:desc", label: "Available first" },
 ];
 
+/** The rate actually charged per million tokens, after any discount. */
+function effectiveRate(
+  model: PricingModel,
+  key: "input" | "output",
+): number | null {
+  const rate = model[key];
+  if (rate === null || !model.discount) return rate;
+  return (rate * (100 - model.discount)) / 100;
+}
+
 /** Ascending comparison for a key; direction is applied by the caller. */
 function compareBy(a: PricingModel, b: PricingModel, key: SortKey): number {
   switch (key) {
@@ -74,9 +87,8 @@ function compareBy(a: PricingModel, b: PricingModel, key: SortKey): number {
     case "context":
       return a.context - b.context;
     case "input":
-      return (a.input ?? 0) - (b.input ?? 0);
     case "output":
-      return (a.output ?? 0) - (b.output ?? 0);
+      return (effectiveRate(a, key) ?? 0) - (effectiveRate(b, key) ?? 0);
     case "status":
       return Number(a.available) - Number(b.available);
     default:
@@ -441,7 +453,15 @@ export function ModelTable({ models }: { models: PricingModel[] }) {
                     </span>
                   ) : (
                     <>
-                      {formatUsd(model.input)} / {formatUsd(model.output)}
+                      {formatUsd(effectiveRate(model, "input") ?? 0)} /{" "}
+                      {formatUsd(effectiveRate(model, "output") ?? 0)}
+                      {model.discount ? (
+                        <PriceCut
+                          percent={model.discount}
+                          regular={`${formatUsd(model.input)} / ${formatUsd(model.output)}`}
+                          className="justify-end"
+                        />
+                      ) : null}
                     </>
                   )}
                 </td>

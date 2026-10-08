@@ -165,6 +165,8 @@ export type AiModel = {
   inputPrice: string;
   outputPrice: string;
   modelId: string;
+  /** Running discount; `inputPrice`/`outputPrice` already carry the cut. */
+  promo?: { percent: number; regularInput: string; regularOutput: string };
 };
 
 export const AI_MODELS: AiModel[] = [
@@ -177,7 +179,7 @@ export const AI_MODELS: AiModel[] = [
   { slug: "gpt-6-luna",       name: "GPT 6 Luna",       provider: "OpenAI",    providerCode: "OA", contextWindow: "1,050,000", inputPrice: "$0.10",  outputPrice: "$0.50",  modelId: "gpt-6-luna" },
   { slug: "claude-fable-5",   name: "Claude Fable 5",   provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$10.00", outputPrice: "$50.00", modelId: "claude-fable-5" },
   { slug: "claude-sonnet-5",  name: "Claude Sonnet 5",  provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$2.00",  outputPrice: "$10.00", modelId: "claude-sonnet-5" },
-  { slug: "claude-opus-5",    name: "Claude Opus 5",    provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$5.00",  outputPrice: "$25.00", modelId: "claude-opus-5" },
+  { slug: "claude-opus-5",    name: "Claude Opus 5",    provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$2.50",  outputPrice: "$12.50", modelId: "claude-opus-5", promo: { percent: 50, regularInput: "$5.00", regularOutput: "$25.00" } },
   { slug: "kimi-k3",          name: "Kimi K3",          provider: "Moonshot AI", providerCode: "MS", contextWindow: "1,000,000", inputPrice: "$2.50",  outputPrice: "$14.00", modelId: "kimi-k3" },
   { slug: "glm-5.3",          name: "GLM 5.3",          provider: "Z.ai",      providerCode: "ZA", contextWindow: "1,000,000", inputPrice: "$1.50",  outputPrice: "$4.00",  modelId: "glm-5.3" },
   { slug: "deepseek-v4-pro",  name: "DeepSeek V4 Pro",  provider: "DeepSeek",  providerCode: "DS", contextWindow: "1,000,000", inputPrice: "$0.435", outputPrice: "$0.87",  modelId: "deepseek-v4-pro" },

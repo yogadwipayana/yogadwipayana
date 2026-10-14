@@ -7,7 +7,7 @@ import { formatIdr, formatUsd } from "@/lib/money";
 import { SMS_PRICE_IDR } from "@/lib/sms-order";
 import { getAiCredit, type AiCredit } from "@/lib/server/ai-credit";
 import { getBalance, listTransactions } from "@/lib/server/balance-service";
-import { SMS_VOUCHER_WHATSAPP_URL } from "@/lib/whatsapp";
+import { SMS_VOUCHER_URL } from "@/lib/store-links";
 import { createClient } from "@/utils/supabase/server";
 
 import AddFundsModal from "../ai/billing/AddFundsModal";
@@ -136,7 +136,7 @@ export default async function BalancePage() {
             How it works
           </p>
           <ul className="mt-4 space-y-2.5 text-[13px] leading-relaxed text-white/50">
-            <li>• Order a voucher via WhatsApp</li>
+            <li>• Order a voucher on Marketku</li>
             <li>• Redeem the code here to top up instantly</li>
             <li>
               • Each SMS number costs {formatIdr(SMS_PRICE_IDR)}, refunded
@@ -149,7 +149,7 @@ export default async function BalancePage() {
             <li>• No subscription · balance never expires</li>
           </ul>
           <a
-            href={SMS_VOUCHER_WHATSAPP_URL}
+            href={SMS_VOUCHER_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="mt-4 inline-flex items-center gap-1 text-[11px] text-white/40 transition-colors hover:text-white/70"

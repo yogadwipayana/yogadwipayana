@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ExternalLink, Ticket, X } from "lucide-react";
 
 import { formatIdr } from "@/lib/money";
-import { SMS_VOUCHER_WHATSAPP_URL } from "@/lib/whatsapp";
+import { SMS_VOUCHER_URL } from "@/lib/store-links";
 
 type RedeemResponse = {
   code: string;
@@ -168,12 +168,12 @@ export function RedeemVoucherModal() {
                       />
                     </div>
                     <a
-                      href={SMS_VOUCHER_WHATSAPP_URL}
+                      href={SMS_VOUCHER_URL}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="mt-2 inline-flex items-center gap-1 text-[11px] text-white/40 transition-colors hover:text-white/70"
                     >
-                      Don&apos;t have one? Order a voucher via WhatsApp
+                      Don&apos;t have one? Order a voucher on Marketku
                       <ExternalLink className="h-3 w-3" aria-hidden />
                     </a>
                     {error && (

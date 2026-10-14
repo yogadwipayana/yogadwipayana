@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ExternalLink, Ticket, X } from "lucide-react";
 
-import { AI_VOUCHER_WHATSAPP_URL } from "@/lib/whatsapp";
+import { AI_VOUCHER_URL } from "@/lib/store-links";
 
 /* -------------------------------------------------------------------------- */
 /*  Shared modal pieces                                                        */
@@ -179,11 +179,11 @@ export default function AddFundsModal({
                     />
                   </div>
                   <a
-                    href={AI_VOUCHER_WHATSAPP_URL}
+                    href={AI_VOUCHER_URL}
                     target="_blank" rel="noopener noreferrer"
                     className="mt-2 inline-flex items-center gap-1 text-[11px] text-white/40 hover:text-white/70 transition-colors"
                   >
-                    Don&apos;t have one? Order a voucher via WhatsApp
+                    Don&apos;t have one? Order a voucher on Marketku
                     <ExternalLink className="h-3 w-3" />
                   </a>
                   {error && <p role="alert" className="mt-1.5 text-[12px] text-red-400">{error}</p>}

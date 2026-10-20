@@ -20,7 +20,8 @@ const PROVIDER_COLORS: Record<string, string> = {
   DeepSeek:  "bg-[#4D6BFE]/10 text-[#8399ff]",
   MiniMax:   "bg-[#FE603C]/10 text-[#ff8b70]",
   Qwen:      "bg-[#6F69F7]/10 text-[#9d99ff]",
-  Meta:      "bg-blue-500/10 text-blue-300",
+  Xiaomi:    "bg-[#FF6900]/10 text-[#ff9a52]",
+  Meta:     "bg-blue-500/10 text-blue-300",
   Mistral:   "bg-orange-500/10 text-orange-300",
   Google:    "bg-yellow-500/10 text-yellow-300",
   Voyage:    "bg-purple-500/10 text-purple-300",
@@ -39,6 +40,7 @@ const PROVIDER_TILES: Record<string, string> = {
   DeepSeek: "border-[#4D6BFE]/25 bg-[#4D6BFE]/[0.08] text-[#8399ff]",
   MiniMax: "border-[#FE603C]/25 bg-[#FE603C]/[0.08] text-[#ff8b70]",
   Qwen: "border-[#6F69F7]/25 bg-[#6F69F7]/[0.08] text-[#9d99ff]",
+  Xiaomi: "border-[#FF6900]/25 bg-[#FF6900]/[0.08] text-[#ff9a52]",
 };
 
 function providerTile(provider: string) {

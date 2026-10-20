@@ -221,6 +221,22 @@ const MODELS: Omit<PricingModel, "available">[] = [
     output: 1.2,
   },
   {
+    name: "MiniMax M3.1 Flash",
+    id: "minimax-m3.1-flash",
+    provider: "MiniMax",
+    context: 1_000_000,
+    input: 0,
+    output: 0,
+  },
+  {
+    name: "MiMo V2.6 Pro",
+    id: "mimo-v2.6-pro",
+    provider: "Xiaomi",
+    context: 1_048_576,
+    input: 0.435,
+    output: 0.87,
+  },
+  {
     name: "Qwen3.8 Max",
     id: "qwen3.8-max",
     provider: "Qwen",

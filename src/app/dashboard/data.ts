@@ -186,6 +186,8 @@ export const AI_MODELS: AiModel[] = [
   { slug: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", provider: "DeepSeek", providerCode: "DS", contextWindow: "1,000,000", inputPrice: "$0.15", outputPrice: "$0.60",  modelId: "deepseek-v4.1-flash" },
   { slug: "deepseek-v4-flash", name: "DeepSeek V4 Flash", provider: "DeepSeek", providerCode: "DS", contextWindow: "1,000,000", inputPrice: "$0.09", outputPrice: "$0.18",  modelId: "deepseek-v4-flash" },
   { slug: "minimax-m3",       name: "MiniMax M3",       provider: "MiniMax",   providerCode: "MM", contextWindow: "1,000,000", inputPrice: "$0.30",  outputPrice: "$1.20",  modelId: "minimax-m3" },
+  { slug: "minimax-m3.1-flash", name: "MiniMax M3.1 Flash", provider: "MiniMax", providerCode: "MM", contextWindow: "1,000,000", inputPrice: "$0.00", outputPrice: "$0.00", modelId: "minimax-m3.1-flash" },
+  { slug: "mimo-v2.6-pro",    name: "MiMo V2.6 Pro",    provider: "Xiaomi",    providerCode: "XM", contextWindow: "1,048,576", inputPrice: "$0.435", outputPrice: "$0.87",  modelId: "mimo-v2.6-pro" },
   { slug: "qwen3.8-max",      name: "Qwen3.8 Max",      provider: "Qwen",      providerCode: "QW", contextWindow: "1,000,000", inputPrice: "$2.00",  outputPrice: "$6.00",  modelId: "qwen3.8-max" },
 ];
 

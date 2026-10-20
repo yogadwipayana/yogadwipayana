@@ -106,6 +106,7 @@ const PROVIDER_TILE: Record<string, string> = {
   DeepSeek: "border-[#4D6BFE]/25 bg-[#4D6BFE]/[0.08] text-[#8399ff]",
   MiniMax: "border-[#FE603C]/25 bg-[#FE603C]/[0.08] text-[#ff8b70]",
   Qwen: "border-[#6F69F7]/25 bg-[#6F69F7]/[0.08] text-[#9d99ff]",
+  Xiaomi: "border-[#FF6900]/25 bg-[#FF6900]/[0.08] text-[#ff9a52]",
 };
 
 const HIGHLIGHT_CACHE = new Map<string, string>();

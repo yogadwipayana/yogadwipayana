@@ -1,6 +1,7 @@
 import ClaudeColor from "@lobehub/icons/es/Claude/components/Color";
 import ClaudeMono from "@lobehub/icons/es/Claude/components/Mono";
 import OpenAIMono from "@lobehub/icons/es/OpenAI/components/Mono";
+import XiaomiMiMoMono from "@lobehub/icons/es/XiaomiMiMo/components/Mono";
 
 /**
  * Provider logos from `@lobehub/icons`, deep-imported from the icon-only
@@ -35,6 +36,11 @@ export function ClaudeIcon({ className }: { className?: string }) {
 /** Claude mark tinted by the caller's text color. */
 export function ClaudeMonoIcon({ className }: { className?: string }) {
   return <ClaudeMono className={className} />;
+}
+
+/** Xiaomi MiMo mono mark; inherits the caller's text color. */
+export function XiaomiIcon({ className }: { className?: string }) {
+  return <XiaomiMiMoMono className={className} />;
 }
 
 /** Kimi mark in its official brand colors — the white glyph needs a dark tile. */
@@ -171,5 +177,6 @@ export function ProviderIcon({
   if (provider === "DeepSeek") return <DeepSeekIcon className={className} />;
   if (provider === "MiniMax") return <MinimaxIcon className={className} />;
   if (provider === "Qwen") return <QwenIcon className={className} />;
+  if (provider === "Xiaomi") return <XiaomiIcon className={className} />;
   return null;
 }

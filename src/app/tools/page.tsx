@@ -234,6 +234,12 @@ const MODELS = [
     io: "$2.50 / $14.00",
   },
   {
+    name: "Kimi K3.1 Pro",
+    provider: "Moonshot AI",
+    context: "1,000,000",
+    io: "$2.00 / $10.00",
+  },
+  {
     name: "GPT 6 Sol",
     provider: "OpenAI",
     context: "1,050,000",

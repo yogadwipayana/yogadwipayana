@@ -181,6 +181,7 @@ export const AI_MODELS: AiModel[] = [
   { slug: "claude-sonnet-5",  name: "Claude Sonnet 5",  provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$2.00",  outputPrice: "$10.00", modelId: "claude-sonnet-5" },
   { slug: "claude-opus-5",    name: "Claude Opus 5",    provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$2.50",  outputPrice: "$12.50", modelId: "claude-opus-5", promo: { percent: 50, regularInput: "$5.00", regularOutput: "$25.00" } },
   { slug: "kimi-k3",          name: "Kimi K3",          provider: "Moonshot AI", providerCode: "MS", contextWindow: "1,000,000", inputPrice: "$2.50",  outputPrice: "$14.00", modelId: "kimi-k3" },
+  { slug: "kimi-k3.1-pro",    name: "Kimi K3.1 Pro",    provider: "Moonshot AI", providerCode: "MS", contextWindow: "1,000,000", inputPrice: "$2.00",  outputPrice: "$10.00", modelId: "kimi-k3.1-pro" },
   { slug: "glm-5.3",          name: "GLM 5.3",          provider: "Z.ai",      providerCode: "ZA", contextWindow: "1,000,000", inputPrice: "$1.50",  outputPrice: "$4.00",  modelId: "glm-5.3" },
   { slug: "deepseek-v4-pro",  name: "DeepSeek V4 Pro",  provider: "DeepSeek",  providerCode: "DS", contextWindow: "1,000,000", inputPrice: "$0.435", outputPrice: "$0.87",  modelId: "deepseek-v4-pro" },
   { slug: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", provider: "DeepSeek", providerCode: "DS", contextWindow: "1,000,000", inputPrice: "$0.15", outputPrice: "$0.60",  modelId: "deepseek-v4.1-flash" },

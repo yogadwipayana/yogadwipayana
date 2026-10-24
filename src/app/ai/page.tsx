@@ -181,6 +181,14 @@ const MODELS: Omit<PricingModel, "available">[] = [
     output: 14,
   },
   {
+    name: "Kimi K3.1 Pro",
+    id: "kimi-k3.1-pro",
+    provider: "Moonshot AI",
+    context: 1_000_000,
+    input: 2,
+    output: 10,
+  },
+  {
     name: "GLM 5.3",
     id: "glm-5.3",
     provider: "Z.ai",

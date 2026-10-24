@@ -233,8 +233,8 @@ const MODELS: Omit<PricingModel, "available">[] = [
     id: "minimax-m3.1-flash",
     provider: "MiniMax",
     context: 1_000_000,
-    input: 0,
-    output: 0,
+    input: 0.09,
+    output: 0.5,
   },
   {
     name: "MiMo V2.6 Pro",

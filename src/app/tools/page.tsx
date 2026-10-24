@@ -282,16 +282,16 @@ const MODELS = [
     io: "$0.10 / $0.50",
   },
   {
+    name: "MiniMax M3.1 Flash",
+    provider: "MiniMax",
+    context: "1,000,000",
+    io: "$0.09 / $0.50",
+  },
+  {
     name: "DeepSeek V4 Flash",
     provider: "DeepSeek",
     context: "1,000,000",
     io: "$0.09 / $0.18",
-  },
-  {
-    name: "MiniMax M3.1 Flash",
-    provider: "MiniMax",
-    context: "1,000,000",
-    io: "$0.00 / $0.00",
   },
 ] as const;
 

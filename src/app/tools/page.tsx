@@ -293,12 +293,6 @@ const MODELS = [
     context: "1,000,000",
     io: "$0.09 / $0.50",
   },
-  {
-    name: "DeepSeek V4 Flash",
-    provider: "DeepSeek",
-    context: "1,000,000",
-    io: "$0.09 / $0.18",
-  },
 ] as const;
 
 /** Mono marks inherit this tint; Claude and Kimi ship their own brand colors. */

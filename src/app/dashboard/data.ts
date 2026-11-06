@@ -176,6 +176,7 @@ export const AI_MODELS: AiModel[] = [
   { slug: "gpt-6-sol",        name: "GPT 6 Sol",        provider: "OpenAI",    providerCode: "OA", contextWindow: "1,050,000", inputPrice: "$2.00",  outputPrice: "$10.00", modelId: "gpt-6-sol" },
   { slug: "gpt-6.1-sol",      name: "GPT 6.1 Sol",      provider: "OpenAI",    providerCode: "OA", contextWindow: "1,050,000", inputPrice: "$2.00",  outputPrice: "$10.00", modelId: "gpt-6.1-sol" },
   { slug: "gpt-5.6-luna",     name: "GPT 5.6 Luna",     provider: "OpenAI",    providerCode: "OA", contextWindow: "1,050,000", inputPrice: "$1.00",  outputPrice: "$6.00",  modelId: "gpt-5.6-luna" },
+  { slug: "gpt-6.1-terra",    name: "GPT 6.1 Terra",    provider: "OpenAI",    providerCode: "OA", contextWindow: "1,050,000", inputPrice: "$1.00",  outputPrice: "$5.00",  modelId: "gpt-6.1-terra" },
   { slug: "gpt-6-luna",       name: "GPT 6 Luna",       provider: "OpenAI",    providerCode: "OA", contextWindow: "1,050,000", inputPrice: "$0.10",  outputPrice: "$0.50",  modelId: "gpt-6-luna" },
   { slug: "claude-fable-5",   name: "Claude Fable 5",   provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$10.00", outputPrice: "$50.00", modelId: "claude-fable-5" },
   { slug: "claude-sonnet-5",  name: "Claude Sonnet 5",  provider: "Anthropic", providerCode: "AN", contextWindow: "1,000,000", inputPrice: "$2.00",  outputPrice: "$10.00", modelId: "claude-sonnet-5" },

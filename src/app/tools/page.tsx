@@ -264,6 +264,12 @@ const MODELS = [
     io: "$1.00 / $6.00",
   },
   {
+    name: "GPT 6.1 Terra",
+    provider: "OpenAI",
+    context: "1,050,000",
+    io: "$1.00 / $5.00",
+  },
+  {
     name: "MiMo V2.6 Pro",
     provider: "Xiaomi",
     context: "1,048,576",

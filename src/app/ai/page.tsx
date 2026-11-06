@@ -140,6 +140,14 @@ const MODELS: Omit<PricingModel, "available">[] = [
     output: 6,
   },
   {
+    name: "GPT 6.1 Terra",
+    id: "gpt-6.1-terra",
+    provider: "OpenAI",
+    context: 1_050_000,
+    input: 1,
+    output: 5,
+  },
+  {
     name: "GPT 6 Luna",
     id: "gpt-6-luna",
     provider: "OpenAI",

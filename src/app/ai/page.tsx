@@ -342,14 +342,14 @@ export default async function AiRouterPricing() {
                   aria-hidden
                 />
                 <p className="text-[13px] leading-relaxed text-white/55">
-                  Top up by redeeming a voucher ordered from the{" "}
+                  Top up by redeeming a voucher ordered via{" "}
                   <a
                     href={AI_VOUCHER_URL}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-white/80 underline decoration-white/20 underline-offset-2 transition-colors hover:text-white"
                   >
-                    store
+                    WhatsApp
                   </a>
                   . Purchase a credit voucher, then redeem its code in the
                   dashboard to add balance instantly.

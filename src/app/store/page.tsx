@@ -16,7 +16,12 @@ import {
 
 import { formatIdr } from "@/lib/money";
 import { SMS_PRICE_IDR } from "@/lib/sms-order";
-import { AI_VOUCHER_URL, SMS_VOUCHER_URL, STORE_URL } from "@/lib/store-links";
+import {
+  AI_VOUCHER_URL,
+  ROUTER_API_URL,
+  SMS_VOUCHER_URL,
+  whatsappOrderUrl,
+} from "@/lib/store-links";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Button } from "@/components/ui/button";
@@ -29,7 +34,7 @@ const figtree = Figtree({ subsets: ["latin"], display: "swap" });
 export const metadata: Metadata = pageMetadata({
   title: "AI Store — API keys, credit vouchers & accounts",
   description:
-    "In-house tools — my AI Router and disposable SMS verification — plus verified ChatGPT Plus and Kiro Pro / Pro+ / Power accounts ordered on Marketku.",
+    "In-house tools — my AI Router and disposable SMS verification — plus verified ChatGPT Plus and Kiro Pro / Pro+ / Power accounts ordered via WhatsApp.",
   path: "/store",
   keywords: [
     "AI router",
@@ -112,12 +117,12 @@ const IN_HOUSE: Product[] = [
     cta: "Get a number",
     href: "/dashboard/sms",
     external: false,
-    secondaryCta: "Buy on Marketku",
+    secondaryCta: "Order via WhatsApp",
     secondaryHref: SMS_VOUCHER_URL,
   },
 ];
 
-/** Accounts and access ordered from the Marketku storefront. */
+/** Accounts and access ordered via WhatsApp. */
 const ACCOUNT_PRODUCTS: Product[] = [
   {
     icon: Cpu,
@@ -132,8 +137,8 @@ const ACCOUNT_PRODUCTS: Product[] = [
     ],
     price: "Pay as you go",
     unit: "One OpenAI-compatible key",
-    cta: "Buy on Marketku",
-    href: STORE_URL,
+    cta: "Order via WhatsApp",
+    href: whatsappOrderUrl("API Model Frontier"),
     external: true,
   },
   {
@@ -145,8 +150,8 @@ const ACCOUNT_PRODUCTS: Product[] = [
     highlights: ["Verified account", "1 month access", "Codex support"],
     price: "Rp75.000",
     unit: "1 month · warranty",
-    cta: "Buy on Marketku",
-    href: STORE_URL,
+    cta: "Order via WhatsApp",
+    href: whatsappOrderUrl("ChatGPT Plus (1 bulan)"),
     external: true,
   },
   {
@@ -162,8 +167,8 @@ const ACCOUNT_PRODUCTS: Product[] = [
     ],
     price: "Rp100.000",
     unit: "Pre-order · warranty",
-    cta: "Pre-order on Marketku",
-    href: STORE_URL,
+    cta: "Pre-order via WhatsApp",
+    href: whatsappOrderUrl("pre-order Kiro Pro / Pro+ / Power"),
     external: true,
   },
 ];
@@ -261,7 +266,7 @@ function InHouseCard({ product, index }: { product: Product; index: number }) {
   );
 }
 
-/** Compact card for accounts ordered on Marketku. */
+/** Compact card for accounts ordered via WhatsApp. */
 function AccessCard({ product, index }: { product: Product; index: number }) {
   const Icon = product.icon;
   return (
@@ -354,7 +359,7 @@ export default function AiStore() {
             >
               In-house tools like my AI Router and disposable SMS verification,
               plus verified ChatGPT Plus and Kiro Pro / Pro+ / Power accounts
-              ordered on Marketku.
+              ordered via WhatsApp.
             </p>
 
             <div
@@ -395,7 +400,7 @@ export default function AiStore() {
             <div>
               <SectionHeading
                 title="Accounts & access"
-                note="Ordered on Marketku"
+                note="Ordered via WhatsApp"
               />
               <ul className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {ACCOUNT_PRODUCTS.map((product, i) => (
@@ -432,11 +437,11 @@ export default function AiStore() {
                       <div className="mt-5 flex flex-col gap-2 sm:flex-row">
                         <Button size="sm" asChild>
                           <a
-                            href={STORE_URL}
+                            href={ROUTER_API_URL}
                             target="_blank"
                             rel="noopener noreferrer"
                           >
-                            Buy on Marketku
+                            Order via WhatsApp
                             <ExternalLink aria-hidden />
                           </a>
                         </Button>
@@ -510,8 +515,8 @@ export default function AiStore() {
 
             <p className="text-[13px] leading-relaxed text-white/40">
               AI Router and SMS Verification run in-house from the dashboard.
-              API Model Frontier, ChatGPT Plus, and Kiro Pro / Pro+ / Power open
-              on Marketku in a new tab.
+              API Model Frontier, ChatGPT Plus, and Kiro Pro / Pro+ / Power are
+              ordered via WhatsApp — the button opens a chat in a new tab.
             </p>
           </div>
         </section>

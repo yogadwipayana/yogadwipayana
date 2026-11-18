@@ -417,7 +417,7 @@ function KeyGate({
               rel="noopener noreferrer"
               className="text-white/60 underline decoration-white/20 underline-offset-2 transition-colors hover:text-white"
             >
-              Buy one on Marketku
+              Order one via WhatsApp
             </a>
           </p>
         </div>

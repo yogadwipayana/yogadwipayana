@@ -173,7 +173,7 @@ export function RedeemVoucherModal() {
                       rel="noopener noreferrer"
                       className="mt-2 inline-flex items-center gap-1 text-[11px] text-white/40 transition-colors hover:text-white/70"
                     >
-                      Don&apos;t have one? Order a voucher on Marketku
+                      Don&apos;t have one? Order a voucher via WhatsApp
                       <ExternalLink className="h-3 w-3" aria-hidden />
                     </a>
                     {error && (

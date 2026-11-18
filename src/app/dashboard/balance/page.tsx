@@ -136,7 +136,7 @@ export default async function BalancePage() {
             How it works
           </p>
           <ul className="mt-4 space-y-2.5 text-[13px] leading-relaxed text-white/50">
-            <li>• Order a voucher on Marketku</li>
+            <li>• Order a voucher via WhatsApp</li>
             <li>• Redeem the code here to top up instantly</li>
             <li>
               • Each SMS number costs {formatIdr(SMS_PRICE_IDR)}, refunded
@@ -154,7 +154,7 @@ export default async function BalancePage() {
             rel="noopener noreferrer"
             className="mt-4 inline-flex items-center gap-1 text-[11px] text-white/40 transition-colors hover:text-white/70"
           >
-            Order a voucher
+            Order a voucher via WhatsApp
             <ExternalLink className="h-3 w-3" aria-hidden />
           </a>
         </div>

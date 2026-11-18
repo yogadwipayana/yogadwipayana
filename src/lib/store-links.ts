@@ -1,19 +1,23 @@
 /**
- * Where buyers purchase vouchers, plans and accounts — all sold on Marketku.
+ * Where buyers order vouchers, plans and accounts — every order goes through
+ * WhatsApp, with a prefilled message naming the product.
  * Isomorphic — safe to import from server components and the browser alike.
  */
 
+/** Order line in international format without "+" (0878-8964-0714). */
+const WHATSAPP_NUMBER = "6287889640714";
+
+/** wa.me chat link with a prefilled order message for `product`. */
+export function whatsappOrderUrl(product: string): string {
+  const text = `Halo, saya mau order ${product}.`;
+  return `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(text)}`;
+}
+
 /** AI Router credit voucher, redeemed in the dashboard to top up AI credit. */
-export const AI_VOUCHER_URL =
-  "https://marketku.id/9router/product/ai-router-claude-5-gpt-6-astra-dan-mocin-c10f5333-679c-405b-a4bc-f746e318bf46";
+export const AI_VOUCHER_URL = whatsappOrderUrl("voucher kredit AI Router");
 
-/** API Model Frontier — the unlimited Router API plans checked in /console. */
-export const ROUTER_API_URL =
-  "https://marketku.id/9router/product/api-model-frontier-claude-5-gpt-6-astra-dan-mocin-a4bf07d2-85a0-49ed-a9b8-766703a9c75e";
+/** yogathedev Router API — the unlimited plans checked in /console. */
+export const ROUTER_API_URL = whatsappOrderUrl("Router API (unlimited plan)");
 
-/** SMS verification listing, also where SMS balance vouchers are bought. */
-export const SMS_VOUCHER_URL =
-  "https://marketku.id/jasa-verif/product/jasa-verif-codex-bbcd9849-26d1-4c51-b1b2-cd5ab2eb0170";
-
-/** The storefront, for every product without a dedicated listing above. */
-export const STORE_URL = "https://marketku.id/u/yogathedev-store";
+/** SMS balance voucher, redeemed in the dashboard to top up the wallet. */
+export const SMS_VOUCHER_URL = whatsappOrderUrl("voucher saldo SMS Verification");

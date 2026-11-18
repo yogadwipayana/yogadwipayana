@@ -209,6 +209,12 @@ const MODELS = [
     io: "$10.00 / $50.00",
   },
   {
+    name: "GPT 6.2 Astra",
+    provider: "OpenAI",
+    context: "1,050,000",
+    io: "$8.00 / $40.00",
+  },
+  {
     name: "GPT 5.6 Sol",
     provider: "OpenAI",
     context: "1,050,000",
@@ -247,6 +253,12 @@ const MODELS = [
   },
   {
     name: "GPT 6.1 Sol",
+    provider: "OpenAI",
+    context: "1,050,000",
+    io: "$2.00 / $10.00",
+  },
+  {
+    name: "GPT 6.2 Sol",
     provider: "OpenAI",
     context: "1,050,000",
     io: "$2.00 / $10.00",

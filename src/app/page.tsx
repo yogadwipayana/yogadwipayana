@@ -122,6 +122,7 @@ const TOOLS: ToolCard[] = [
 
 const MARQUEE_MODELS = [
   { name: "GPT 6 Astra", provider: "OpenAI" },
+  { name: "GPT 6.2 Astra", provider: "OpenAI" },
   { name: "GPT 5.6 Sol", provider: "OpenAI" },
   { name: "Claude Fable 5", provider: "Anthropic" },
   { name: "Kimi K3", provider: "Moonshot AI" },
@@ -131,6 +132,7 @@ const MARQUEE_MODELS = [
   { name: "GPT 5.6 Terra", provider: "OpenAI" },
   { name: "GPT 6 Sol", provider: "OpenAI" },
   { name: "GPT 6.1 Sol", provider: "OpenAI" },
+  { name: "GPT 6.2 Sol", provider: "OpenAI" },
   { name: "Claude Sonnet 5", provider: "Anthropic" },
   { name: "GPT 5.6 Luna", provider: "OpenAI" },
   { name: "GPT 6.1 Terra", provider: "OpenAI" },
@@ -151,6 +153,7 @@ function providerTint(provider: string) {
 const ROUTER_MODELS = [
   { name: "GPT 6 Astra", provider: "OpenAI", io: "$10 / $50" },
   { name: "Claude Fable 5", provider: "Anthropic", io: "$10 / $50" },
+  { name: "GPT 6.2 Astra", provider: "OpenAI", io: "$8 / $40" },
   { name: "GPT 5.6 Sol", provider: "OpenAI", io: "$5 / $30" },
   {
     name: "Claude Opus 5",
@@ -163,6 +166,7 @@ const ROUTER_MODELS = [
   { name: "Kimi K3.1 Pro", provider: "Moonshot AI", io: "$2 / $10" },
   { name: "GPT 6 Sol", provider: "OpenAI", io: "$2 / $10" },
   { name: "GPT 6.1 Sol", provider: "OpenAI", io: "$2 / $10" },
+  { name: "GPT 6.2 Sol", provider: "OpenAI", io: "$2 / $10" },
   { name: "GLM 5.3", provider: "Z.ai", io: "$1.50 / $4" },
   { name: "GPT 5.6 Luna", provider: "OpenAI", io: "$1 / $6" },
   { name: "GPT 6.1 Terra", provider: "OpenAI", io: "$1 / $5" },
